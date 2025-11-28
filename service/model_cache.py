@@ -1,0 +1,32 @@
+import json
+from typing import Any, Dict, Optional
+
+from redis.asyncio import Redis
+
+from .settings import settings
+
+
+MODELS_CACHE_KEY = "a4f:models:all"
+
+
+async def get_models_from_cache(redis: Redis) -> Optional[Dict[str, Any]]:
+    """
+    Return cached models payload if present, otherwise None.
+    """
+    raw = await redis.get(MODELS_CACHE_KEY)
+    if not raw:
+        return None
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # Corrupted cache; treat as cache miss.
+        return None
+
+
+async def set_models_cache(redis: Redis, data: Dict[str, Any]) -> None:
+    """
+    Store models payload into cache with TTL.
+    """
+    ttl = settings.models_cache_ttl
+    await redis.set(MODELS_CACHE_KEY, json.dumps(data), ex=ttl)
+

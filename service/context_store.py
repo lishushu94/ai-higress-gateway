@@ -1,0 +1,25 @@
+from typing import Any, Dict, Optional
+
+from redis.asyncio import Redis
+
+
+async def save_context(
+    redis: Redis,
+    session_id: Optional[str],
+    payload: Dict[str, Any],
+    response_text: str,
+) -> None:
+    """
+    Persist conversation context into Redis.
+    """
+    if not session_id:
+        return
+    key = f"session:{session_id}:history"
+    entry = {
+        "request": payload,
+        "response": response_text,
+    }
+    # Keep last 50 turns by trimming the list
+    await redis.lpush(key, str(entry))
+    await redis.ltrim(key, 0, 49)
+

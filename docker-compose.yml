@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: apiproxy-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  api:
+    build:
+      context: .
+    container_name: apiproxy-api
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      # Fallbacks if .env is missing
+      A4F_BASE_URL: "REDACTED_API_URL"
+      A4F_API_KEY: "REDACTED_API_KEY"
+      REDIS_URL: "redis://redis:6379/0"
+    depends_on:
+      - redis
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "python -m pip install . && apiproxy"
+
