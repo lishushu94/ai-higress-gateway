@@ -158,6 +158,8 @@ Common settings:
 | `MASK_USER_AGENT`                  | User-Agent string to use when `MASK_AS_BROWSER` is enabled                                         | see `.env.example`          |
 | `MASK_ORIGIN`                      | Optional Origin header when masking as a browser                                                    | `None`                      |
 | `MASK_REFERER`                     | Optional Referer header when masking as a browser                                                   | `None`                      |
+| `LOG_LEVEL`                        | Application log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`)                             | `INFO`                      |
+| `LOG_TIMEZONE`                     | Timezone for log timestamps (e.g. `Asia/Shanghai`); defaults to the server's local timezone         | system local timezone       |
 | `LLM_PROVIDERS`                    | Comma-separated provider ids, e.g. `openai,gemini,claude`                                           | `None`                      |
 | `LLM_PROVIDER_{id}_NAME`           | Human-readable provider name                                                                        | required                    |
 | `LLM_PROVIDER_{id}_BASE_URL`       | Provider API base URL                                                                               | required                    |
@@ -187,6 +189,9 @@ Common settings:
   - Gemini-style `input` payloads (auto-converted to `messages`);  
   - Streaming and non-streaming responses;  
   - Multi-provider routing and cross-provider failover.
+- `POST /v1/responses` (auth required)  
+  Compatibility shim for the OpenAI Responses API. It maps `instructions`/`input`
+  fields to standard chat `messages` and reuses the same routing + streaming logic.
 
 - `GET /context/{session_id}` (auth required)  
   Returns stored conversation history for the given session id.

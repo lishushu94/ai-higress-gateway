@@ -69,6 +69,11 @@ class Settings(BaseSettings):
         alias="LOG_LEVEL",
         description="Application log level: DEBUG, INFO, WARNING, ERROR, CRITICAL",
     )
+    log_timezone: Optional[str] = Field(
+        default=None,
+        alias="LOG_TIMEZONE",
+        description="Timezone name for log timestamps, e.g. 'Asia/Shanghai'. Defaults to system local time.",
+    )
 
     # Shared API token required by clients when calling this gateway.
     api_auth_token: str = Field(

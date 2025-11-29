@@ -1,11 +1,40 @@
 import datetime
 import logging
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from .settings import settings
 
 
 _LOGGING_CONFIGURED = False
+
+
+class LocalTimezoneFormatter(logging.Formatter):
+    """
+    Logging formatter that forces timestamps into a configured timezone.
+    Defaults to the system local timezone when LOG_TIMEZONE is not set
+    or when the provided timezone is invalid.
+    """
+
+    def __init__(self, *args, timezone_name: str | None = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._tzinfo = self._resolve_tzinfo(timezone_name)
+
+    @staticmethod
+    def _resolve_tzinfo(timezone_name: str | None) -> datetime.tzinfo:
+        if timezone_name:
+            try:
+                return ZoneInfo(timezone_name)
+            except ZoneInfoNotFoundError:
+                pass
+        # Fallback to system local timezone
+        return datetime.datetime.now().astimezone().tzinfo or datetime.timezone.utc
+
+    def formatTime(self, record: logging.LogRecord, datefmt: str | None = None) -> str:
+        dt = datetime.datetime.fromtimestamp(record.created, tz=self._tzinfo)
+        if datefmt:
+            return dt.strftime(datefmt)
+        return dt.isoformat(timespec="milliseconds")
 
 
 class DailyFileHandler(logging.Handler):
@@ -116,8 +145,9 @@ def setup_logging() -> None:
         level_name = "INFO"
     level_value = getattr(logging, level_name.upper(), logging.INFO)
 
-    formatter = logging.Formatter(
-        "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+    formatter = LocalTimezoneFormatter(
+        "%(asctime)s [%(levelname)s] %(name)s - %(message)s",
+        timezone_name=getattr(settings, "log_timezone", None),
     )
 
     # File handler: one log file per day, e.g. logs/app-YYYY-MM-DD.log

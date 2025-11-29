@@ -141,6 +141,8 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
 | `MASK_USER_AGENT`               | 伪装为浏览器时使用的 User-Agent                                     | 见 `.env.example`         |
 | `MASK_ORIGIN`                   | 可选，伪装为浏览器时附加的 Origin                                   | `None`                    |
 | `MASK_REFERER`                  | 可选，伪装为浏览器时附加的 Referer                                  | `None`                    |
+| `LOG_LEVEL`                     | 网关日志级别（`DEBUG`/`INFO`/`WARNING`/`ERROR`/`CRITICAL`）          | `INFO`                    |
+| `LOG_TIMEZONE`                  | 日志时间戳使用的时区（如 `Asia/Shanghai`，缺省为系统本地时区）      | 系统本地时区              |
 | `LLM_PROVIDERS`                 | 逗号分隔的提供商 ID 列表，例如 `openai,gemini,claude`               | `None`                    |
 | `LLM_PROVIDER_{id}_NAME`        | 提供商显示名称                                                       | 必填                      |
 | `LLM_PROVIDER_{id}_BASE_URL`    | 提供商 API 基础地址                                                 | 必填                      |
@@ -181,6 +183,7 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
   - Gemini 风格 `input` 自动转换；
   - 流式与非流式模式；
   - 多提供商智能路由与跨厂商故障转移。
+- `POST /v1/responses`：OpenAI Responses API 兼容端点，自动将 `instructions`/`input` 映射到 `messages`，并复用上述路由/流式能力。
 - `GET /context/{session_id}`：查询指定会话的历史上下文（需要认证）。
 
 ### 多提供商管理与路由接口

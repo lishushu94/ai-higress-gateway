@@ -108,6 +108,55 @@ def _mock_send(request: httpx.Request) -> httpx.Response:
     return httpx.Response(404, json={"error": "unexpected mock path", "path": path})
 
 
+def _mock_send_responses_stream(request: httpx.Request) -> httpx.Response:
+    path = request.url.path
+
+    if path.endswith("/v1/chat/completions") and request.method == "POST":
+        chunk_1 = {
+            "id": "cmpl-stream",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": "你好"},
+                    "finish_reason": None,
+                }
+            ],
+        }
+        chunk_2 = {
+            "id": "cmpl-stream",
+            "object": "chat.completion.chunk",
+            "created": 1,
+            "model": "test-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"content": "，Responses 测试"},
+                    "finish_reason": "stop",
+                }
+            ],
+            "usage": {
+                "prompt_tokens": 5,
+                "completion_tokens": 5,
+                "total_tokens": 10,
+            },
+        }
+        body = "".join(
+            f"data: {json.dumps(chunk, ensure_ascii=False)}\n\n"
+            for chunk in (chunk_1, chunk_2)
+        )
+        body += "data: [DONE]\n\n"
+        return httpx.Response(
+            200,
+            content=body.encode("utf-8"),
+            headers={"content-type": "text/event-stream"},
+        )
+
+    return httpx.Response(404, json={"error": "unexpected mock path", "path": path})
+
+
 async def override_get_redis():
     return fake_redis
 
@@ -117,6 +166,12 @@ async def override_get_http_client():
     Provide an AsyncClient whose requests are handled by _mock_send.
     """
     transport = httpx.MockTransport(_mock_send)
+    async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
+        yield client
+
+
+async def _override_get_http_client_responses_stream():
+    transport = httpx.MockTransport(_mock_send_responses_stream)
     async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
         yield client
 
@@ -150,11 +205,7 @@ def _seed_logical_model() -> None:
     fake_redis._data[key] = json.dumps(logical.model_dump(), ensure_ascii=False)
 
 
-def test_chat_greeting_returns_reply(monkeypatch):
-    """
-    发起一个问候，看是否能拿到正确的回复结构。
-    不依赖真实的 Redis 和 A4F，仅测试网关逻辑是否通畅。
-    """
+def _prepare_basic_app(monkeypatch):
     # Provide a single mock provider configuration so that the routing
     # layer can build headers for the selected upstream.
     cfg = ProviderConfig(
@@ -189,6 +240,16 @@ def test_chat_greeting_returns_reply(monkeypatch):
     app.dependency_overrides[get_redis] = override_get_redis
     app.dependency_overrides[get_http_client] = override_get_http_client
 
+    return app
+
+
+def test_chat_greeting_returns_reply(monkeypatch):
+    """
+    发起一个问候，看是否能拿到正确的回复结构。
+    不依赖真实的 Redis 和 A4F，仅测试网关逻辑是否通畅。
+    """
+    app = _prepare_basic_app(monkeypatch)
+
     # Use TestClient in an async test by running it in a threadpool.
     with TestClient(app=app, base_url="http://test") as client:
         payload = {
@@ -216,6 +277,45 @@ def test_chat_greeting_returns_reply(monkeypatch):
         message = data["choices"][0].get("message", {})
         assert message.get("role") == "assistant"
         assert "你好" in message.get("content", "")
+
+
+def test_responses_endpoint_adapts_payload(monkeypatch):
+    """
+    /v1/responses 应兼容 Responses API 风格的 instructions/input 字段，
+    并最终触发与 chat completions 相同的上游请求。
+    """
+    app = _prepare_basic_app(monkeypatch)
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "test-model",
+            "instructions": "你是一个友好的测试助手",
+            "input": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": "你好，Responses API"},
+                    ],
+                }
+            ],
+            "stream": False,
+        }
+        headers = {
+            "Authorization": "Bearer dGltZWxpbmU=",
+        }
+
+        resp = client.post("/v1/responses", json=payload, headers=headers)
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("object") == "response"
+        assert data.get("status") == "completed"
+        assert isinstance(data.get("output"), list) and data["output"]
+        first_block = data["output"][0]
+        assert first_block["role"] == "assistant"
+        text_segments = first_block["content"]
+        assert text_segments and text_segments[0]["text"].startswith("你好")
+        assert "Responses API" in data.get("output_text", "")
 
 
 def _seed_failover_logical_model() -> None:
@@ -455,3 +555,28 @@ def test_chat_failover_streaming(monkeypatch):
             # 流式响应内容应该来自 OK 提供商，而不是 fail 提供商的错误。
             assert "来自 ok 提供商的回复" in text
             assert "fail-provider" not in text
+
+
+def test_responses_streaming_rewrites_sse(monkeypatch):
+    app = _prepare_basic_app(monkeypatch)
+    app.dependency_overrides[get_http_client] = _override_get_http_client_responses_stream
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "test-model",
+            "instructions": "你是一个 SSE 测试助手",
+            "input": "流式 Responses",
+            "stream": True,
+        }
+        headers = {
+            "Authorization": "Bearer dGltZWxpbmU=",
+            "Accept": "text/event-stream",
+        }
+
+        with client.stream("POST", "/v1/responses", json=payload, headers=headers) as resp:
+            assert resp.status_code == 200
+            body = b"".join(resp.iter_bytes()).decode("utf-8")
+            assert "response.output_text.delta" in body
+            assert "response.completed" in body
+            assert "Responses 测试" in body
+            assert "data: [DONE]" in body

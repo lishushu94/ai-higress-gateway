@@ -410,6 +410,303 @@ def _normalize_payload_by_model(payload: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def _flatten_responses_content(content: Any) -> Optional[str]:
+    """
+    Best-effort extraction of plain text from OpenAI Responses-style content
+    blocks. These blocks may be strings or a list of dict segments
+    containing text fields.
+    """
+    if content is None:
+        return None
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for part in content:
+            if isinstance(part, dict):
+                text = part.get("text")
+                if isinstance(text, str):
+                    parts.append(text)
+                elif isinstance(part.get("content"), str):
+                    parts.append(part["content"])
+        if parts:
+            return "".join(parts)
+        return None
+    if isinstance(content, dict):
+        text = content.get("text")
+        if isinstance(text, str):
+            return text
+    return str(content)
+
+
+def _convert_responses_messages(
+    input_value: Any, instructions: Optional[str]
+) -> list[Dict[str, str]]:
+    """
+    Convert Responses API `input` + optional `instructions` into
+    OpenAI-style chat messages.
+    """
+    messages: list[Dict[str, str]] = []
+
+    if isinstance(instructions, str) and instructions.strip():
+        messages.append({"role": "system", "content": instructions.strip()})
+
+    if isinstance(input_value, list):
+        for item in input_value:
+            if not isinstance(item, dict):
+                continue
+            role = item.get("role") or "user"
+            text = _flatten_responses_content(item.get("content"))
+            if text:
+                messages.append({"role": role, "content": text})
+    elif isinstance(input_value, str):
+        messages.append({"role": "user", "content": input_value})
+    elif input_value is not None:
+        messages.append({"role": "user", "content": str(input_value)})
+
+    return messages
+
+
+def _adapt_responses_payload(raw_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Adapt a Responses API payload into the chat-completions-friendly shape.
+    This primarily maps `instructions` + `input` into `messages`.
+    """
+    payload = dict(raw_payload)
+
+    if "messages" in payload:
+        return payload
+
+    instructions = payload.pop("instructions", None)
+    input_value = payload.pop("input", None)
+    messages = _convert_responses_messages(input_value, instructions)
+
+    if messages:
+        payload["messages"] = messages
+    else:
+        # Put the original fields back if we failed to convert, so the caller
+        # still receives a meaningful error downstream.
+        if instructions is not None:
+            payload["instructions"] = instructions
+        if input_value is not None:
+            payload["input"] = input_value
+
+    return payload
+
+
+def _ensure_response_id(response_id: Optional[str]) -> str:
+    return response_id or f"resp-{int(time.time() * 1000)}"
+
+
+def _build_output_blocks_from_text_map(
+    response_id: str,
+    index_to_text: Dict[int, str],
+) -> list[Dict[str, Any]]:
+    if not index_to_text:
+        return [
+            {
+                "id": f"{response_id}-msg-0",
+                "type": "message",
+                "role": "assistant",
+                "content": [],
+            }
+        ]
+
+    blocks: list[Dict[str, Any]] = []
+    for idx in sorted(index_to_text):
+        text = index_to_text[idx]
+        blocks.append(
+            {
+                "id": f"{response_id}-msg-{idx}",
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "text", "text": text}],
+            }
+        )
+    return blocks
+
+
+def _text_map_from_choices(choices: Any) -> Dict[int, str]:
+    text_map: Dict[int, str] = {}
+    if not isinstance(choices, list):
+        return text_map
+    for idx, choice in enumerate(choices):
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message") or {}
+        content = message.get("content")
+        text = _flatten_responses_content(content) or ""
+        text_map[idx] = text
+    return text_map
+
+
+def _chat_to_responses_payload(chat_payload: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Convert a chat-completions JSON payload into Responses API shape.
+    """
+    response_id = _ensure_response_id(chat_payload.get("id"))
+    created = chat_payload.get("created") or int(time.time())
+    text_map = _text_map_from_choices(chat_payload.get("choices"))
+    output_blocks = _build_output_blocks_from_text_map(response_id, text_map)
+    output_text = "\n".join(text_map[idx] for idx in sorted(text_map) if text_map[idx])
+    payload = {
+        "id": response_id,
+        "object": "response",
+        "created": created,
+        "model": chat_payload.get("model"),
+        "usage": chat_payload.get("usage"),
+        "status": "completed",
+        "output": output_blocks,
+        "output_text": output_text,
+        "metadata": chat_payload.get("metadata") or {},
+    }
+    return payload
+
+
+def _encode_sse_payload(payload: Dict[str, Any]) -> bytes:
+    return f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode("utf-8")
+
+
+def _build_completed_event_payload(
+    response_id: Optional[str],
+    model: Optional[str],
+    created: Optional[int],
+    index_to_text: Dict[int, str],
+    usage: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    rid = _ensure_response_id(response_id)
+    created_ts = created or int(time.time())
+    outputs = _build_output_blocks_from_text_map(rid, index_to_text)
+    aggregated_text = "\n".join(
+        index_to_text[idx] for idx in sorted(index_to_text) if index_to_text[idx]
+    )
+    response_body = {
+        "id": rid,
+        "object": "response",
+        "created": created_ts,
+        "model": model,
+        "status": "completed",
+        "output": outputs,
+        "output_text": aggregated_text,
+        "usage": usage,
+        "metadata": {},
+    }
+    return {
+        "type": "response.completed",
+        "response": response_body,
+    }
+
+
+def _wrap_chat_stream_response(chat_response: StreamingResponse) -> StreamingResponse:
+    """
+    Consume the original chat completion SSE stream and emit responses-style events.
+    """
+
+    async def _iterator() -> AsyncIterator[bytes]:
+        buffer = ""
+        index_to_text: Dict[int, str] = {}
+        response_id: Optional[str] = None
+        model: Optional[str] = None
+        created: Optional[int] = None
+        usage: Optional[Dict[str, Any]] = None
+        completed_emitted = False
+
+        async for chunk in chat_response.body_iterator:
+            try:
+                decoded = chunk.decode("utf-8")
+            except UnicodeDecodeError:
+                continue
+            buffer += decoded
+
+            while "\n\n" in buffer:
+                raw_event, buffer = buffer.split("\n\n", 1)
+                raw_event = raw_event.strip()
+                if not raw_event.startswith("data:"):
+                    continue
+                payload_str = raw_event[len("data:") :].strip()
+                if not payload_str:
+                    continue
+
+                if payload_str == "[DONE]":
+                    if not completed_emitted:
+                        completed = _build_completed_event_payload(
+                            response_id,
+                            model,
+                            created,
+                            index_to_text,
+                            usage,
+                        )
+                        yield _encode_sse_payload(completed)
+                        completed_emitted = True
+                    yield b"data: [DONE]\n\n"
+                    return
+
+                try:
+                    data = json.loads(payload_str)
+                except json.JSONDecodeError:
+                    continue
+
+                if data.get("object") != "chat.completion.chunk":
+                    continue
+
+                response_id = response_id or data.get("id")
+                model = model or data.get("model")
+                created = created or data.get("created")
+                if data.get("usage"):
+                    usage = data["usage"]
+
+                for choice in data.get("choices", []):
+                    if not isinstance(choice, dict):
+                        continue
+                    idx = choice.get("index", 0)
+                    delta = choice.get("delta") or {}
+                    delta_content = delta.get("content")
+                    text_delta = _flatten_responses_content(delta_content)
+                    if text_delta:
+                        existing = index_to_text.get(idx, "")
+                        index_to_text[idx] = existing + text_delta
+                        yield _encode_sse_payload(
+                            {
+                                "type": "response.output_text.delta",
+                                "index": idx,
+                                "delta": text_delta,
+                            }
+                        )
+
+                    if choice.get("finish_reason") and not completed_emitted:
+                        completed = _build_completed_event_payload(
+                            response_id,
+                            model,
+                            created,
+                            index_to_text,
+                            usage,
+                        )
+                        yield _encode_sse_payload(completed)
+                        completed_emitted = True
+
+        # Safety net: emit completion even if upstream stream ended abruptly.
+        if not completed_emitted:
+            completed = _build_completed_event_payload(
+                response_id,
+                model,
+                created,
+                index_to_text,
+                usage,
+            )
+            yield _encode_sse_payload(completed)
+            yield b"data: [DONE]\n\n"
+
+    headers = dict(chat_response.headers)
+    headers.pop("content-length", None)
+    return StreamingResponse(
+        _iterator(),
+        media_type="text/event-stream",
+        headers=headers,
+        status_code=chat_response.status_code,
+        background=chat_response.background,
+    )
+
+
 def create_app() -> FastAPI:
     app = FastAPI(title="AI Gateway", version="0.1.0")
 
@@ -934,6 +1231,51 @@ def create_app() -> FastAPI:
             return StreamingResponse(
                 routed_iterator(), media_type="text/event-stream"
             )
+
+    @app.post(
+        "/v1/responses",
+        dependencies=[Depends(require_api_key)],
+    )
+    async def responses_endpoint(
+        request: Request,
+        client: httpx.AsyncClient = Depends(get_http_client),
+        redis=Depends(get_redis),
+        x_session_id: Optional[str] = Header(default=None, alias="X-Session-Id"),
+        raw_body: Dict[str, Any] = Body(...),
+    ):
+        """
+        OpenAI Responses API compatibility endpoint.
+
+        It adapts Responses-style payloads into OpenAI Chat Completions
+        format and reuses the same routing/streaming logic.
+        """
+        adapted_payload = _adapt_responses_payload(raw_body)
+        base_response = await chat_completions(
+            request=request,
+            client=client,
+            redis=redis,
+            x_session_id=x_session_id,
+            raw_body=adapted_payload,
+        )
+        if isinstance(base_response, StreamingResponse):
+            return _wrap_chat_stream_response(base_response)
+
+        if isinstance(base_response, JSONResponse):
+            try:
+                payload_bytes = base_response.body
+                chat_payload = json.loads(payload_bytes.decode("utf-8"))
+            except (json.JSONDecodeError, AttributeError, UnicodeDecodeError):
+                return base_response
+
+            responses_payload = _chat_to_responses_payload(chat_payload)
+            headers = dict(base_response.headers)
+            headers.pop("content-length", None)
+            return JSONResponse(
+                content=responses_payload,
+                status_code=base_response.status_code,
+                headers=headers,
+            )
+        return base_response
 
     @app.get(
         "/context/{session_id}",
