@@ -52,6 +52,14 @@ class ProviderConfig(BaseModel):
             "provider (e.g. [429, 500, 502, 503, 504] for OpenAI/Gemini/Claude)."
         ),
     )
+    static_models: Optional[List[Dict[str, Any]]] = Field(
+        default=None,
+        description=(
+            "Optional manual list of models used when the provider does not "
+            "offer a /models endpoint. Each entry should match the upstream "
+            "model metadata shape (at minimum include an 'id')."
+        ),
+    )
 
 
 class Provider(ProviderConfig):

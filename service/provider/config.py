@@ -17,8 +17,10 @@ single bad configuration does not break the entire gateway.
 
 from __future__ import annotations
 
+import json
 import os
-from typing import Dict, List, Optional
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
@@ -113,6 +115,8 @@ def _load_raw_provider_env(provider_id: str) -> Dict[str, str]:
         "COST_OUTPUT",
         "MAX_QPS",
         "RETRYABLE_STATUS_CODES",
+        "STATIC_MODELS_JSON",
+        "STATIC_MODELS_FILE",
     ]:
         env_var = _env_key(provider_id, suffix)
         value = os.getenv(env_var)
@@ -175,6 +179,89 @@ def _default_retryable_status_codes(provider_id: str) -> List[int] | None:
     """
     key = provider_id.lower()
     return _DEFAULT_RETRYABLE_STATUS_CODES_BY_PROVIDER_ID.get(key)
+
+
+def _coerce_static_models(
+    provider_id: str, payload: Any
+) -> List[Dict[str, Any]] | None:
+    """
+    Ensure that a static models payload is a list of dicts, tolerating
+    a single dict or a list of strings as shorthand.
+    """
+    if payload is None:
+        return None
+
+    entries: List[Any]
+    if isinstance(payload, list):
+        entries = payload
+    elif isinstance(payload, dict):
+        entries = [payload]
+    else:
+        logger.warning(
+            "Provider %s: STATIC_MODELS payload must be a list/dict; got %r",
+            provider_id,
+            type(payload),
+        )
+        return None
+
+    result: List[Dict[str, Any]] = []
+    for item in entries:
+        if isinstance(item, dict):
+            # Accept either "id" or "model_id" while normalising.
+            normalised = dict(item)
+            if "id" not in normalised and "model_id" in normalised:
+                normalised["id"] = normalised["model_id"]
+            result.append(normalised)
+        elif isinstance(item, str):
+            result.append({"id": item})
+        else:
+            logger.warning(
+                "Provider %s: skipping invalid STATIC_MODELS entry %r",
+                provider_id,
+                item,
+            )
+    return result or None
+
+
+def _load_static_models_from_json(
+    provider_id: str, value: str
+) -> List[Dict[str, Any]] | None:
+    try:
+        payload = json.loads(value)
+    except json.JSONDecodeError as exc:
+        logger.warning(
+            "Provider %s: invalid STATIC_MODELS_JSON payload: %s",
+            provider_id,
+            exc,
+        )
+        return None
+    return _coerce_static_models(provider_id, payload)
+
+
+def _load_static_models_from_file(
+    provider_id: str, file_path: str
+) -> List[Dict[str, Any]] | None:
+    path = Path(file_path).expanduser()
+    if not path.is_absolute():
+        path = Path.cwd() / path
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        logger.warning(
+            "Provider %s: STATIC_MODELS_FILE not found at %s",
+            provider_id,
+            path,
+        )
+        return None
+    except Exception as exc:  # pragma: no cover - defensive logging
+        logger.warning(
+            "Provider %s: failed reading STATIC_MODELS_FILE %s: %s",
+            provider_id,
+            path,
+            exc,
+        )
+        return None
+    return _load_static_models_from_json(provider_id, text)
 
 
 def _parse_provider_config(provider_id: str, raw: Dict[str, str]) -> ProviderConfig | None:
@@ -251,6 +338,18 @@ def _parse_provider_config(provider_id: str, raw: Dict[str, str]) -> ProviderCon
 
     if retryable_status_codes:
         data["retryable_status_codes"] = retryable_status_codes
+
+    static_models: List[Dict[str, Any]] | None = None
+    if "STATIC_MODELS_JSON" in raw:
+        static_models = _load_static_models_from_json(
+            provider_id, raw["STATIC_MODELS_JSON"]
+        )
+    elif "STATIC_MODELS_FILE" in raw:
+        static_models = _load_static_models_from_file(
+            provider_id, raw["STATIC_MODELS_FILE"]
+        )
+    if static_models is not None:
+        data["static_models"] = static_models
 
     try:
         return ProviderConfig(**data)

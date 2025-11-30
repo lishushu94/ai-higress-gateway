@@ -71,3 +71,41 @@ def test_get_provider_config_returns_single(monkeypatch):
     assert cfg is not None
     assert cfg.id == "openai"
     assert cfg.name == "OpenAI"
+
+
+def test_provider_config_static_models_json(monkeypatch):
+    settings.llm_providers_raw = "mock"
+    _set_provider_env(
+        monkeypatch,
+        "mock",
+        NAME="Manual Provider",
+        BASE_URL="https://api.mock.local",
+        API_KEY="sk-test",  # pragma: allowlist secret
+        STATIC_MODELS_JSON='["model-a", {"id": "model-b", "context_length": 16384}]',
+    )
+
+    cfg = get_provider_config("mock")
+    assert cfg is not None
+    assert cfg.static_models is not None
+    assert cfg.static_models[0]["id"] == "model-a"
+    assert cfg.static_models[1]["context_length"] == 16384
+
+
+def test_provider_config_static_models_file(monkeypatch, tmp_path):
+    settings.llm_providers_raw = "mock"
+    static_file = tmp_path / "models.json"
+    static_file.write_text('[{"id": "manual-1"}]', encoding="utf-8")
+
+    _set_provider_env(
+        monkeypatch,
+        "mock",
+        NAME="Manual Provider",
+        BASE_URL="https://api.mock.local",
+        API_KEY="sk-test",  # pragma: allowlist secret
+        STATIC_MODELS_FILE=str(static_file),
+    )
+
+    cfg = get_provider_config("mock")
+    assert cfg is not None
+    assert cfg.static_models is not None
+    assert cfg.static_models[0]["id"] == "manual-1"

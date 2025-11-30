@@ -25,14 +25,16 @@ class DummyRedis:
         self._data[key] = value
 
 
-def _make_provider() -> ProviderConfig:
-    return ProviderConfig(
-        id="mock",
-        name="Mock Provider",
-        base_url="https://api.mock.local",
-        api_key="sk-test",  # pragma: allowlist secret
-        models_path="/v1/models",
-    )
+def _make_provider(**overrides: Any) -> ProviderConfig:
+    data: Dict[str, Any] = {
+        "id": "mock",
+        "name": "Mock Provider",
+        "base_url": "https://api.mock.local",
+        "api_key": "sk-test",  # pragma: allowlist secret
+        "models_path": "/v1/models",
+    }
+    data.update(overrides)
+    return ProviderConfig(**data)
 
 
 @pytest.mark.asyncio
@@ -63,6 +65,27 @@ async def test_fetch_models_from_provider_normalises_payload():
 
 
 @pytest.mark.asyncio
+async def test_fetch_models_from_provider_uses_static_models():
+    provider = _make_provider(
+        static_models=[
+            {"id": "manual-1", "context_length": 1024},
+            {"id": "manual-2", "context_length": 2048},
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - should not run
+        raise AssertionError("HTTP call should be skipped when static_models is set")
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: List[Model] = await fetch_models_from_provider(client, provider)
+
+    assert [m.model_id for m in models] == ["manual-1", "manual-2"]
+    assert [m.context_length for m in models] == [1024, 2048]
+
+
+@pytest.mark.asyncio
 async def test_ensure_provider_models_cached_uses_redis_cache():
     provider = _make_provider()
     redis = DummyRedis()
@@ -88,4 +111,3 @@ async def test_ensure_provider_models_cached_uses_redis_cache():
     assert models_first == models_second
     assert len(models_first) == 1
     assert models_first[0]["model_id"] == "m1"
-

@@ -243,6 +243,23 @@ def _prepare_basic_app(monkeypatch):
     return app
 
 
+def test_models_v1_alias(monkeypatch):
+    """
+    /v1/models 应该作为 /models 的别名返回相同结构。
+    """
+    app = _prepare_basic_app(monkeypatch)
+
+    with TestClient(app=app, base_url="http://test") as client:
+        headers = {
+            "Authorization": "Bearer dGltZWxpbmU=",
+        }
+        resp = client.get("/v1/models", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert isinstance(data.get("data"), list) and data["data"]
+        assert any(item.get("id") == "test-model" for item in data["data"])
+
+
 def test_chat_greeting_returns_reply(monkeypatch):
     """
     发起一个问候，看是否能拿到正确的回复结构。

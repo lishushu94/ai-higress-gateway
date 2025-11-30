@@ -771,6 +771,20 @@ def create_app() -> FastAPI:
         models_response = await _get_or_fetch_models(client, redis)
         return models_response
 
+    @app.get(
+        "/v1/models",
+        response_model=ModelsResponse,
+        dependencies=[Depends(require_api_key)],
+    )
+    async def list_models_v1(
+        client: httpx.AsyncClient = Depends(get_http_client),
+        redis=Depends(get_redis),
+    ) -> ModelsResponse:
+        """
+        向后兼容的别名：某些 SDK 默认请求 /v1/models。
+        """
+        return await list_models(client=client, redis=redis)
+
     @app.post(
         "/v1/chat/completions",
         dependencies=[Depends(require_api_key)],

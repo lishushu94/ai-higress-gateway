@@ -105,23 +105,33 @@ async def fetch_models_from_provider(
     """
     Call a provider's models endpoint and normalise the response.
     """
-    base = str(provider.base_url).rstrip("/")
-    path = provider.models_path or "/v1/models"
-    url = f"{base}/{path.lstrip('/')}"
+    payload: Any
 
-    headers: Dict[str, str] = {
-        "Authorization": f"Bearer {provider.api_key}",
-        "Accept": "application/json",
-    }
-    if provider.custom_headers:
-        headers.update(provider.custom_headers)
+    if provider.static_models is not None:
+        payload = provider.static_models
+        logger.info(
+            "Using %d static models for provider %s",
+            len(provider.static_models),
+            provider.id,
+        )
+    else:
+        base = str(provider.base_url).rstrip("/")
+        path = provider.models_path or "/v1/models"
+        url = f"{base}/{path.lstrip('/')}"
 
-    logger.info("Fetching models from provider %s at %s", provider.id, url)
+        headers: Dict[str, str] = {
+            "Authorization": f"Bearer {provider.api_key}",
+            "Accept": "application/json",
+        }
+        if provider.custom_headers:
+            headers.update(provider.custom_headers)
 
-    resp = await client.get(url, headers=headers)
-    resp.raise_for_status()
+        logger.info("Fetching models from provider %s at %s", provider.id, url)
 
-    payload = resp.json()
+        resp = await client.get(url, headers=headers)
+        resp.raise_for_status()
+
+        payload = resp.json()
 
     raw_models: List[Dict[str, Any]] = []
     if isinstance(payload, dict) and "data" in payload and isinstance(
