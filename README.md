@@ -50,7 +50,7 @@ APIProxy is a FastAPI-based AI gateway that exposes a single, OpenAI-compatible 
 
 ---
 
-## Quick Start
+## 🚀 Quick Start
 
 Docker is the easiest way to run APIProxy locally or in production.
 
@@ -65,7 +65,7 @@ Docker is the easiest way to run APIProxy locally or in production.
 1. Clone the repo:
 
    ```bash
-   git clone <https://github.com/MarshallEriksen-shaomingyang/ai-higress.git>
+   git clone https://github.com/MarshallEriksen-shaomingyang/ai-higress.git
    cd APIProxy
    ```
 
@@ -75,20 +75,48 @@ Docker is the easiest way to run APIProxy locally or in production.
    cp .env.example .env
    ```
 
-   - Set `REDIS_URL` to point to your Redis instance;  
-   - Configure `APIPROXY_AUTH_TOKEN` as the gateway API token (clients must send its Base64-encoded form in `Authorization` headers; use `uv run scripts/encode_token.py <token>` to generate the encoded value);  
-   - Configure `LLM_PROVIDERS` and `LLM_PROVIDER_{id}_*` for each provider;  
-   - Optionally configure cross-provider failover per provider:
+3. Edit `.env` with your configuration:
 
-     ```env
-     LLM_PROVIDER_openai_RETRYABLE_STATUS_CODES=429,500,502-504
-     LLM_PROVIDER_gemini_RETRYABLE_STATUS_CODES=429,500,502,503,504
-     LLM_PROVIDER_claude_RETRYABLE_STATUS_CODES=429,500,502,503,504
-     ```
+   ```env
+   # Redis URL (use default if using docker-compose)
+   REDIS_URL=redis://redis:6379/0
 
-     See `docs/configuration.md` for a full description.
+   # ⚠️ IMPORTANT: Set your auth token
+   APIPROXY_AUTH_TOKEN=timeline
 
-3. Start the stack:
+   # Add your AI providers
+   LLM_PROVIDERS=openai,gemini,claude
+
+   # OpenAI configuration
+   LLM_PROVIDER_openai_NAME=OpenAI
+   LLM_PROVIDER_openai_BASE_URL=https://api.openai.com/v1
+   LLM_PROVIDER_openai_API_KEY=your-openai-api-key
+
+   # Gemini configuration
+   LLM_PROVIDER_gemini_NAME=Gemini
+   LLM_PROVIDER_gemini_BASE_URL=https://generativelanguage.googleapis.com/v1
+   LLM_PROVIDER_gemini_API_KEY=your-gemini-api-key
+
+   # Claude configuration
+   LLM_PROVIDER_claude_NAME=Claude
+   LLM_PROVIDER_claude_BASE_URL=https://api.anthropic.com
+   LLM_PROVIDER_claude_API_KEY=your-claude-api-key
+   ```
+
+4. 🔑 Generate your API key (IMPORTANT!):
+
+   ```bash
+   uv run scripts/encode_token.py timeline
+   ```
+
+   This will output something like:
+   ```
+   dGltZWxpbmU=  # This is your encoded token
+   ```
+
+   **Save this encoded token** - you'll need it for API calls!
+
+5. Start the stack:
 
    ```bash
    docker-compose up -d
@@ -96,13 +124,25 @@ Docker is the easiest way to run APIProxy locally or in production.
 
    The API will be available at `http://localhost:8000`.
 
-4. Tail logs (optional):
+6. Test it with a curl command:
+
+   ```bash
+   curl -X POST "http://localhost:8000/v1/chat/completions" \
+     -H "Authorization: Bearer dGltZWxpbmU=" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "model": "gpt-3.5-turbo",
+       "messages": [{"role": "user", "content": "Hello!"}]
+     }'
+   ```
+
+7. Tail logs (optional):
 
    ```bash
    docker-compose logs -f api
    ```
 
-5. Stop the stack:
+8. Stop the stack:
 
    ```bash
    docker-compose down

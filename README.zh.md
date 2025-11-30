@@ -34,7 +34,7 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
 
 ---
 
-## 快速开始
+## 🚀 快速开始
 
 推荐优先使用 Docker 进行部署，保证本地与服务器环境一致。
 
@@ -48,7 +48,7 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
 1. 克隆项目：
 
    ```bash
-   git clone <https://github.com/MarshallEriksen-shaomingyang/ai-higress.git>
+   git clone https://github.com/MarshallEriksen-shaomingyang/ai-higress.git
    cd APIProxy
    ```
 
@@ -58,34 +58,74 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
    cp .env.example .env
    ```
 
-   - 配置 `REDIS_URL` 指向你的 Redis；
-   - 配置 `APIPROXY_AUTH_TOKEN` 作为外部调用本网关的 API token（可用 `uv run scripts/encode_token.py <token>` 生成 Base64；客户端需要携带其 Base64 编码）；
-   - 通过 `LLM_PROVIDERS` 与 `LLM_PROVIDER_{id}_*` 配置各个提供商；
-   - 若需要自定义跨厂商故障转移行为，可为每个提供商设置：
+3. 编辑 `.env` 配置文件：
 
-     ```env
-     LLM_PROVIDER_openai_RETRYABLE_STATUS_CODES=429,500,502-504
-     LLM_PROVIDER_gemini_RETRYABLE_STATUS_CODES=429,500,502,503,504
-     LLM_PROVIDER_claude_RETRYABLE_STATUS_CODES=429,500,502,503,504
-     ```
+   ```env
+   # Redis地址（使用docker-compose启动时可用默认值）
+   REDIS_URL=redis://redis:6379/0
 
-     详细说明见 `docs/configuration.md`。
+   # ⚠️ 重要：设置你的认证token
+   APIPROXY_AUTH_TOKEN=timeline
 
-3. 启动服务：
+   # 添加你想用的AI服务提供商
+   LLM_PROVIDERS=openai,gemini,claude
+
+   # OpenAI配置
+   LLM_PROVIDER_openai_NAME=OpenAI
+   LLM_PROVIDER_openai_BASE_URL=https://api.openai.com/v1
+   LLM_PROVIDER_openai_API_KEY=你的OpenAI密钥
+
+   # Gemini配置
+   LLM_PROVIDER_gemini_NAME=Gemini
+   LLM_PROVIDER_gemini_BASE_URL=https://generativelanguage.googleapis.com/v1
+   LLM_PROVIDER_gemini_API_KEY=你的Gemini密钥
+
+   # Claude配置
+   LLM_PROVIDER_claude_NAME=Claude
+   LLM_PROVIDER_claude_BASE_URL=https://api.anthropic.com
+   LLM_PROVIDER_claude_API_KEY=你的Claude密钥
+   ```
+
+4. 🔑 生成API密钥（非常重要！）：
+
+   ```bash
+   uv run scripts/encode_token.py timeline
+   ```
+
+   会输出类似这样的内容：
+   ```
+   dGltZWxpbmU=  # 这就是你的加密token
+   ```
+
+   **保存这个加密后的token** - 调用API时需要用到！
+
+5. 启动服务：
 
    ```bash
    docker-compose up -d
    ```
 
-   默认监听在 `http://localhost:8000`。
+   服务将在 `http://localhost:8000` 上启动。
 
-4. 查看日志（可选）：
+6. 使用curl测试：
+
+   ```bash
+   curl -X POST "http://localhost:8000/v1/chat/completions" \
+     -H "Authorization: Bearer dGltZWxpbmU=" \
+     -H "Content-Type: application/json" \
+     -d '{
+       "model": "gpt-3.5-turbo",
+       "messages": [{"role": "user", "content": "你好！"}]
+     }'
+   ```
+
+7. 查看日志（可选）：
 
    ```bash
    docker-compose logs -f api
    ```
 
-5. 停止服务：
+8. 停止服务：
 
    ```bash
    docker-compose down
