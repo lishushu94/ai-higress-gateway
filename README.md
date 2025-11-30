@@ -289,8 +289,6 @@ Or run a specific file:
 pytest tests/test_chat_greeting.py
 ```
 
-Note: by repository convention, AI agents (Codex/LLM helpers) do not run tests themselves; human developers should run the commands above and confirm the results.
-
 ---
 
 ## Contributing

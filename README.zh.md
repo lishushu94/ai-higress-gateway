@@ -259,8 +259,6 @@ pytest
 pytest tests/test_chat_greeting.py
 ```
 
-（按照仓库约定，AI Agent 不会自动运行测试，而是由开发者手动执行。）
-
 ---
 
 ## 贡献
