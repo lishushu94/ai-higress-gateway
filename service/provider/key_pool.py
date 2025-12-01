@@ -5,6 +5,8 @@ Weighted API key selection and backoff for providers with multiple keys.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import random
 import time
 from dataclasses import dataclass
@@ -14,6 +16,7 @@ from redis.asyncio import Redis
 
 from service.logging_config import logger
 from service.models import ProviderAPIKey, ProviderConfig
+from service.settings import settings
 
 
 @dataclass
@@ -43,6 +46,15 @@ class NoAvailableProviderKey(Exception):
 
 _KEY_STATES: Dict[str, Dict[str, ProviderKeyState]] = {}
 _LOCKS: Dict[str, asyncio.Lock] = {}
+_PREFERENCE_BASE = 1.0
+_PREFERENCE_MIN = 0.1
+_PREFERENCE_MAX = 10.0
+_PREFERENCE_SUCCESS_DELTA = 0.5
+_PREFERENCE_RETRYABLE_FAILURE_DELTA = -1.0
+_PREFERENCE_FATAL_FAILURE_DELTA = -2.0
+_PREFERENCE_AUTH_FAILURE_DELTA = -3.0
+_PREFERENCE_GROUP_TOLERANCE = 0.05
+_PREFERENCE_KEY_PREFIX = "provider:{provider_id}:key_scores"
 
 
 def _get_lock(provider_id: str) -> asyncio.Lock:
@@ -56,6 +68,16 @@ def _mask_label(raw_key: str, explicit: Optional[str], idx: int) -> str:
         return explicit
     tail = raw_key[-4:] if raw_key else "xxxx"
     return f"key{idx + 1}-***{tail}"
+
+
+def _preference_redis_key(provider_id: str) -> str:
+    return _PREFERENCE_KEY_PREFIX.format(provider_id=provider_id)
+
+
+def _hash_provider_key(provider_id: str, raw_key: str) -> str:
+    secret = settings.secret_key.encode("utf-8")
+    msg = f"{provider_id}:{raw_key}".encode("utf-8")
+    return hmac.new(secret, msg, hashlib.sha256).hexdigest()
 
 
 def _ensure_states(provider: ProviderConfig) -> List[ProviderKeyState]:
@@ -105,6 +127,57 @@ async def _reserve_qps(redis: Optional[Redis], provider_id: str, state: Provider
     return True
 
 
+async def _load_preference_scores(
+    redis: Optional[Redis], provider_id: str, states: List[ProviderKeyState]
+) -> Dict[str, float]:
+    """
+    Fetch or initialise preference scores for candidate keys.
+    Redis 中仅存储 HMAC 哈希，不存明文。
+    """
+    if redis is None:
+        return {}
+
+    zset_key = _preference_redis_key(provider_id)
+    scores: Dict[str, float] = {}
+    for state in states:
+        member = _hash_provider_key(provider_id, state.key)
+        try:
+            await redis.zadd(zset_key, {member: _PREFERENCE_BASE}, nx=True)
+            score = await redis.zscore(zset_key, member)
+        except Exception as exc:  # pragma: no cover - 防止偏好存取影响主流程
+            logger.debug(
+                "provider=%s preference score lookup failed: %s", provider_id, exc
+            )
+            return {}
+        if score is not None:
+            scores[member] = float(score)
+    return scores
+
+
+async def _adjust_preference_score(
+    redis: Optional[Redis], selection: "SelectedProviderKey", delta: float
+) -> None:
+    """
+    调整 Redis 中的优选分，使用哈希存储，不写入明文。
+    """
+    if redis is None:
+        return
+    member = _hash_provider_key(selection.provider_id, selection.state.key)
+    zset_key = _preference_redis_key(selection.provider_id)
+    try:
+        await redis.zadd(zset_key, {member: _PREFERENCE_BASE}, nx=True)
+        new_score = await redis.zincrby(zset_key, delta, member)
+        clamped = min(max(new_score, _PREFERENCE_MIN), _PREFERENCE_MAX)
+        if clamped != new_score:
+            await redis.zadd(zset_key, {member: clamped})
+    except Exception as exc:  # pragma: no cover - 不影响主流程
+        logger.debug(
+            "provider=%s preference score update skipped: %s",
+            selection.provider_id,
+            exc,
+        )
+
+
 async def acquire_provider_key(
     provider: ProviderConfig, redis: Optional[Redis] = None
 ) -> SelectedProviderKey:
@@ -121,28 +194,61 @@ async def acquire_provider_key(
                 f"No available keys for provider {provider.id} (all in backoff)"
             )
 
-        working_set = list(candidates)
-        while working_set:
-            weights = [max(s.weight, 0.0001) for s in working_set]
-            state = random.choices(working_set, weights=weights, k=1)[0]
+        preference_scores = await _load_preference_scores(redis, provider.id, candidates)
+        scored_candidates = sorted(
+            [
+                (
+                    preference_scores.get(
+                        _hash_provider_key(provider.id, state.key), _PREFERENCE_BASE
+                    ),
+                    state,
+                )
+                for state in candidates
+            ],
+            key=lambda item: item[0],
+            reverse=True,
+        )
 
-            if not await _reserve_qps(redis, provider.id, state):
-                working_set.remove(state)
-                continue
+        idx = 0
+        while idx < len(scored_candidates):
+            current_score = scored_candidates[idx][0]
+            same_score_states: List[ProviderKeyState] = []
+            while (
+                idx < len(scored_candidates)
+                and scored_candidates[idx][0]
+                >= current_score - _PREFERENCE_GROUP_TOLERANCE
+            ):
+                same_score_states.append(scored_candidates[idx][1])
+                idx += 1
 
-            state.last_used_at = now
-            return SelectedProviderKey(
-                provider_id=provider.id, key=state.key, label=state.label, state=state
-            )
+            working_set = list(same_score_states)
+            while working_set:
+                weights = [max(s.weight, 0.0001) for s in working_set]
+                state = random.choices(working_set, weights=weights, k=1)[0]
+
+                if not await _reserve_qps(redis, provider.id, state):
+                    working_set.remove(state)
+                    continue
+
+                state.last_used_at = now
+                return SelectedProviderKey(
+                    provider_id=provider.id, key=state.key, label=state.label, state=state
+                )
 
     raise NoAvailableProviderKey(
         f"No available keys for provider {provider.id} (rate limited)"
     )
 
 
-def record_key_success(selection: SelectedProviderKey) -> None:
+def record_key_success(
+    selection: SelectedProviderKey, *, redis: Optional[Redis] = None
+) -> None:
     selection.state.fail_count = 0
     selection.state.backoff_until = 0.0
+    if redis is not None:
+        asyncio.create_task(
+            _adjust_preference_score(redis, selection, _PREFERENCE_SUCCESS_DELTA)
+        )
 
 
 def record_key_failure(
@@ -150,6 +256,7 @@ def record_key_failure(
     *,
     retryable: bool = True,
     status_code: Optional[int] = None,
+    redis: Optional[Redis] = None,
 ) -> None:
     """
     Increase backoff for a key after an upstream failure.
@@ -157,8 +264,10 @@ def record_key_failure(
     selection.state.fail_count += 1
     base = 1.0 if retryable else 5.0
     backoff_seconds = base * (2 ** min(selection.state.fail_count, 5))
+    delta = _PREFERENCE_RETRYABLE_FAILURE_DELTA if retryable else _PREFERENCE_FATAL_DELTA
     if status_code in (401, 403):
         backoff_seconds = max(backoff_seconds, 30.0)
+        delta = min(delta, _PREFERENCE_AUTH_FAILURE_DELTA)
     selection.state.backoff_until = time.time() + min(backoff_seconds, 60.0)
     logger.warning(
         "provider=%s key=%s enter backoff for %.1fs (status=%s retryable=%s)",
@@ -168,6 +277,10 @@ def record_key_failure(
         status_code,
         retryable,
     )
+    if redis is not None:
+        asyncio.create_task(
+            _adjust_preference_score(redis, selection, delta),
+        )
 
 
 def reset_key_pool(provider_id: Optional[str] = None) -> None:

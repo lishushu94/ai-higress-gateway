@@ -120,8 +120,19 @@ APIProxy provides a robust and flexible solution for managing AI model interacti
    # Claude configuration
    LLM_PROVIDER_claude_NAME=Claude
    LLM_PROVIDER_claude_BASE_URL=https://api.anthropic.com
+   LLM_PROVIDER_claude_TRANSPORT=sdk
    LLM_PROVIDER_claude_API_KEY=your-claude-api-key
    ```
+
+   With `TRANSPORT=sdk`, APIProxy auto-detects the vendor (openai / google-genai / anthropic) and calls the official SDK without appending `/v1/...`.
+
+   Generate and set `SECRET_KEY` (used to HMAC/encrypt sensitive identifiers; no plaintext keys are stored):
+
+   ```bash
+   bash scripts/generate_secret_key.sh
+   ```
+
+   Put the generated random string into `.env` as `SECRET_KEY`.
 
 4. 🔑 Generate your API key (IMPORTANT!):
 
@@ -188,6 +199,7 @@ APIProxy provides a robust and flexible solution for managing AI model interacti
 
    - Point `REDIS_URL` at your local Redis;  
    - Configure `APIPROXY_AUTH_TOKEN` as the gateway API token (clients must send its Base64-encoded form; generate it via `uv run scripts/encode_token.py <token>`);  
+   - Configure `SECRET_KEY` for hashing/encrypting sensitive identifiers (run `bash scripts/generate_secret_key.sh` to get a random value);  
    - Set up `LLM_PROVIDERS` and `LLM_PROVIDER_{id}_*`;  
    - Optionally override retryable status codes per provider with `LLM_PROVIDER_{id}_RETRYABLE_STATUS_CODES`.
 
@@ -223,7 +235,7 @@ Common settings:
 | `LLM_PROVIDERS`                    | Comma-separated provider ids, e.g. `openai,gemini,claude`                                           | `None`                      |
 | `LLM_PROVIDER_{id}_NAME`           | Human-readable provider name                                                                        | required                    |
 | `LLM_PROVIDER_{id}_BASE_URL`       | Provider API base URL                                                                               | required                    |
-| `LLM_PROVIDER_{id}_TRANSPORT`      | `http` (default) to proxy via HTTP; `sdk` to call provider-native SDK (e.g. google-genai) without adding `/v1/...` | `http`                      |
+| `LLM_PROVIDER_{id}_TRANSPORT`      | `http` (default) to proxy via HTTP; `sdk` to call provider-native SDK (google-genai / openai / anthropic) without adding `/v1/...` | `http`                      |
 | `LLM_PROVIDER_{id}_API_KEY`        | API key / token for this provider (single-key legacy field)                                         | required if not using multi-key |
 | `LLM_PROVIDER_{id}_API_KEYS`       | Comma-separated multi-key shorthand (equal weights), e.g. `k1,k2,k3`                                | optional                    |
 | `LLM_PROVIDER_{id}_API_KEYS_JSON`  | Multi-key JSON array with `key`, optional `weight`, `max_qps`, `label`                              | optional                    |

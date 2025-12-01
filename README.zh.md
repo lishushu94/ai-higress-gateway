@@ -119,8 +119,19 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
    # Claude配置
    LLM_PROVIDER_claude_NAME=Claude
    LLM_PROVIDER_claude_BASE_URL=https://api.anthropic.com
+   LLM_PROVIDER_claude_TRANSPORT=sdk
    LLM_PROVIDER_claude_API_KEY=你的Claude密钥
    ```
+
+   当 `TRANSPORT=sdk` 时，网关会自动识别厂商（openai / google-genai / anthropic），直接调用官方 SDK，而不会自动拼接 `/v1/...` 路径。
+
+   生成并填入 `SECRET_KEY`（用于对敏感标识做 HMAC / 加密，不会存明文）：
+
+   ```bash
+   bash scripts/generate_secret_key.sh
+   ```
+
+   将输出的随机字符串填入 `.env` 中的 `SECRET_KEY`。
 
 4. 🔑 生成API密钥（非常重要！）：
 
@@ -187,6 +198,7 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
 
    - 将 `REDIS_URL` 指向本地 Redis；
    - 配置 `APIPROXY_AUTH_TOKEN` 作为外部调用本网关的 API token（可用 `uv run scripts/encode_token.py <token>` 生成 Base64；客户端需要携带其 Base64 编码）；
+   - 配置 `SECRET_KEY` 作为敏感标识加密/哈希用的密钥，可运行 `bash scripts/generate_secret_key.sh` 获取随机值；
    - 配置 `LLM_PROVIDERS` 与 `LLM_PROVIDER_{id}_*`；
    - 如需自定义重试状态码，设置 `LLM_PROVIDER_{id}_RETRYABLE_STATUS_CODES`。
 
@@ -222,7 +234,7 @@ APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上�
 | `LLM_PROVIDERS`                 | 逗号分隔的提供商 ID 列表，例如 `openai,gemini,claude`               | `None`                    |
 | `LLM_PROVIDER_{id}_NAME`        | 提供商显示名称                                                       | 必填                      |
 | `LLM_PROVIDER_{id}_BASE_URL`    | 提供商 API 基础地址                                                 | 必填                      |
-| `LLM_PROVIDER_{id}_TRANSPORT`   | `http`（默认）通过 HTTP 代理；`sdk` 直接调用官方 SDK（不会自动加 `/v1/...`，如 google-genai） | `http`                    |
+| `LLM_PROVIDER_{id}_TRANSPORT`   | `http`（默认）通过 HTTP 代理；`sdk` 直接调用官方 SDK（不会自动加 `/v1/...`，目前支持 google-genai / openai / anthropic） | `http`                    |
 | `LLM_PROVIDER_{id}_API_KEY`     | 访问该提供商的密钥或 token（单 key 兼容字段）                       | 必填（未用多 key 时）     |
 | `LLM_PROVIDER_{id}_API_KEYS`    | 多 key 简写，逗号分隔，如 `k1,k2,k3`，默认等权轮询                   | 可选                      |
 | `LLM_PROVIDER_{id}_API_KEYS_JSON` | 多 key 详细配置，JSON 数组，每项可设置 `weight`、`max_qps`、`label` | 可选                      |

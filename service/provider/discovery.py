@@ -28,7 +28,7 @@ from service.provider.key_pool import (
     record_key_failure,
     record_key_success,
 )
-from service.provider.google_sdk import GoogleSDKError, list_models
+from service.provider.sdk_selector import get_sdk_driver, normalize_base_url
 from service.storage.redis_service import get_provider_models_json, set_provider_models
 
 
@@ -148,29 +148,43 @@ async def fetch_models_from_provider(
     key_selection = None
 
     if provider.transport == "sdk":
-        try:
-            key_selection = await acquire_provider_key(provider, redis)
-        except NoAvailableProviderKey as exc:
-            raise httpx.HTTPError(str(exc))
-        try:
-            payload = await list_models(
-                api_key=key_selection.key, base_url=str(provider.base_url)
+        driver = get_sdk_driver(provider)
+        if driver is None:
+            logger.error(
+                "Provider %s: transport=sdk 但未识别的 SDK 厂商，跳过远端发现",
+                provider.id,
             )
-        except GoogleSDKError as exc:
-            if key_selection:
-                record_key_failure(key_selection, retryable=True, status_code=None)
-            if provider.static_models is not None:
-                payload = _fallback_to_static_models(provider, exc)
-            else:
-                logger.error(
-                    "Provider %s: models endpoint failed and no static models configured (%s)",
-                    provider.id,
-                    exc,
-                )
-                return []
+            payload = _fallback_to_static_models(
+                provider,
+                ValueError(f"Unsupported SDK provider for {provider.id}"),
+            )
         else:
-            if key_selection:
-                record_key_success(key_selection)
+            try:
+                key_selection = await acquire_provider_key(provider, redis)
+            except NoAvailableProviderKey as exc:
+                raise httpx.HTTPError(str(exc))
+            try:
+                payload = await driver.list_models(
+                    api_key=key_selection.key,
+                    base_url=normalize_base_url(provider.base_url),
+                )
+            except driver.error_types as exc:
+                if key_selection:
+                    record_key_failure(
+                        key_selection, retryable=True, status_code=None, redis=redis
+                    )
+                if provider.static_models is not None:
+                    payload = _fallback_to_static_models(provider, exc)
+                else:
+                    logger.error(
+                        "Provider %s: models endpoint failed and no static models configured (%s)",
+                        provider.id,
+                        exc,
+                    )
+                    return []
+            else:
+                if key_selection:
+                    record_key_success(key_selection, redis=redis)
     elif provider.static_models is not None:
         payload = provider.static_models
         logger.info(
@@ -206,11 +220,14 @@ async def fetch_models_from_provider(
                     key_selection,
                     retryable=True,
                     status_code=getattr(exc.response, "status_code", None),
+                    redis=redis,
                 )
             payload = _fallback_to_static_models(provider, exc)
         except httpx.HTTPError as exc:
             if key_selection:
-                record_key_failure(key_selection, retryable=True, status_code=None)
+                record_key_failure(
+                    key_selection, retryable=True, status_code=None, redis=redis
+                )
             payload = _fallback_to_static_models(provider, exc)
         else:
             try:
@@ -221,11 +238,12 @@ async def fetch_models_from_provider(
                         key_selection,
                         retryable=False,
                         status_code=getattr(resp, "status_code", None),
+                        redis=redis,
                     )
                 payload = _fallback_to_static_models(provider, exc)
             else:
                 if key_selection:
-                    record_key_success(key_selection)
+                    record_key_success(key_selection, redis=redis)
 
     raw_models: List[Dict[str, Any]] = []
     if isinstance(payload, dict) and "data" in payload and isinstance(

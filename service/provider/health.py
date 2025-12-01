@@ -93,7 +93,9 @@ async def check_provider_health(
         if status_code >= 500:
             status = ProviderStatus.DOWN
             error_message = f"HTTP {status_code}"
-            record_key_failure(selection, retryable=True, status_code=status_code)
+            record_key_failure(
+                selection, retryable=True, status_code=status_code, redis=redis
+            )
         elif status_code >= 400:
             status = ProviderStatus.DEGRADED
             error_message = f"HTTP {status_code}"
@@ -101,15 +103,16 @@ async def check_provider_health(
                 selection,
                 retryable=status_code >= 429,
                 status_code=status_code,
+                redis=redis,
             )
         else:
             last_success = time.time()
-            record_key_success(selection)
+            record_key_success(selection, redis=redis)
     except httpx.HTTPError as exc:
         duration_ms = (time.perf_counter() - start) * 1000.0
         status = ProviderStatus.DOWN
         error_message = str(exc)
-        record_key_failure(selection, retryable=True, status_code=None)
+        record_key_failure(selection, retryable=True, status_code=None, redis=redis)
 
     return HealthStatus(
         provider_id=provider.id,

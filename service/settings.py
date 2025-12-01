@@ -82,6 +82,13 @@ class Settings(BaseSettings):
         description="Expected token after base64 decoding the Authorization header",
     )
 
+    # Secret key for hashing/encrypting sensitive data (e.g. key preference hash).
+    secret_key: str = Field(
+        "please-change-me",
+        alias="SECRET_KEY",
+        description="Secret key used to derive hashed identifiers for API keys; please override in production",
+    )
+
     def get_llm_provider_ids(self) -> List[str]:
         """
         Return configured provider ids from LLM_PROVIDERS.

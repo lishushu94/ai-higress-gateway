@@ -530,6 +530,9 @@ def _prepare_basic_app(monkeypatch):
     monkeypatch.setattr(
         "service.provider.config.get_provider_config", _get_provider_config
     )
+    # 让 routes 层使用同样的配置桩，避免使用真实环境变量。
+    monkeypatch.setattr("service.routes.load_provider_configs", _load_provider_configs)
+    monkeypatch.setattr("service.routes.get_provider_config", _get_provider_config)
 
     # Seed logical model into fake Redis.
     fake_redis._data.clear()
@@ -544,7 +547,15 @@ def _prepare_basic_app(monkeypatch):
     return app
 
 
-def _prepare_sdk_app(monkeypatch, model_id: str = "sdk-gemini"):
+def _prepare_sdk_app(
+    monkeypatch,
+    model_id: str = "sdk-gemini",
+    *,
+    provider_id: str = "google-sdk",
+    provider_name: str = "Google SDK",
+    base_url: str = "https://generativelanguage.googleapis.com",
+    api_key: str = "sk-google",
+):
     """
     Prepare an app wired with a single SDK-transport provider.
     """
@@ -555,10 +566,10 @@ def _prepare_sdk_app(monkeypatch, model_id: str = "sdk-gemini"):
     monkeypatch.setattr(settings, "mask_referer", None, raising=False)
 
     cfg = ProviderConfig(
-        id="google-sdk",
-        name="Google SDK",
-        base_url="https://generativelanguage.googleapis.com",
-        api_key="sk-google",  # pragma: allowlist secret
+        id=provider_id,
+        name=provider_name,
+        base_url=base_url,
+        api_key=api_key,  # pragma: allowlist secret
         transport="sdk",
     )
 
@@ -566,7 +577,7 @@ def _prepare_sdk_app(monkeypatch, model_id: str = "sdk-gemini"):
         return [cfg]
 
     def _get_provider_config(provider_id: str):
-        if provider_id == "google-sdk":
+        if provider_id == cfg.id:
             return cfg
         return None
 
@@ -576,6 +587,9 @@ def _prepare_sdk_app(monkeypatch, model_id: str = "sdk-gemini"):
     monkeypatch.setattr(
         "service.provider.config.get_provider_config", _get_provider_config
     )
+    # 让路由层也使用相同桩，避免读取真实环境里的其它厂商。
+    monkeypatch.setattr("service.routes.load_provider_configs", _load_provider_configs)
+    monkeypatch.setattr("service.routes.get_provider_config", _get_provider_config)
 
     fake_redis._data.clear()
     logical = LogicalModel(
@@ -585,9 +599,9 @@ def _prepare_sdk_app(monkeypatch, model_id: str = "sdk-gemini"):
         capabilities=[ModelCapability.CHAT],
         upstreams=[
             PhysicalModel(
-                provider_id="google-sdk",
+                provider_id=provider_id,
                 model_id=model_id,
-                endpoint="https://google-sdk.local/v1/chat/completions",
+                endpoint=f"https://{provider_id}.local/v1/chat/completions",
                 base_weight=1.0,
                 region=None,
                 max_qps=50,
@@ -1333,3 +1347,294 @@ def test_sdk_transport_streaming(monkeypatch):
             assert "SDK 流片段" in body
             assert "data: [DONE]" in body
         assert calls.get("stream") == 1
+
+
+def test_openai_sdk_transport_non_stream(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="gpt-sdk-model",
+        provider_id="openai-sdk",
+        provider_name="OpenAI SDK",
+        base_url="https://api.openai.com",
+        api_key="sk-openai",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_generate_content(api_key, model_id, payload, base_url):
+        calls["generate"] = calls.get("generate", 0) + 1
+        assert api_key == "sk-openai"  # pragma: allowlist secret
+        assert model_id == "gpt-sdk-model"
+        assert base_url == "https://api.openai.com"
+        return {
+            "id": "oai-response",
+            "object": "chat.completion",
+            "model": model_id,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "OpenAI SDK 回复"},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+
+    async def _fake_stream_content(**kwargs):
+        calls["stream"] = calls.get("stream", 0) + 1
+        yield {}
+
+    monkeypatch.setattr(
+        "service.provider.openai_sdk.generate_content", _fake_generate_content
+    )
+    monkeypatch.setattr(
+        "service.provider.openai_sdk.stream_content", _fake_stream_content
+    )
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "gpt-sdk-model",
+            "messages": [{"role": "user", "content": "你好，OpenAI SDK"}],
+            "stream": False,
+        }
+        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+
+        resp = client.post("/v1/chat/completions", json=payload, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("object") == "chat.completion"
+        assert data["choices"][0]["message"]["content"].startswith("OpenAI SDK 回复")
+        assert calls.get("generate") == 1
+        assert calls.get("stream", 0) == 0
+
+
+def test_openai_sdk_transport_streaming(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="gpt-sdk-stream",
+        provider_id="openai-sdk",
+        provider_name="OpenAI SDK",
+        base_url="https://api.openai.com",
+        api_key="sk-openai",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_generate_content(**kwargs):
+        calls["generate"] = calls.get("generate", 0) + 1
+        return {}
+
+    async def _fake_stream_content(api_key, model_id, payload, base_url):
+        calls["stream"] = calls.get("stream", 0) + 1
+        assert api_key == "sk-openai"  # pragma: allowlist secret
+        assert model_id == "gpt-sdk-stream"
+        assert base_url == "https://api.openai.com"
+        yield {
+            "id": "chunk-1",
+            "object": "chat.completion.chunk",
+            "choices": [
+                {"index": 0, "delta": {"content": "OpenAI 流片段"}, "finish_reason": None}
+            ],
+        }
+        yield {
+            "id": "chunk-1",
+            "object": "chat.completion.chunk",
+            "choices": [
+                {"index": 0, "delta": {}, "finish_reason": "stop"},
+            ],
+        }
+
+    monkeypatch.setattr(
+        "service.provider.openai_sdk.generate_content", _fake_generate_content
+    )
+    monkeypatch.setattr(
+        "service.provider.openai_sdk.stream_content", _fake_stream_content
+    )
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "gpt-sdk-stream",
+            "messages": [{"role": "user", "content": "流式 OpenAI SDK"}],
+            "stream": True,
+        }
+        headers = {
+            "Authorization": "Bearer dGltZWxpbmU=",
+            "Accept": "text/event-stream",
+        }
+
+        with client.stream(
+            "POST", "/v1/chat/completions", json=payload, headers=headers
+        ) as resp:
+            assert resp.status_code == 200
+            body = b"".join(resp.iter_bytes()).decode("utf-8")
+            assert "OpenAI 流片段" in body
+            assert "data: [DONE]" in body
+        assert calls.get("stream") == 1
+
+
+def test_openai_sdk_models_list(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="gpt-sdk-model",
+        provider_id="openai-sdk",
+        provider_name="OpenAI SDK",
+        base_url="https://api.openai.com",
+        api_key="sk-openai",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_list_models(api_key, base_url):
+        calls["list"] = calls.get("list", 0) + 1
+        assert api_key == "sk-openai"  # pragma: allowlist secret
+        assert base_url == "https://api.openai.com"
+        return [{"id": "gpt-sdk-model"}]
+
+    monkeypatch.setattr(
+        "service.provider.openai_sdk.list_models", _fake_list_models
+    )
+
+    with TestClient(app=app, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        resp = client.get("/v1/models", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert any(item.get("id") == "gpt-sdk-model" for item in data.get("data", []))
+        assert calls.get("list") == 1
+
+
+def test_claude_sdk_transport_non_stream(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="claude-sdk-model",
+        provider_id="claude-sdk",
+        provider_name="Claude SDK",
+        base_url="https://api.anthropic.com",
+        api_key="sk-claude",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_generate_content(api_key, model_id, payload, base_url):
+        calls["generate"] = calls.get("generate", 0) + 1
+        assert api_key == "sk-claude"  # pragma: allowlist secret
+        assert model_id == "claude-sdk-model"
+        assert base_url == "https://api.anthropic.com"
+        return {
+            "id": "msg_1",
+            "type": "message",
+            "model": model_id,
+            "content": [{"type": "text", "text": "Claude SDK 回复"}],
+        }
+
+    async def _fake_stream_content(**kwargs):
+        calls["stream"] = calls.get("stream", 0) + 1
+        yield {}
+
+    monkeypatch.setattr(
+        "service.provider.claude_sdk.generate_content", _fake_generate_content
+    )
+    monkeypatch.setattr(
+        "service.provider.claude_sdk.stream_content", _fake_stream_content
+    )
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "claude-sdk-model",
+            "messages": [{"role": "user", "content": "你好，Claude SDK"}],
+            "max_tokens": 16,
+            "stream": False,
+        }
+        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+
+        resp = client.post("/v1/messages", json=payload, headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data.get("id") == "msg_1"
+        assert "Claude SDK 回复" in data["content"][0]["text"]
+        assert calls.get("generate") == 1
+        assert calls.get("stream", 0) == 0
+
+
+def test_claude_sdk_transport_streaming(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="claude-sdk-stream",
+        provider_id="claude-sdk",
+        provider_name="Claude SDK",
+        base_url="https://api.anthropic.com",
+        api_key="sk-claude",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_generate_content(**kwargs):
+        calls["generate"] = calls.get("generate", 0) + 1
+        return {}
+
+    async def _fake_stream_content(api_key, model_id, payload, base_url):
+        calls["stream"] = calls.get("stream", 0) + 1
+        assert api_key == "sk-claude"  # pragma: allowlist secret
+        assert model_id == "claude-sdk-stream"
+        assert base_url == "https://api.anthropic.com"
+        yield {"type": "message_start", "message": {"id": "msg_2"}}
+        yield {"type": "content_block_delta", "delta": {"text": "Claude SDK 流片段"}}
+        yield {"type": "message_stop"}
+
+    monkeypatch.setattr(
+        "service.provider.claude_sdk.generate_content", _fake_generate_content
+    )
+    monkeypatch.setattr(
+        "service.provider.claude_sdk.stream_content", _fake_stream_content
+    )
+
+    with TestClient(app=app, base_url="http://test") as client:
+        payload = {
+            "model": "claude-sdk-stream",
+            "messages": [{"role": "user", "content": "流式 Claude SDK"}],
+            "max_tokens": 32,
+            "stream": True,
+        }
+        headers = {
+            "Authorization": "Bearer dGltZWxpbmU=",
+            "Accept": "text/event-stream",
+        }
+
+        with client.stream(
+            "POST", "/v1/messages", json=payload, headers=headers
+        ) as resp:
+            assert resp.status_code == 200
+            body = b"".join(resp.iter_bytes()).decode("utf-8")
+            assert "message_start" in body
+            assert "Claude SDK 流片段" in body
+            assert "data: [DONE]" in body
+        assert calls.get("stream") == 1
+        assert calls.get("generate", 0) == 0
+
+
+def test_claude_sdk_models_list(monkeypatch):
+    app = _prepare_sdk_app(
+        monkeypatch,
+        model_id="claude-sdk-model",
+        provider_id="claude-sdk",
+        provider_name="Claude SDK",
+        base_url="https://api.anthropic.com",
+        api_key="sk-claude",  # pragma: allowlist secret
+    )
+
+    calls: Dict[str, int] = {}
+
+    async def _fake_list_models(api_key, base_url):
+        calls["list"] = calls.get("list", 0) + 1
+        assert api_key == "sk-claude"  # pragma: allowlist secret
+        assert base_url == "https://api.anthropic.com"
+        return [{"id": "claude-sdk-model"}]
+
+    monkeypatch.setattr("service.provider.claude_sdk.list_models", _fake_list_models)
+
+    with TestClient(app=app, base_url="http://test") as client:
+        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        resp = client.get("/v1/models", headers=headers)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert any(item.get("id") == "claude-sdk-model" for item in data.get("data", []))
+        assert calls.get("list") == 1

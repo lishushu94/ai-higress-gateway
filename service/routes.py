@@ -31,7 +31,6 @@ from service.models import (
     SchedulingStrategy,
     Session,
 )
-from service.provider import google_sdk
 from service.provider.config import get_provider_config, load_provider_configs
 from service.provider.key_pool import (
     NoAvailableProviderKey,
@@ -40,6 +39,7 @@ from service.provider.key_pool import (
     record_key_failure,
     record_key_success,
 )
+from service.provider.sdk_selector import get_sdk_driver, normalize_base_url
 from service.provider.discovery import ensure_provider_models_cached
 from service.routing.mapper import select_candidate_upstreams
 from service.routing.scheduler import CandidateScore, choose_upstream
@@ -1814,6 +1814,13 @@ def create_app() -> FastAPI:
                         last_error_text = f"Provider '{provider_id}' is not configured"
                         continue
                     if getattr(provider_cfg, "transport", "http") == "sdk":
+                        driver = get_sdk_driver(provider_cfg)
+                        if driver is None:
+                            last_status = status.HTTP_503_SERVICE_UNAVAILABLE
+                            last_error_text = (
+                                f"Provider '{provider_id}' 不支持 transport=sdk"
+                            )
+                            continue
                         try:
                             key_selection = await acquire_provider_key(
                                 provider_cfg, redis
@@ -1824,19 +1831,20 @@ def create_app() -> FastAPI:
                             continue
 
                         try:
-                            sdk_payload = await google_sdk.generate_content(
+                            sdk_payload = await driver.generate_content(
                                 api_key=key_selection.key,
                                 model_id=model_id,
                                 payload=payload,
-                                base_url=str(provider_cfg.base_url),
+                                base_url=normalize_base_url(provider_cfg.base_url),
                             )
-                        except google_sdk.GoogleSDKError as exc:
+                        except driver.error_types as exc:
                             last_status = None
                             last_error_text = str(exc)
                             record_key_failure(
                                 key_selection,
                                 retryable=True,
                                 status_code=None,
+                                redis=redis,
                             )
                             continue
 
@@ -1844,10 +1852,11 @@ def create_app() -> FastAPI:
                         await save_context(
                             redis, x_session_id, payload, json.dumps(sdk_payload)
                         )
-                        record_key_success(key_selection)
+                        record_key_success(key_selection, redis=redis)
                         converted_payload = sdk_payload
                         if (
-                            api_style == "openai"
+                            driver.name == "google"
+                            and api_style == "openai"
                             and isinstance(sdk_payload, dict)
                             and sdk_payload.get("candidates") is not None
                         ):
@@ -1901,7 +1910,7 @@ def create_app() -> FastAPI:
                             )
                             if outcome.response is not None:
                                 if key_selection:
-                                    record_key_success(key_selection)
+                                    record_key_success(key_selection, redis=redis)
                                 return outcome.response
                             last_status = outcome.status_code
                             last_error_text = outcome.error_text
@@ -1911,6 +1920,7 @@ def create_app() -> FastAPI:
                                         key_selection,
                                         retryable=True,
                                         status_code=outcome.status_code,
+                                        redis=redis,
                                     )
                                 continue
                             detail = outcome.error_text or (
@@ -1928,6 +1938,7 @@ def create_app() -> FastAPI:
                                     key_selection,
                                     retryable=False,
                                     status_code=outcome.status_code,
+                                    redis=redis,
                                 )
                             raise HTTPException(
                                 status_code=status.HTTP_502_BAD_GATEWAY,
@@ -1953,7 +1964,7 @@ def create_app() -> FastAPI:
                     except httpx.HTTPError as exc:
                         if key_selection:
                             record_key_failure(
-                                key_selection, retryable=True, status_code=None
+                                key_selection, retryable=True, status_code=None, redis=redis
                             )
                         logger.warning(
                             "Upstream non-streaming request error for %s "
@@ -1998,7 +2009,7 @@ def create_app() -> FastAPI:
                         )
                         if outcome.response is not None:
                             if key_selection:
-                                record_key_success(key_selection)
+                                record_key_success(key_selection, redis=redis)
                             return outcome.response
                         last_status = outcome.status_code
                         last_error_text = outcome.error_text
@@ -2008,6 +2019,7 @@ def create_app() -> FastAPI:
                                     key_selection,
                                     retryable=True,
                                     status_code=outcome.status_code,
+                                    redis=redis,
                                 )
                             continue
                         detail = outcome.error_text or (
@@ -2039,6 +2051,7 @@ def create_app() -> FastAPI:
                                 key_selection,
                                 retryable=True,
                                 status_code=status_code,
+                                redis=redis,
                             )
                         logger.warning(
                             "Upstream non-streaming retryable error %s for %s "
@@ -2066,6 +2079,7 @@ def create_app() -> FastAPI:
                                 key_selection,
                                 retryable=False,
                                 status_code=status_code,
+                                redis=redis,
                             )
                         logger.warning(
                             "Upstream non-streaming non-retryable error %s for %s "
@@ -2083,7 +2097,7 @@ def create_app() -> FastAPI:
                         )
 
                     if key_selection:
-                        record_key_success(key_selection)
+                        record_key_success(key_selection, redis=redis)
                     converted_payload: Any
                     try:
                         converted_payload = r.json()
@@ -2150,6 +2164,13 @@ def create_app() -> FastAPI:
                         last_error_text = f"Provider '{provider_id}' is not configured"
                         continue
                     if getattr(provider_cfg, "transport", "http") == "sdk":
+                        driver = get_sdk_driver(provider_cfg)
+                        if driver is None:
+                            last_status = status.HTTP_503_SERVICE_UNAVAILABLE
+                            last_error_text = (
+                                f"Provider '{provider_id}' 不支持 transport=sdk"
+                            )
+                            continue
                         try:
                             key_selection = await acquire_provider_key(
                                 provider_cfg, redis
@@ -2159,37 +2180,52 @@ def create_app() -> FastAPI:
                             last_error_text = str(exc)
                             continue
 
-                        adapter = GeminiToOpenAIStreamAdapter(
-                            payload.get("model") or model_id
-                        )
+                        adapter = None
+                        if driver.name == "google":
+                            adapter = GeminiToOpenAIStreamAdapter(
+                                payload.get("model") or model_id
+                            )
+
                         first_chunk_seen = False
                         try:
-                            async for chunk_dict in google_sdk.stream_content(
+                            async for chunk_dict in driver.stream_content(
                                 api_key=key_selection.key,
                                 model_id=model_id,
                                 payload=payload,
-                                base_url=str(provider_cfg.base_url),
+                                base_url=normalize_base_url(provider_cfg.base_url),
                             ):
-                                sse_chunk = (
-                                    f"data: {json.dumps(chunk_dict, ensure_ascii=False)}\n\n"
-                                ).encode("utf-8")
-                                converted_chunks = adapter.process_chunk(sse_chunk)
-                                for item in converted_chunks:
+                                sse_chunk = _encode_sse_payload(chunk_dict)
+                                if adapter:
+                                    converted_chunks = adapter.process_chunk(sse_chunk)
+                                    for item in converted_chunks:
+                                        if not first_chunk_seen:
+                                            await _bind_session_for_upstream(
+                                                provider_id, model_id
+                                            )
+                                            first_chunk_seen = True
+                                        yield item
+                                else:
                                     if not first_chunk_seen:
                                         await _bind_session_for_upstream(
                                             provider_id, model_id
                                         )
                                         first_chunk_seen = True
-                                    yield item
-                            for tail in adapter.finalize():
-                                yield tail
-                            record_key_success(key_selection)
+                                    yield sse_chunk
+                            if adapter:
+                                for tail in adapter.finalize():
+                                    yield tail
+                            else:
+                                yield b"data: [DONE]\n\n"
+                            record_key_success(key_selection, redis=redis)
                             return
-                        except google_sdk.GoogleSDKError as exc:
+                        except driver.error_types as exc:
                             last_status = None
                             last_error_text = str(exc)
                             record_key_failure(
-                                key_selection, retryable=True, status_code=None
+                                key_selection,
+                                retryable=True,
+                                status_code=None,
+                                redis=redis,
                             )
                             continue
                     try:
@@ -2230,7 +2266,7 @@ def create_app() -> FastAPI:
                             ):
                                 yield chunk
                             if key_selection:
-                                record_key_success(key_selection)
+                                record_key_success(key_selection, redis=redis)
                             return
                     stream_adapter: Optional[GeminiToOpenAIStreamAdapter] = None
                     if api_style == "openai" and _GEMINI_MODEL_REGEX.search(
@@ -2293,7 +2329,7 @@ def create_app() -> FastAPI:
                             for tail in stream_adapter.finalize():
                                 yield tail
                         if key_selection:
-                            record_key_success(key_selection)
+                            record_key_success(key_selection, redis=redis)
                         return
                     except UpstreamStreamError as err:
                         last_status = err.status_code
@@ -2322,7 +2358,7 @@ def create_app() -> FastAPI:
                                 ):
                                     yield chunk
                                 if key_selection:
-                                    record_key_success(key_selection)
+                                    record_key_success(key_selection, redis=redis)
                                 return
                             except ClaudeMessagesFallbackStreamError as fallback_err:
                                 last_status = fallback_err.status_code
@@ -2345,6 +2381,7 @@ def create_app() -> FastAPI:
                                     key_selection,
                                     retryable=True,
                                     status_code=err.status_code,
+                                    redis=redis,
                                 )
                             # Try next candidate without sending anything
                             # downstream yet.
@@ -2357,6 +2394,7 @@ def create_app() -> FastAPI:
                                 key_selection,
                                 retryable=retryable,
                                 status_code=err.status_code,
+                                redis=redis,
                             )
                         try:
                             payload_json = json.loads(err.text)
