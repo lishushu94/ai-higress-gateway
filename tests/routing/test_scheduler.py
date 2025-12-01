@@ -101,3 +101,20 @@ def test_choose_upstream_prefers_session_when_sticky():
 
     assert selected.upstream.provider_id == "slow"
 
+
+def test_score_upstreams_respects_dynamic_weights():
+    logical, upstreams = _logical_and_upstreams()
+    strategy = SchedulingStrategy(name="balanced", description="test")
+    dynamic_weights = {"fast": 0.5, "slow": 3.0}
+
+    scored = score_upstreams(
+        logical,
+        upstreams,
+        metrics_by_provider={},
+        strategy=strategy,
+        dynamic_weights=dynamic_weights,
+    )
+
+    assert scored
+    assert scored[0].upstream.provider_id == "slow"
+    assert scored[0].score > scored[-1].score

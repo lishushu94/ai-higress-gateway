@@ -43,6 +43,11 @@ from service.provider.sdk_selector import get_sdk_driver, normalize_base_url
 from service.provider.discovery import ensure_provider_models_cached
 from service.routing.mapper import select_candidate_upstreams
 from service.routing.scheduler import CandidateScore, choose_upstream
+from service.routing.provider_weight import (
+    load_dynamic_weights,
+    record_provider_failure,
+    record_provider_success,
+)
 from service.routing.session_manager import bind_session, get_session
 from service.storage.redis_service import get_logical_model, get_routing_metrics
 
@@ -1734,12 +1739,18 @@ def create_app() -> FastAPI:
                 session_obj = await get_session(redis, x_session_id)
 
             # 3) Load routing metrics and choose an upstream via the scheduler.
+            base_weights: Dict[str, float] = {
+                up.provider_id: up.base_weight for up in candidates
+            }
             metrics_by_provider: Dict[str, RoutingMetrics] = (
                 await _load_metrics_for_candidates(
                     redis,
                     logical_model.logical_id,
                     candidates,
                 )
+            )
+            dynamic_weights = await load_dynamic_weights(
+                redis, logical_model.logical_id, candidates
             )
             strategy = SchedulingStrategy(
                 name="balanced", description="Default chat routing strategy"
@@ -1752,6 +1763,7 @@ def create_app() -> FastAPI:
                     metrics_by_provider,
                     strategy,
                     session=session_obj,
+                    dynamic_weights=dynamic_weights,
                 )
             except RuntimeError as exc:
                 raise HTTPException(
@@ -1796,6 +1808,26 @@ def create_app() -> FastAPI:
                         model_id=model_id,
                     )
 
+            def _base_weight_for(provider_id: str) -> float:
+                return base_weights.get(provider_id, 1.0)
+
+            def _mark_provider_success(provider_id: str) -> None:
+                record_provider_success(
+                    redis,
+                    logical_model.logical_id,
+                    provider_id,
+                    _base_weight_for(provider_id),
+                )
+
+            def _mark_provider_failure(provider_id: str, *, retryable: bool) -> None:
+                record_provider_failure(
+                    redis,
+                    logical_model.logical_id,
+                    provider_id,
+                    _base_weight_for(provider_id),
+                    retryable=retryable,
+                )
+
             if not stream:
                 # Non-streaming mode: try candidates in order, falling back
                 # to the next provider when we see a retryable upstream error.
@@ -1828,6 +1860,7 @@ def create_app() -> FastAPI:
                         except NoAvailableProviderKey as exc:
                             last_status = status.HTTP_503_SERVICE_UNAVAILABLE
                             last_error_text = str(exc)
+                            _mark_provider_failure(provider_id, retryable=False)
                             continue
 
                         try:
@@ -1846,6 +1879,7 @@ def create_app() -> FastAPI:
                                 status_code=None,
                                 redis=redis,
                             )
+                            _mark_provider_failure(provider_id, retryable=True)
                             continue
 
                         await _bind_session_for_upstream(provider_id, model_id)
@@ -1853,6 +1887,7 @@ def create_app() -> FastAPI:
                             redis, x_session_id, payload, json.dumps(sdk_payload)
                         )
                         record_key_success(key_selection, redis=redis)
+                        _mark_provider_success(provider_id)
                         converted_payload = sdk_payload
                         if (
                             driver.name == "google"
@@ -1879,6 +1914,7 @@ def create_app() -> FastAPI:
                         )
                         last_status = status.HTTP_503_SERVICE_UNAVAILABLE
                         last_error_text = str(exc)
+                        _mark_provider_failure(provider_id, retryable=False)
                         continue
                     fallback_path = fallback_path_override or "/v1/chat/completions"
                     fallback_url = (
@@ -1911,6 +1947,7 @@ def create_app() -> FastAPI:
                             if outcome.response is not None:
                                 if key_selection:
                                     record_key_success(key_selection, redis=redis)
+                                _mark_provider_success(provider_id)
                                 return outcome.response
                             last_status = outcome.status_code
                             last_error_text = outcome.error_text
@@ -1922,6 +1959,7 @@ def create_app() -> FastAPI:
                                         status_code=outcome.status_code,
                                         redis=redis,
                                     )
+                                _mark_provider_failure(provider_id, retryable=True)
                                 continue
                             detail = outcome.error_text or (
                                 f"Upstream error {outcome.status_code or '?'}"
@@ -1931,7 +1969,7 @@ def create_app() -> FastAPI:
                                 provider_id,
                                 model_id,
                                 detail,
-                            )
+                                )
                             await save_context(redis, x_session_id, payload, detail)
                             if key_selection:
                                 record_key_failure(
@@ -1940,6 +1978,7 @@ def create_app() -> FastAPI:
                                     status_code=outcome.status_code,
                                     redis=redis,
                                 )
+                            _mark_provider_failure(provider_id, retryable=False)
                             raise HTTPException(
                                 status_code=status.HTTP_502_BAD_GATEWAY,
                                 detail=detail,
@@ -1966,6 +2005,7 @@ def create_app() -> FastAPI:
                             record_key_failure(
                                 key_selection, retryable=True, status_code=None, redis=redis
                             )
+                        _mark_provider_failure(provider_id, retryable=True)
                         logger.warning(
                             "Upstream non-streaming request error for %s "
                             "(provider=%s, model=%s): %s; trying next candidate",
@@ -2010,6 +2050,7 @@ def create_app() -> FastAPI:
                         if outcome.response is not None:
                             if key_selection:
                                 record_key_success(key_selection, redis=redis)
+                            _mark_provider_success(provider_id)
                             return outcome.response
                         last_status = outcome.status_code
                         last_error_text = outcome.error_text
@@ -2021,6 +2062,7 @@ def create_app() -> FastAPI:
                                     status_code=outcome.status_code,
                                     redis=redis,
                                 )
+                            _mark_provider_failure(provider_id, retryable=True)
                             continue
                         detail = outcome.error_text or (
                             f"Upstream error {outcome.status_code or '?'}"
@@ -2038,6 +2080,7 @@ def create_app() -> FastAPI:
                                 retryable=False,
                                 status_code=outcome.status_code,
                             )
+                        _mark_provider_failure(provider_id, retryable=False)
                         raise HTTPException(
                             status_code=status.HTTP_502_BAD_GATEWAY,
                             detail=detail,
@@ -2060,11 +2103,12 @@ def create_app() -> FastAPI:
                             url,
                             provider_id,
                             model_id,
-                            payload,
-                            text,
-                        )
+                                payload,
+                                text,
+                            )
                         last_status = status_code
                         last_error_text = text
+                        _mark_provider_failure(provider_id, retryable=True)
                         # Try next candidate.
                         continue
 
@@ -2081,6 +2125,7 @@ def create_app() -> FastAPI:
                                 status_code=status_code,
                                 redis=redis,
                             )
+                        _mark_provider_failure(provider_id, retryable=False)
                         logger.warning(
                             "Upstream non-streaming non-retryable error %s for %s "
                             "(provider=%s, model=%s); payload=%r; response=%s",
@@ -2098,6 +2143,7 @@ def create_app() -> FastAPI:
 
                     if key_selection:
                         record_key_success(key_selection, redis=redis)
+                    _mark_provider_success(provider_id)
                     converted_payload: Any
                     try:
                         converted_payload = r.json()
@@ -2178,6 +2224,7 @@ def create_app() -> FastAPI:
                         except NoAvailableProviderKey as exc:
                             last_status = status.HTTP_503_SERVICE_UNAVAILABLE
                             last_error_text = str(exc)
+                            _mark_provider_failure(provider_id, retryable=False)
                             continue
 
                         adapter = None
@@ -2217,6 +2264,7 @@ def create_app() -> FastAPI:
                             else:
                                 yield b"data: [DONE]\n\n"
                             record_key_success(key_selection, redis=redis)
+                            _mark_provider_success(provider_id)
                             return
                         except driver.error_types as exc:
                             last_status = None
@@ -2227,6 +2275,7 @@ def create_app() -> FastAPI:
                                 status_code=None,
                                 redis=redis,
                             )
+                            _mark_provider_failure(provider_id, retryable=True)
                             continue
                     try:
                         headers, key_selection = await _build_provider_headers(
@@ -2235,6 +2284,7 @@ def create_app() -> FastAPI:
                     except NoAvailableProviderKey as exc:
                         last_status = status.HTTP_503_SERVICE_UNAVAILABLE
                         last_error_text = str(exc)
+                        _mark_provider_failure(provider_id, retryable=False)
                         continue
                     is_last = idx == len(ordered_candidates) - 1
                     fallback_path = fallback_path_override or "/v1/chat/completions"
@@ -2267,6 +2317,7 @@ def create_app() -> FastAPI:
                                 yield chunk
                             if key_selection:
                                 record_key_success(key_selection, redis=redis)
+                            _mark_provider_success(provider_id)
                             return
                     stream_adapter: Optional[GeminiToOpenAIStreamAdapter] = None
                     if api_style == "openai" and _GEMINI_MODEL_REGEX.search(
@@ -2330,6 +2381,7 @@ def create_app() -> FastAPI:
                                 yield tail
                         if key_selection:
                             record_key_success(key_selection, redis=redis)
+                        _mark_provider_success(provider_id)
                         return
                     except UpstreamStreamError as err:
                         last_status = err.status_code
@@ -2359,6 +2411,7 @@ def create_app() -> FastAPI:
                                     yield chunk
                                 if key_selection:
                                     record_key_success(key_selection, redis=redis)
+                                _mark_provider_success(provider_id)
                                 return
                             except ClaudeMessagesFallbackStreamError as fallback_err:
                                 last_status = fallback_err.status_code
@@ -2383,6 +2436,7 @@ def create_app() -> FastAPI:
                                     status_code=err.status_code,
                                     redis=redis,
                                 )
+                            _mark_provider_failure(provider_id, retryable=True)
                             # Try next candidate without sending anything
                             # downstream yet.
                             continue
@@ -2396,6 +2450,7 @@ def create_app() -> FastAPI:
                                 status_code=err.status_code,
                                 redis=redis,
                             )
+                        _mark_provider_failure(provider_id, retryable=retryable)
                         try:
                             payload_json = json.loads(err.text)
                         except json.JSONDecodeError:

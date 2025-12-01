@@ -24,6 +24,7 @@ from service.models import (
     Session,
 )
 from service.routing.mapper import select_candidate_upstreams
+from service.routing.provider_weight import load_dynamic_weights
 from service.routing.scheduler import CandidateScore, choose_upstream
 from service.routing.session_manager import bind_session, get_session
 from service.storage.redis_service import get_logical_model, get_routing_metrics
@@ -153,6 +154,9 @@ async def decide_route(
     metrics_by_provider = await _load_metrics_for_candidates(
         redis, logical.logical_id, candidates
     )
+    dynamic_weights = await load_dynamic_weights(
+        redis, logical.logical_id, candidates
+    )
     try:
         selected, scored = choose_upstream(
             logical,
@@ -160,6 +164,7 @@ async def decide_route(
             metrics_by_provider,
             strategy,
             session=session,
+            dynamic_weights=dynamic_weights,
         )
     except RuntimeError as exc:
         raise service_unavailable(str(exc))
@@ -199,4 +204,3 @@ async def decide_route(
 
 
 __all__ = ["router"]
-

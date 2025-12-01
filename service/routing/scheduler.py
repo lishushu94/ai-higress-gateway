@@ -53,6 +53,7 @@ def score_upstreams(
     upstreams: Sequence[PhysicalModel],
     metrics_by_provider: Dict[str, RoutingMetrics],
     strategy: SchedulingStrategy,
+    dynamic_weights: Optional[Dict[str, float]] = None,
 ) -> List[CandidateScore]:
     """
     Compute scores for upstream candidates.
@@ -62,7 +63,10 @@ def score_upstreams(
         metrics = metrics_by_provider.get(up.provider_id)
 
         # Base weight from mapping.
-        base = up.base_weight
+        if dynamic_weights:
+            base = dynamic_weights.get(up.provider_id, up.base_weight)
+        else:
+            base = up.base_weight
 
         # Latency / error contributions.
         if metrics is not None:
@@ -130,12 +134,15 @@ def choose_upstream(
     metrics_by_provider: Dict[str, RoutingMetrics],
     strategy: SchedulingStrategy,
     session: Optional[Session] = None,
+    dynamic_weights: Optional[Dict[str, float]] = None,
 ) -> Tuple[CandidateScore, List[CandidateScore]]:
     """
     Choose a single upstream using scoring and optional session stickiness.
     Returns (selected, all_scored_candidates).
     """
-    scored = score_upstreams(logical_model, upstreams, metrics_by_provider, strategy)
+    scored = score_upstreams(
+        logical_model, upstreams, metrics_by_provider, strategy, dynamic_weights
+    )
     if not scored:
         raise RuntimeError("No eligible upstream candidates")
 
