@@ -2,8 +2,8 @@ import base64
 
 import pytest
 
-from service.auth import require_api_key
-from service.settings import settings
+from app.auth import require_api_key
+from app.settings import settings
 
 
 @pytest.mark.asyncio

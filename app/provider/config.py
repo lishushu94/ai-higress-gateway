@@ -25,9 +25,9 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ValidationError
 
-from service.logging_config import logger
-from service.models import ProviderAPIKey, ProviderConfig
-from service.settings import settings
+from app.logging_config import logger
+from app.models import ProviderAPIKey, ProviderConfig
+from app.settings import settings
 
 
 REQUIRED_SUFFIXES = ("NAME", "BASE_URL")

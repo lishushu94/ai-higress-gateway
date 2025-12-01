@@ -9,8 +9,8 @@ from typing import Dict, List, Optional, Sequence
 
 from redis.asyncio import Redis
 
-from service.logging_config import logger
-from service.models import PhysicalModel
+from app.logging_config import logger
+from app.models import PhysicalModel
 
 # Redis key for storing dynamic weights per logical model.
 _WEIGHT_KEY_TEMPLATE = "routing:{logical_model}:provider_weights"

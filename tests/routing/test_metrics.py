@@ -1,7 +1,7 @@
 from typing import List
 
-from service.models import MetricsHistory, ProviderStatus
-from service.routing.metrics import aggregate_metrics
+from app.models import MetricsHistory, ProviderStatus
+from app.routing.metrics import aggregate_metrics
 
 
 def test_aggregate_metrics_basic():

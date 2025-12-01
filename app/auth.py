@@ -2,7 +2,7 @@ import base64
 
 from fastapi import Header, HTTPException, status
 
-from service.settings import settings
+from app.settings import settings
 
 
 def _decode_token(token: str) -> str:

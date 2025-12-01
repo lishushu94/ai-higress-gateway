@@ -1,7 +1,7 @@
 from typing import Dict, List
 
-from service.models import LogicalModel, ModelCapability, PhysicalModel, RoutingMetrics, SchedulingStrategy, Session
-from service.routing.scheduler import CandidateScore, choose_upstream, score_upstreams
+from app.models import LogicalModel, ModelCapability, PhysicalModel, RoutingMetrics, SchedulingStrategy, Session
+from app.routing.scheduler import CandidateScore, choose_upstream, score_upstreams
 
 
 def _logical_and_upstreams():

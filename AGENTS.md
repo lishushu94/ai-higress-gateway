@@ -2,7 +2,7 @@
 请使用中文回答
 ## Project Structure & Module Organization
 - `main.py`: FastAPI entrypoint and `apiproxy` script target.
-- `service/`: Core gateway logic (`routes.py`, `upstream.py`, `auth.py`, `model_cache.py`, `context_store.py`, `settings.py`, `logging_config.py`).
+- `app/`: Core gateway logic (`routes.py`, `upstream.py`, `auth.py`, `model_cache.py`, `context_store.py`, `settings.py`, `logging_config.py`).
 - `tests/`: Pytest suite (async and sync tests), mirror new features here.
 - `scripts/`: Helper scripts (e.g. `scripts/list_models.py`).
 - `docs/`: Design notes (model routing, session context) that should stay in sync with code changes.
@@ -15,8 +15,8 @@
 
 ## Coding Style & Naming Conventions
 - Python 3.12, PEP 8, 4-space indentation, `snake_case` for functions/variables, `PascalCase` for classes.
-- Prefer type hints and small, focused async endpoints in `service/routes.py`.
-- Keep configuration in `service/settings.py`, dependency wiring in `service/deps.py`, logging in `service/logging_config.py`.
+- Prefer type hints and small, focused async endpoints in `app/routes.py`.
+- Keep configuration in `app/settings.py`, dependency wiring in `app/deps.py`, logging in `app/logging_config.py`.
 - When adding new routes, reuse existing patterns for auth, context, and upstream calls.
 
 ## Testing Guidelines

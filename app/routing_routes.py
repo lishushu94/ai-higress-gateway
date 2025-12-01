@@ -12,22 +12,22 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is missing
     Redis = object  # type: ignore[misc,assignment]
 
-from service.auth import require_api_key
-from service.deps import get_redis
-from service.errors import bad_request, not_found, service_unavailable
-from service.logging_config import logger
-from service.models import (
+from app.auth import require_api_key
+from app.deps import get_redis
+from app.errors import bad_request, not_found, service_unavailable
+from app.logging_config import logger
+from app.models import (
     LogicalModel,
     PhysicalModel,
     RoutingMetrics,
     SchedulingStrategy,
     Session,
 )
-from service.routing.mapper import select_candidate_upstreams
-from service.routing.provider_weight import load_dynamic_weights
-from service.routing.scheduler import CandidateScore, choose_upstream
-from service.routing.session_manager import bind_session, get_session
-from service.storage.redis_service import get_logical_model, get_routing_metrics
+from app.routing.mapper import select_candidate_upstreams
+from app.routing.provider_weight import load_dynamic_weights
+from app.routing.scheduler import CandidateScore, choose_upstream
+from app.routing.session_manager import bind_session, get_session
+from app.storage.redis_service import get_logical_model, get_routing_metrics
 
 
 router = APIRouter(

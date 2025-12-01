@@ -11,7 +11,7 @@
 - 在 `ProviderConfig` 和动态发现的 `PhysicalModel` 中补充“Claude Messages 支持能力”。
   - 新增 `messages_path: Optional[str]` 字段，默认 `/v1/message`，可通过 `.env` 覆盖。
   - 对仅有 Chat Completions 的提供商将该字段置空，表示需要 fallback。
-- 更新 `service/provider/config.py` 解析逻辑：读取 `LLM_PROVIDER_{id}_MESSAGES_PATH`，允许设置为空字符串。
+- 更新 `app/provider/config.py` 解析逻辑：读取 `LLM_PROVIDER_{id}_MESSAGES_PATH`，允许设置为空字符串。
 - 静态 Redis 逻辑模型结构中同样透传 `messages_path`，便于后续扩展（本方案先只在动态逻辑模型中使用）。
 
 ### 2. 路由入口调整
@@ -36,7 +36,7 @@
 - 在非流式/流式主循环中，仅当 `api_style=="openai"` 时触发 Gemini 适配，避免 Claude 流程误用。
 
 ### 5. 工具函数组织
-- 在 `service/routes.py` 顶部集中 helper：
+- 在 `app/routes.py` 顶部集中 helper：
   - `_apply_upstream_path_override`
   - Claude/OpenAI 相互转换函数
   - `OpenAIToClaudeStreamAdapter`
@@ -52,7 +52,7 @@
 
 ### 7. 实施步骤
 1. 更新 provider 配置（新增 `messages_path`）、`.env` 示例与 README 配置表。
-2. 在 `service/routes.py` 新增 helper/adapters。
+2. 在 `app/routes.py` 新增 helper/adapters。
 3. 调整 `chat_completions`：
    - 解析 `_apiproxy_messages_path` / `_apiproxy_fallback_chat_path`。
    - 在非流式与流式循环中加入 fallback 分支，处理 session 绑定与 context 保存。

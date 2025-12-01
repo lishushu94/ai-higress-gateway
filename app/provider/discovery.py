@@ -1,8 +1,8 @@
 """
-Provider model discovery service.
+Provider model discovery app.
 
 For each configured provider we call its `/models`-like endpoint,
-normalise the response into `service.models.Model` objects and store
+normalise the response into `app.models.Model` objects and store
 them in Redis using the key scheme defined in data-model.md:
 
     llm:vendor:{provider_id}:models -> JSON array
@@ -19,17 +19,17 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is missing
     Redis = object  # type: ignore[misc,assignment]
 
-from service.logging_config import logger
-from service.models import Model, ModelCapability, ProviderConfig
-from service.provider.config import get_provider_config
-from service.provider.key_pool import (
+from app.logging_config import logger
+from app.models import Model, ModelCapability, ProviderConfig
+from app.provider.config import get_provider_config
+from app.provider.key_pool import (
     NoAvailableProviderKey,
     acquire_provider_key,
     record_key_failure,
     record_key_success,
 )
-from service.provider.sdk_selector import get_sdk_driver, normalize_base_url
-from service.storage.redis_service import get_provider_models_json, set_provider_models
+from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
+from app.storage.redis_service import get_provider_models_json, set_provider_models
 
 
 def _infer_capabilities(raw_model: Dict[str, Any]) -> List[ModelCapability]:

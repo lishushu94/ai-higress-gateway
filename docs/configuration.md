@@ -170,12 +170,12 @@ LLM_PROVIDER_local_REGION=local
 -------------------------
 
 逻辑模型本身的数据目前存储在 Redis 中，按 `llm:logical:{logical_model}` 键保存，格式遵守
-`service/models/logical_model.py` 的 `LogicalModel` 结构。配置方式通常有两种：
+`app/models/logical_model.py` 的 `LogicalModel` 结构。配置方式通常有两种：
 
 1. 通过脚本/管理工具写入 LogicalModel：
 
    - 例如编写一个管理脚本，从代码中构造 `LogicalModel` 实例，然后通过
-     `service/storage/redis_service.set_logical_model()` 写入 Redis。
+     `app/storage/redis_service.set_logical_model()` 写入 Redis。
 
 2. 手工写入（开发环境调试时）：
 

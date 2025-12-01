@@ -11,10 +11,10 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from service.models import Session
-from service.redis_client import redis_delete
-from service.storage.redis_service import get_session as storage_get_session
-from service.storage.redis_service import set_session as storage_set_session
+from app.models import Session
+from app.redis_client import redis_delete
+from app.storage.redis_service import get_session as storage_get_session
+from app.storage.redis_service import set_session as storage_set_session
 
 try:
     from redis.asyncio import Redis
@@ -87,7 +87,7 @@ async def delete_session(redis: Redis, conversation_id: str) -> bool:
     session = await storage_get_session(redis, conversation_id)
     if not session:
         return False
-    from service.storage.redis_service import SESSION_KEY_TEMPLATE
+    from app.storage.redis_service import SESSION_KEY_TEMPLATE
 
     key = SESSION_KEY_TEMPLATE.format(conversation_id=conversation_id)
     await redis_delete(redis, key)

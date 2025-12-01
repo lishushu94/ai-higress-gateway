@@ -14,9 +14,9 @@ from typing import Dict, List, Optional
 
 from redis.asyncio import Redis
 
-from service.logging_config import logger
-from service.models import ProviderAPIKey, ProviderConfig
-from service.settings import settings
+from app.logging_config import logger
+from app.models import ProviderAPIKey, ProviderConfig
+from app.settings import settings
 
 
 @dataclass
@@ -51,7 +51,7 @@ _PREFERENCE_MIN = 0.1
 _PREFERENCE_MAX = 10.0
 _PREFERENCE_SUCCESS_DELTA = 0.5
 _PREFERENCE_RETRYABLE_FAILURE_DELTA = -1.0
-_PREFERENCE_FATAL_FAILURE_DELTA = -2.0
+_PREFERENCE_FATAL_DELTA = -2.0
 _PREFERENCE_AUTH_FAILURE_DELTA = -3.0
 _PREFERENCE_GROUP_TOLERANCE = 0.05
 _PREFERENCE_KEY_PREFIX = "provider:{provider_id}:key_scores"

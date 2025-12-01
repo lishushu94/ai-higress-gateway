@@ -1,7 +1,7 @@
 """
 Redis helper utilities for the routing layer.
 
-Existing code uses `service.deps.get_redis` as a FastAPI dependency.
+Existing code uses `app.deps.get_redis` as a FastAPI dependency.
 This module provides a central place to construct the Redis client and
 some small helpers for JSON-style key access so that new routing /
 provider components do not duplicate this logic.

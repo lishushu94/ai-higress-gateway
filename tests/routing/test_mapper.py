@@ -1,7 +1,7 @@
 from typing import Dict, List, Tuple
 
-from service.models import LogicalModel, Model, ModelCapability, PhysicalModel
-from service.routing.mapper import (
+from app.models import LogicalModel, Model, ModelCapability, PhysicalModel
+from app.routing.mapper import (
     ConsistencyIssue,
     build_provider_model_index,
     is_logical_model_consistent,

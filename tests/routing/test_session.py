@@ -3,8 +3,8 @@ from typing import Any, Dict
 
 import pytest
 
-from service.models import Session
-from service.routing.session_manager import (
+from app.models import Session
+from app.routing.session_manager import (
     bind_session,
     delete_session,
     get_session,

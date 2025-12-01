@@ -11,7 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
-from service.models import LogicalModel, Model, PhysicalModel
+from app.models import LogicalModel, Model, PhysicalModel
 
 
 @dataclass

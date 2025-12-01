@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from service.models import ProviderAPIKey, ProviderConfig
-from service.provider.key_pool import (
+from app.models import ProviderAPIKey, ProviderConfig
+from app.provider.key_pool import (
     NoAvailableProviderKey,
     acquire_provider_key,
     record_key_failure,
@@ -86,7 +86,7 @@ async def test_acquire_prefers_high_score_from_redis(monkeypatch):
     高分 key 应优先被选中，Redis 只存哈希 + 分数。
     """
 
-    from service.provider import key_pool
+    from app.provider import key_pool
 
     provider_id = "prefer-redis"
     reset_key_pool(provider_id)

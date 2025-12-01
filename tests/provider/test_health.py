@@ -1,9 +1,9 @@
 import httpx
 import pytest
 
-from service.models import ProviderConfig, ProviderStatus
-from service.provider.key_pool import reset_key_pool
-from service.provider.health import HealthStatus, check_provider_health
+from app.models import ProviderConfig, ProviderStatus
+from app.provider.key_pool import reset_key_pool
+from app.provider.health import HealthStatus, check_provider_health
 
 
 def _make_provider() -> ProviderConfig:

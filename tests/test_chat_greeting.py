@@ -9,16 +9,16 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-# Ensure project root is on sys.path so that `import service` works
+# Ensure project root is on sys.path so that `import app` works
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from service.deps import get_http_client, get_redis  # noqa: E402
-from service.settings import settings  # noqa: E402
-from service.models import LogicalModel, ModelCapability, PhysicalModel, ProviderConfig  # noqa: E402
-from service.routes import create_app  # noqa: E402
-from service.storage.redis_service import LOGICAL_MODEL_KEY_TEMPLATE  # noqa: E402
+from app.deps import get_http_client, get_redis  # noqa: E402
+from app.settings import settings  # noqa: E402
+from app.models import LogicalModel, ModelCapability, PhysicalModel, ProviderConfig  # noqa: E402
+from app.routes import create_app  # noqa: E402
+from app.storage.redis_service import LOGICAL_MODEL_KEY_TEMPLATE  # noqa: E402
 
 
 class FakeRedis:
@@ -525,14 +525,14 @@ def _prepare_basic_app(monkeypatch):
         return None
 
     monkeypatch.setattr(
-        "service.provider.config.load_provider_configs", _load_provider_configs
+        "app.provider.config.load_provider_configs", _load_provider_configs
     )
     monkeypatch.setattr(
-        "service.provider.config.get_provider_config", _get_provider_config
+        "app.provider.config.get_provider_config", _get_provider_config
     )
     # 让 routes 层使用同样的配置桩，避免使用真实环境变量。
-    monkeypatch.setattr("service.routes.load_provider_configs", _load_provider_configs)
-    monkeypatch.setattr("service.routes.get_provider_config", _get_provider_config)
+    monkeypatch.setattr("app.routes.load_provider_configs", _load_provider_configs)
+    monkeypatch.setattr("app.routes.get_provider_config", _get_provider_config)
 
     # Seed logical model into fake Redis.
     fake_redis._data.clear()
@@ -582,14 +582,14 @@ def _prepare_sdk_app(
         return None
 
     monkeypatch.setattr(
-        "service.provider.config.load_provider_configs", _load_provider_configs
+        "app.provider.config.load_provider_configs", _load_provider_configs
     )
     monkeypatch.setattr(
-        "service.provider.config.get_provider_config", _get_provider_config
+        "app.provider.config.get_provider_config", _get_provider_config
     )
     # 让路由层也使用相同桩，避免读取真实环境里的其它厂商。
-    monkeypatch.setattr("service.routes.load_provider_configs", _load_provider_configs)
-    monkeypatch.setattr("service.routes.get_provider_config", _get_provider_config)
+    monkeypatch.setattr("app.routes.load_provider_configs", _load_provider_configs)
+    monkeypatch.setattr("app.routes.get_provider_config", _get_provider_config)
 
     fake_redis._data.clear()
     logical = LogicalModel(
@@ -937,7 +937,7 @@ def test_chat_failover_non_stream(monkeypatch):
     """
     当第一个厂商返回 5xx 时，应自动切换到下一个可用厂商并返回正常结果。
     """
-    from service.routing.scheduler import CandidateScore  # lazy import for tests
+    from app.routing.scheduler import CandidateScore  # lazy import for tests
 
     # Two provider configs so that _build_provider_headers can resolve keys.
     cfg_fail = ProviderConfig(
@@ -965,7 +965,14 @@ def test_chat_failover_non_stream(monkeypatch):
 
     # Force the scheduler to pick the failing provider first so that the
     # failover path is deterministically exercised.
-    def _choose_upstream(logical_model, upstreams, metrics_by_provider, strategy, session=None):
+    def _choose_upstream(
+        logical_model,
+        upstreams,
+        metrics_by_provider,
+        strategy,
+        session=None,
+        dynamic_weights=None,
+    ):
         scored = [
             CandidateScore(upstream=up, metrics=None, score=1.0) for up in upstreams
         ]
@@ -973,12 +980,12 @@ def test_chat_failover_non_stream(monkeypatch):
         return selected, scored
 
     monkeypatch.setattr(
-        "service.provider.config.load_provider_configs", _load_provider_configs
+        "app.provider.config.load_provider_configs", _load_provider_configs
     )
     monkeypatch.setattr(
-        "service.provider.config.get_provider_config", _get_provider_config
+        "app.provider.config.get_provider_config", _get_provider_config
     )
-    monkeypatch.setattr("service.routes.choose_upstream", _choose_upstream)
+    monkeypatch.setattr("app.routes.choose_upstream", _choose_upstream)
 
     # Seed logical model with two upstreams into fake Redis.
     fake_redis._data.clear()
@@ -1013,7 +1020,7 @@ def test_chat_failover_streaming(monkeypatch):
     流式模式下，当第一个厂商在尚未输出任何内容前返回 5xx，
     应自动切换到下一个厂商并继续以流式输出结果。
     """
-    from service.routing.scheduler import CandidateScore  # lazy import for tests
+    from app.routing.scheduler import CandidateScore  # lazy import for tests
 
     cfg_fail = ProviderConfig(
         id="fail",
@@ -1038,7 +1045,14 @@ def test_chat_failover_streaming(monkeypatch):
             return cfg_ok
         return None
 
-    def _choose_upstream(logical_model, upstreams, metrics_by_provider, strategy, session=None):
+    def _choose_upstream(
+        logical_model,
+        upstreams,
+        metrics_by_provider,
+        strategy,
+        session=None,
+        dynamic_weights=None,
+    ):
         scored = [
             CandidateScore(upstream=up, metrics=None, score=1.0) for up in upstreams
         ]
@@ -1046,12 +1060,12 @@ def test_chat_failover_streaming(monkeypatch):
         return selected, scored
 
     monkeypatch.setattr(
-        "service.provider.config.load_provider_configs", _load_provider_configs
+        "app.provider.config.load_provider_configs", _load_provider_configs
     )
     monkeypatch.setattr(
-        "service.provider.config.get_provider_config", _get_provider_config
+        "app.provider.config.get_provider_config", _get_provider_config
     )
-    monkeypatch.setattr("service.routes.choose_upstream", _choose_upstream)
+    monkeypatch.setattr("app.routes.choose_upstream", _choose_upstream)
 
     fake_redis._data.clear()
     _seed_failover_logical_model()
@@ -1272,10 +1286,10 @@ def test_sdk_transport_non_stream(monkeypatch):
         yield {}
 
     monkeypatch.setattr(
-        "service.provider.google_sdk.generate_content", _fake_generate_content
+        "app.provider.google_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.google_sdk.stream_content", _fake_stream_content
+        "app.provider.google_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1322,10 +1336,10 @@ def test_sdk_transport_streaming(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "service.provider.google_sdk.generate_content", _fake_generate_content
+        "app.provider.google_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.google_sdk.stream_content", _fake_stream_content
+        "app.provider.google_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1384,10 +1398,10 @@ def test_openai_sdk_transport_non_stream(monkeypatch):
         yield {}
 
     monkeypatch.setattr(
-        "service.provider.openai_sdk.generate_content", _fake_generate_content
+        "app.provider.openai_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.openai_sdk.stream_content", _fake_stream_content
+        "app.provider.openai_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1444,10 +1458,10 @@ def test_openai_sdk_transport_streaming(monkeypatch):
         }
 
     monkeypatch.setattr(
-        "service.provider.openai_sdk.generate_content", _fake_generate_content
+        "app.provider.openai_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.openai_sdk.stream_content", _fake_stream_content
+        "app.provider.openai_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1490,7 +1504,7 @@ def test_openai_sdk_models_list(monkeypatch):
         return [{"id": "gpt-sdk-model"}]
 
     monkeypatch.setattr(
-        "service.provider.openai_sdk.list_models", _fake_list_models
+        "app.provider.openai_sdk.list_models", _fake_list_models
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1531,10 +1545,10 @@ def test_claude_sdk_transport_non_stream(monkeypatch):
         yield {}
 
     monkeypatch.setattr(
-        "service.provider.claude_sdk.generate_content", _fake_generate_content
+        "app.provider.claude_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.claude_sdk.stream_content", _fake_stream_content
+        "app.provider.claude_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1581,10 +1595,10 @@ def test_claude_sdk_transport_streaming(monkeypatch):
         yield {"type": "message_stop"}
 
     monkeypatch.setattr(
-        "service.provider.claude_sdk.generate_content", _fake_generate_content
+        "app.provider.claude_sdk.generate_content", _fake_generate_content
     )
     monkeypatch.setattr(
-        "service.provider.claude_sdk.stream_content", _fake_stream_content
+        "app.provider.claude_sdk.stream_content", _fake_stream_content
     )
 
     with TestClient(app=app, base_url="http://test") as client:
@@ -1629,7 +1643,7 @@ def test_claude_sdk_models_list(monkeypatch):
         assert base_url == "https://api.anthropic.com"
         return [{"id": "claude-sdk-model"}]
 
-    monkeypatch.setattr("service.provider.claude_sdk.list_models", _fake_list_models)
+    monkeypatch.setattr("app.provider.claude_sdk.list_models", _fake_list_models)
 
     with TestClient(app=app, base_url="http://test") as client:
         headers = {"Authorization": "Bearer dGltZWxpbmU="}

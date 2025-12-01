@@ -16,7 +16,7 @@ async def get_redis() -> Redis:
     """
     FastAPI dependency that provides a shared Redis client.
 
-    It delegates to service.redis_client.get_redis_client() so that the
+    It delegates to app.redis_client.get_redis_client() so that the
     routing layer and other components can share the same underlying
     connection pool.
 

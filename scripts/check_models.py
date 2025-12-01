@@ -23,7 +23,7 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - 适配无 redis 环境
     Redis = None  # type: ignore[assignment]
 
-from service.settings import settings
+from app.settings import settings
 
 
 def _build_auth_header(token_plain: str) -> str:

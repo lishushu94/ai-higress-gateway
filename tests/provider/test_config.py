@@ -4,8 +4,8 @@ from typing import List
 
 import pytest
 
-from service.provider.config import get_provider_config, load_provider_configs
-from service.settings import settings
+from app.provider.config import get_provider_config, load_provider_configs
+from app.settings import settings
 
 
 @pytest.fixture(autouse=True)

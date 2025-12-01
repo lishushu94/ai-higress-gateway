@@ -10,8 +10,8 @@ from dataclasses import dataclass
 from typing import Any, AsyncIterator, Awaitable, Callable, Optional, Tuple
 from urllib.parse import urlparse
 
-from service.models import ProviderConfig
-from service.provider import claude_sdk, google_sdk, openai_sdk
+from app.models import ProviderConfig
+from app.provider import claude_sdk, google_sdk, openai_sdk
 
 SDKErrorTypes = Tuple[type[BaseException], ...]
 

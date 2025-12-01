@@ -8,11 +8,11 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is missing
     Redis = object  # type: ignore[misc,assignment]
 
-from service.auth import require_api_key
-from service.deps import get_redis
-from service.errors import not_found
-from service.models import LogicalModel, PhysicalModel
-from service.storage.redis_service import get_logical_model, list_logical_models
+from app.auth import require_api_key
+from app.deps import get_redis
+from app.errors import not_found
+from app.models import LogicalModel, PhysicalModel
+from app.storage.redis_service import get_logical_model, list_logical_models
 
 
 router = APIRouter(

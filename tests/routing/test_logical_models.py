@@ -3,11 +3,11 @@ from typing import Any, Dict, List
 
 from fastapi.testclient import TestClient
 
-from service.deps import get_redis
-from service.logical_model_routes import router as logical_model_router
-from service.models import LogicalModel, ModelCapability, PhysicalModel
-from service.routes import create_app
-from service.storage.redis_service import LOGICAL_MODEL_KEY_TEMPLATE
+from app.deps import get_redis
+from app.logical_model_routes import router as logical_model_router
+from app.models import LogicalModel, ModelCapability, PhysicalModel
+from app.routes import create_app
+from app.storage.redis_service import LOGICAL_MODEL_KEY_TEMPLATE
 
 
 class DummyRedis:

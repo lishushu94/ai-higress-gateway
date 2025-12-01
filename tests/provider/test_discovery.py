@@ -3,12 +3,12 @@ from typing import Any, Dict, List
 import httpx
 import pytest
 
-from service.models import Model, ProviderConfig
-from service.provider.discovery import (
+from app.models import Model, ProviderConfig
+from app.provider.discovery import (
     ensure_provider_models_cached,
     fetch_models_from_provider,
 )
-from service.provider.key_pool import reset_key_pool
+from app.provider.key_pool import reset_key_pool
 
 
 class DummyRedis:
@@ -112,7 +112,7 @@ async def test_fetch_models_from_provider_falls_back_to_env_static_on_invalid_js
         )
 
     monkeypatch.setattr(
-        "service.provider.discovery.get_provider_config",
+        "app.provider.discovery.get_provider_config",
         lambda provider_id: fallback_provider if provider_id == provider.id else None,
     )
 
@@ -137,7 +137,7 @@ async def test_fetch_models_from_provider_raises_when_no_fallback(monkeypatch):
             content=b"*invalid-json*",
         )
 
-    monkeypatch.setattr("service.provider.discovery.get_provider_config", lambda _: None)
+    monkeypatch.setattr("app.provider.discovery.get_provider_config", lambda _: None)
 
     transport = httpx.MockTransport(handler)
 

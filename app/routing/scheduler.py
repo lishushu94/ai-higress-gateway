@@ -12,7 +12,7 @@ from dataclasses import dataclass
 import random
 from typing import Dict, List, Optional, Sequence, Tuple
 
-from service.models import (
+from app.models import (
     LogicalModel,
     PhysicalModel,
     RoutingMetrics,

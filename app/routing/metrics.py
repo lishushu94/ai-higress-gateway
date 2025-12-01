@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Iterable, List, Tuple
 
-from service.models import MetricsHistory, ProviderStatus, RoutingMetrics
+from app.models import MetricsHistory, ProviderStatus, RoutingMetrics
 
 
 def aggregate_metrics(

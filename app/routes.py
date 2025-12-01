@@ -22,7 +22,7 @@ from .routing_routes import router as routing_router
 from .session_routes import router as session_router
 from .settings import build_upstream_headers, settings
 from .upstream import UpstreamStreamError, detect_request_format, stream_upstream
-from service.models import (
+from app.models import (
     LogicalModel,
     ModelCapability,
     PhysicalModel,
@@ -31,25 +31,25 @@ from service.models import (
     SchedulingStrategy,
     Session,
 )
-from service.provider.config import get_provider_config, load_provider_configs
-from service.provider.key_pool import (
+from app.provider.config import get_provider_config, load_provider_configs
+from app.provider.key_pool import (
     NoAvailableProviderKey,
     SelectedProviderKey,
     acquire_provider_key,
     record_key_failure,
     record_key_success,
 )
-from service.provider.sdk_selector import get_sdk_driver, normalize_base_url
-from service.provider.discovery import ensure_provider_models_cached
-from service.routing.mapper import select_candidate_upstreams
-from service.routing.scheduler import CandidateScore, choose_upstream
-from service.routing.provider_weight import (
+from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
+from app.provider.discovery import ensure_provider_models_cached
+from app.routing.mapper import select_candidate_upstreams
+from app.routing.scheduler import CandidateScore, choose_upstream
+from app.routing.provider_weight import (
     load_dynamic_weights,
     record_provider_failure,
     record_provider_success,
 )
-from service.routing.session_manager import bind_session, get_session
-from service.storage.redis_service import get_logical_model, get_routing_metrics
+from app.routing.session_manager import bind_session, get_session
+from app.storage.redis_service import get_logical_model, get_routing_metrics
 
 
 class HealthResponse(BaseModel):

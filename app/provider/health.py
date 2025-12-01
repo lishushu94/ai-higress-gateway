@@ -15,9 +15,9 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel, Field
 
-from service.logging_config import logger
-from service.models import ProviderConfig, ProviderStatus
-from service.provider.key_pool import (
+from app.logging_config import logger
+from app.models import ProviderConfig, ProviderStatus
+from app.provider.key_pool import (
     NoAvailableProviderKey,
     acquire_provider_key,
     record_key_failure,
