@@ -16,6 +16,8 @@ dependencies = [
     "openai>=2.8.1",
     "anthropic>=0.75.0",
     "django>=5.2.8",
+    "sqlalchemy>=2.0.44",
+    "alembic>=1.17.2",
 ]
 
 [project.scripts]
