@@ -7,6 +7,8 @@ provider discovery, logical-model mapping and routing components.
 """
 
 from .api_key import (
+    APIKeyAllowedProvidersRequest,
+    APIKeyAllowedProvidersResponse,
     APIKeyCreateRequest,
     APIKeyCreateResponse,
     APIKeyExpiry,
@@ -15,7 +17,15 @@ from .api_key import (
 )
 from .logical_model import LogicalModel, PhysicalModel
 from .model import Model, ModelCapability
-from .provider import Provider, ProviderAPIKey, ProviderConfig, ProviderStatus
+from .provider import (
+    Provider,
+    ProviderAPIKey,
+    ProviderAPIKeyCreateRequest,
+    ProviderAPIKeyResponse,
+    ProviderAPIKeyUpdateRequest,
+    ProviderConfig,
+    ProviderStatus,
+)
 from .routing_metrics import MetricsHistory, RoutingMetrics
 from .scheduling import SchedulingStrategy
 from .session import Session
@@ -27,6 +37,8 @@ from .user import (
 )
 
 __all__ = [
+    "APIKeyAllowedProvidersRequest",
+    "APIKeyAllowedProvidersResponse",
     "APIKeyCreateRequest",
     "APIKeyCreateResponse",
     "APIKeyExpiry",
@@ -41,6 +53,9 @@ __all__ = [
     "ProviderAPIKey",
     "ProviderConfig",
     "ProviderStatus",
+    "ProviderAPIKeyCreateRequest",
+    "ProviderAPIKeyUpdateRequest",
+    "ProviderAPIKeyResponse",
     "RoutingMetrics",
     "SchedulingStrategy",
     "Session",

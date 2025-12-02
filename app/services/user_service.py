@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import hashlib
-import hmac
 import uuid
 from uuid import UUID
 
@@ -11,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.models import User
 from app.schemas.user import UserCreateRequest, UserUpdateRequest
-from app.settings import settings
+from app.services.jwt_auth_service import hash_password, verify_password
 
 
 class UserServiceError(Exception):
@@ -24,14 +22,6 @@ class UsernameAlreadyExistsError(UserServiceError):
 
 class EmailAlreadyExistsError(UserServiceError):
     """Raised when the email already belongs to another user."""
-
-
-def hash_user_password(raw_password: str) -> str:
-    """Derive a deterministic hash for user passwords using the shared SECRET_KEY."""
-
-    secret = settings.secret_key.encode("utf-8")
-    message = raw_password.encode("utf-8")
-    return hmac.new(secret, message, hashlib.sha256).hexdigest()
 
 
 def _record_exists(
@@ -72,7 +62,12 @@ def get_user_by_id(session: Session, user_id: UUID | str) -> User | None:
     return session.get(User, user_uuid)
 
 
-def create_user(session: Session, payload: UserCreateRequest) -> User:
+def create_user(
+    session: Session,
+    payload: UserCreateRequest,
+    *,
+    is_superuser: bool = False,
+) -> User:
     """Create a new user after checking for unique username/email."""
 
     if _username_exists(session, payload.username):
@@ -85,7 +80,8 @@ def create_user(session: Session, payload: UserCreateRequest) -> User:
         email=payload.email,
         display_name=payload.display_name,
         avatar=payload.avatar,
-        hashed_password=hash_user_password(payload.password),
+        hashed_password=hash_password(payload.password),
+        is_superuser=is_superuser,
     )
 
     session.add(user)
@@ -113,7 +109,7 @@ def update_user(session: Session, user: User, payload: UserUpdateRequest) -> Use
         user.avatar = payload.avatar
 
     if payload.password is not None:
-        user.hashed_password = hash_user_password(payload.password)
+        user.hashed_password = hash_password(payload.password)
 
     session.add(user)
     try:
@@ -139,13 +135,20 @@ def set_user_active(
     return user, key_hashes
 
 
+def has_any_user(session: Session) -> bool:
+    """Return whether at least one user already exists."""
+
+    stmt = select(User.id).limit(1)
+    return session.execute(stmt).first() is not None
+
+
 __all__ = [
     "EmailAlreadyExistsError",
+    "has_any_user",
     "UserServiceError",
     "UsernameAlreadyExistsError",
     "create_user",
     "get_user_by_id",
-    "hash_user_password",
     "set_user_active",
     "update_user",
 ]

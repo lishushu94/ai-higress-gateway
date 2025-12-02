@@ -114,6 +114,16 @@ def _normalise_transport(value: str | None) -> str:
     return normalized
 
 
+def _normalise_provider_type(value: str | None) -> str:
+    if not value:
+        return "native"
+    normalized = value.lower()
+    if normalized not in {"native", "aggregator"}:
+        logger.warning("Provider type %r is invalid, defaulting to native", value)
+        return "native"
+    return normalized
+
+
 def _build_provider_config(provider: Provider) -> ProviderConfig | None:
     api_keys = _build_api_keys(provider)
     if not api_keys:
@@ -128,6 +138,7 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
         "name": provider.name,
         "base_url": provider.base_url,
         "transport": _normalise_transport(provider.transport),
+        "provider_type": _normalise_provider_type(getattr(provider, "provider_type", None)),
         "models_path": provider.models_path or "/v1/models",
         "weight": provider.weight or 1.0,
         "api_keys": api_keys,

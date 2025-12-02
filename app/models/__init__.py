@@ -1,4 +1,5 @@
 from .api_key import APIKey
+from .api_key_allowed_provider import APIKeyAllowedProvider
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from .identity import Identity
 from .permission import Permission
@@ -9,6 +10,7 @@ from .user import User
 
 __all__ = [
     "APIKey",
+    "APIKeyAllowedProvider",
     "Base",
     "Identity",
     "Permission",

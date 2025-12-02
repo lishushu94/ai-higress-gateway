@@ -1,24 +1,33 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import pytest
-from fastapi.testclient import TestClient
-from sqlalchemy import Select, create_engine, select
+from fastapi import HTTPException
+from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.deps import get_db, get_redis
-from app.models import Base, User
-from app.routes import create_app
+from app.api.v1 import api_key_routes
+from app.jwt_auth import AuthenticatedUser
+from app.models import Base, Provider, User
+from app.schemas import (
+    APIKeyAllowedProvidersRequest,
+    APIKeyCreateRequest,
+    APIKeyExpiry,
+    APIKeyUpdateRequest,
+)
 from app.services.api_key_cache import CACHE_KEY_TEMPLATE
 from app.services.api_key_service import derive_api_key_hash
-from tests.utils import InMemoryRedis, auth_headers, seed_user_and_key
+from tests.utils import InMemoryRedis, seed_user_and_key
+
+SEEDED_PROVIDERS = ["mock-alpha", "mock-beta", "mock-gamma"]
 
 
 @pytest.fixture()
-def client_with_keys(monkeypatch):
+def session_factory(monkeypatch):
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         future=True,
@@ -28,119 +37,244 @@ def client_with_keys(monkeypatch):
     Base.metadata.create_all(bind=engine)
     SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
-    def override_get_db():
-        db = SessionLocal()
-        try:
-            yield db
-        finally:
-            db.close()
-
-    app = create_app()
     fake_redis = InMemoryRedis()
-    app.dependency_overrides[get_db] = override_get_db
-
-    async def override_get_redis():
-        return fake_redis
-
-    app.dependency_overrides[get_redis] = override_get_redis
     monkeypatch.setattr(
-        "app.api.api_key_routes.get_redis_client",
+        "app.services.api_key_cache.get_redis_client",
         lambda: fake_redis,
         raising=False,
     )
 
-    with SessionLocal() as session:
-        seed_user_and_key(session, token_plain="timeline")
-
-    with TestClient(app, base_url="http://test") as client:
-        yield client, SessionLocal, fake_redis
+    yield SessionLocal, fake_redis
 
     Base.metadata.drop_all(bind=engine)
     engine.dispose()
 
 
-def _get_first_user_id(session_factory: sessionmaker[Session]) -> uuid.UUID:
-    with session_factory() as session:
-        stmt: Select[tuple[User]] = select(User).order_by(User.created_at.asc())
-        user = session.execute(stmt).scalars().first()
-        assert user is not None
-        return user.id
-
-
-def test_api_key_crud_flow(client_with_keys):
-    client, session_factory, fake_redis = client_with_keys
-    user_id = _get_first_user_id(session_factory)
-
-    resp_create = client.post(
-        f"/users/{user_id}/api-keys",
-        json={"name": "cli", "expiry": "week"},
-        headers=auth_headers(),
+def _to_authenticated(user: User) -> AuthenticatedUser:
+    return AuthenticatedUser(
+        id=str(user.id),
+        username=user.username,
+        email=user.email,
+        is_superuser=user.is_superuser,
+        is_active=user.is_active,
+        display_name=user.display_name,
+        avatar=user.avatar,
     )
-    assert resp_create.status_code == 201
-    created = resp_create.json()
-    assert created["token"]
-    key_id = created["id"]
-    assert created["expiry_type"] == "week"
-
-    cache_key = CACHE_KEY_TEMPLATE.format(key_hash=derive_api_key_hash(created["token"]))
-    cached_entry = asyncio.run(fake_redis.get(cache_key))
-    assert cached_entry is not None
-
-    resp_list = client.get(
-        f"/users/{user_id}/api-keys",
-        headers=auth_headers(),
-    )
-    assert resp_list.status_code == 200
-    listed = resp_list.json()
-    assert any(item["id"] == key_id for item in listed)
-
-    resp_update = client.put(
-        f"/users/{user_id}/api-keys/{key_id}",
-        json={"name": "cli-renamed", "expiry": "month"},
-        headers=auth_headers(),
-    )
-    assert resp_update.status_code == 200
-    updated = resp_update.json()
-    assert updated["name"] == "cli-renamed"
-    assert updated["expiry_type"] == "month"
-
-    resp_delete = client.delete(
-        f"/users/{user_id}/api-keys/{key_id}",
-        headers=auth_headers(),
-    )
-    assert resp_delete.status_code == 204
-
-    resp_list_after = client.get(
-        f"/users/{user_id}/api-keys",
-        headers=auth_headers(),
-    )
-    assert resp_list_after.status_code == 200
-    assert all(item["id"] != key_id for item in resp_list_after.json())
-    assert asyncio.run(fake_redis.get(cache_key)) is None
 
 
-def test_non_owner_cannot_manage_other_user(client_with_keys):
-    client, session_factory, _ = client_with_keys
-    admin_id = _get_first_user_id(session_factory)
+def test_api_key_crud_flow(session_factory):
+    SessionLocal, fake_redis = session_factory
+    with SessionLocal() as session:
+        admin_user, _ = seed_user_and_key(session, token_plain="timeline")
+        _seed_providers(session)
 
-    with session_factory() as session:
-        seed_user_and_key(
+        auth_admin = _to_authenticated(admin_user)
+
+        created = api_key_routes.create_api_key_endpoint(
+            admin_user.id,
+            APIKeyCreateRequest(name="cli", expiry=APIKeyExpiry.WEEK),
+            db=session,
+            current_user=auth_admin,
+        )
+        assert created.token
+        key_id = created.id
+        assert created.expiry_type == APIKeyExpiry.WEEK
+        assert created.has_provider_restrictions is False
+        assert created.allowed_provider_ids == []
+
+        cache_key = CACHE_KEY_TEMPLATE.format(key_hash=derive_api_key_hash(created.token))
+        cached_entry_raw = asyncio.run(fake_redis.get(cache_key))
+        assert cached_entry_raw is not None
+        cached_entry = json.loads(cached_entry_raw)
+        assert cached_entry["has_provider_restrictions"] is False
+        assert cached_entry["allowed_provider_ids"] == []
+
+        listed = api_key_routes.list_api_keys_endpoint(
+            admin_user.id,
+            db=session,
+            current_user=auth_admin,
+        )
+        assert any(item.id == key_id for item in listed)
+
+        updated = api_key_routes.update_api_key_endpoint(
+            admin_user.id,
+            key_id,
+            APIKeyUpdateRequest(name="cli-renamed", expiry=APIKeyExpiry.MONTH),
+            db=session,
+            current_user=auth_admin,
+        )
+        updated_data = updated.model_dump()
+        assert updated_data["name"] == "cli-renamed"
+        assert updated_data["expiry_type"] == APIKeyExpiry.MONTH
+        assert updated_data["has_provider_restrictions"] is False
+
+        api_key_routes.delete_api_key_endpoint(
+            admin_user.id,
+            key_id,
+            db=session,
+            current_user=auth_admin,
+        )
+
+        listed_after = api_key_routes.list_api_keys_endpoint(
+            admin_user.id,
+            db=session,
+            current_user=auth_admin,
+        )
+        assert all(item.id != key_id for item in listed_after)
+        assert asyncio.run(fake_redis.get(cache_key)) is None
+
+
+def test_non_owner_cannot_manage_other_user(session_factory):
+    SessionLocal, _ = session_factory
+    with SessionLocal() as session:
+        admin_user, _ = seed_user_and_key(session, token_plain="timeline")
+        _seed_providers(session)
+        auth_admin = _to_authenticated(admin_user)
+
+        other_user, _ = seed_user_and_key(
             session,
             token_plain="secondary",
             username="bob",
             email="bob@example.com",
             is_superuser=False,
         )
+        auth_other = _to_authenticated(other_user)
 
-    resp = client.get(
-        f"/users/{admin_id}/api-keys",
-        headers=auth_headers("secondary"),
-    )
-    assert resp.status_code == 403
+        with pytest.raises(HTTPException) as exc_info:
+            api_key_routes.list_api_keys_endpoint(
+                admin_user.id,
+                db=session,
+                current_user=auth_other,
+            )
+        assert exc_info.value.status_code == 403
 
-    resp_forbidden = client.post(
-        f"/users/{admin_id}/api-keys",
-        json={"name": "should-fail", "expiry": "year"},
-        headers=auth_headers("secondary"),
-    )
-    assert resp_forbidden.status_code == 403
+        with pytest.raises(HTTPException) as exc_info:
+            api_key_routes.create_api_key_endpoint(
+                admin_user.id,
+                APIKeyCreateRequest(name="should-fail", expiry=APIKeyExpiry.YEAR),
+                db=session,
+                current_user=auth_other,
+            )
+        assert exc_info.value.status_code == 403
+
+        created = api_key_routes.create_api_key_endpoint(
+            other_user.id,
+            APIKeyCreateRequest(name="ok", expiry=APIKeyExpiry.NEVER),
+            db=session,
+            current_user=auth_other,
+        )
+        assert created.user_id == other_user.id
+        assert created.name == "ok"
+
+
+def test_api_key_provider_restrictions_flow(session_factory):
+    SessionLocal, fake_redis = session_factory
+    with SessionLocal() as session:
+        admin_user, _ = seed_user_and_key(session, token_plain="timeline")
+        _seed_providers(session)
+
+        auth_admin = _to_authenticated(admin_user)
+        provider_a, provider_b = SEEDED_PROVIDERS[:2]
+
+        created = api_key_routes.create_api_key_endpoint(
+            admin_user.id,
+            APIKeyCreateRequest(
+                name="scoped",
+                expiry=APIKeyExpiry.MONTH,
+                allowed_provider_ids=[provider_a],
+            ),
+            db=session,
+            current_user=auth_admin,
+        )
+        key_id = created.id
+        assert created.allowed_provider_ids == [provider_a]
+        cache_key = CACHE_KEY_TEMPLATE.format(key_hash=derive_api_key_hash(created.token))
+        cached_entry = json.loads(asyncio.run(fake_redis.get(cache_key)))
+        assert cached_entry["allowed_provider_ids"] == [provider_a]
+
+        allowed = api_key_routes.get_api_key_allowed_providers(
+            admin_user.id,
+            key_id,
+            db=session,
+            current_user=auth_admin,
+        )
+        assert allowed.allowed_provider_ids == [provider_a]
+
+        updated = api_key_routes.set_api_key_allowed_providers(
+            admin_user.id,
+            key_id,
+            APIKeyAllowedProvidersRequest(allowed_provider_ids=[provider_b, provider_a]),
+            db=session,
+            current_user=auth_admin,
+        )
+        assert updated.allowed_provider_ids == [provider_a, provider_b]
+
+        api_key_routes.remove_api_key_allowed_provider(
+            admin_user.id,
+            key_id,
+            provider_a,
+            db=session,
+            current_user=auth_admin,
+        )
+        after_remove = api_key_routes.get_api_key_allowed_providers(
+            admin_user.id,
+            key_id,
+            db=session,
+            current_user=auth_admin,
+        )
+        assert after_remove.allowed_provider_ids == [provider_b]
+
+        api_key_routes.remove_api_key_allowed_provider(
+            admin_user.id,
+            key_id,
+            provider_b,
+            db=session,
+            current_user=auth_admin,
+        )
+        after_clear = api_key_routes.get_api_key_allowed_providers(
+            admin_user.id,
+            key_id,
+            db=session,
+            current_user=auth_admin,
+        )
+        assert after_clear.allowed_provider_ids == []
+        assert after_clear.has_provider_restrictions is False
+
+        updated_again = api_key_routes.update_api_key_endpoint(
+            admin_user.id,
+            key_id,
+            APIKeyUpdateRequest(allowed_provider_ids=[provider_a, provider_b]),
+            db=session,
+            current_user=auth_admin,
+        )
+        assert updated_again.allowed_provider_ids == [provider_a, provider_b]
+
+        cleared = api_key_routes.update_api_key_endpoint(
+            admin_user.id,
+            key_id,
+            APIKeyUpdateRequest(allowed_provider_ids=[]),
+            db=session,
+            current_user=auth_admin,
+        )
+        assert cleared.allowed_provider_ids == []
+        assert cleared.has_provider_restrictions is False
+
+        cache_entry_after_clear = json.loads(asyncio.run(fake_redis.get(cache_key)))
+        assert cache_entry_after_clear["allowed_provider_ids"] == []
+        assert cache_entry_after_clear["has_provider_restrictions"] is False
+
+
+def _seed_providers(session: Session) -> None:
+    for idx, provider_id in enumerate(SEEDED_PROVIDERS):
+        provider = Provider(
+            provider_id=provider_id,
+            name=f"Provider {idx}",
+            base_url=f"https://{provider_id}.example.com",
+            transport="http",
+            provider_type="native",
+            weight=1.0,
+            models_path="/v1/models",
+            status="healthy",
+        )
+        session.add(provider)
+    session.commit()

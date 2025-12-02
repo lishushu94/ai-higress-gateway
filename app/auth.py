@@ -24,6 +24,8 @@ class AuthenticatedAPIKey:
     user_username: str
     is_superuser: bool
     name: str
+    has_provider_restrictions: bool
+    allowed_provider_ids: list[str]
 
 
 def _decode_token(token: str) -> str:
@@ -122,6 +124,8 @@ def _cached_to_authenticated(entry: CachedAPIKey) -> AuthenticatedAPIKey:
         user_username=entry.user_username,
         is_superuser=entry.user_is_superuser,
         name=entry.name,
+        has_provider_restrictions=entry.has_provider_restrictions,
+        allowed_provider_ids=list(entry.allowed_provider_ids),
     )
 
 

@@ -164,9 +164,43 @@ def record_provider_failure(
     )
 
 
+async def invalidate_provider_weights(
+    redis: Redis | None,
+    logical_model_id: str,
+    provider_ids: Sequence[str] | None = None,
+) -> None:
+    """清除指定逻辑模型下的动态权重缓存。"""
+
+    if redis is None:
+        return
+
+    key = _redis_key(logical_model_id)
+    try:
+        if not provider_ids:
+            await redis.delete(key)
+            return
+
+        unique_ids = [pid for pid in dict.fromkeys(provider_ids) if pid]
+        if not unique_ids:
+            return
+
+        await redis.zrem(key, *unique_ids)
+        remaining = await redis.zcard(key)
+        if remaining == 0:
+            await redis.delete(key)
+    except Exception as exc:  # pragma: no cover - 不影响主流程
+        logger.debug(
+            "invalidate provider weights skipped for %s (%s): %s",
+            logical_model_id,
+            provider_ids,
+            exc,
+        )
+
+
 __all__ = [
     "adjust_provider_weight",
     "load_dynamic_weights",
     "record_provider_failure",
     "record_provider_success",
+    "invalidate_provider_weights",
 ]

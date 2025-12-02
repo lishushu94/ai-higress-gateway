@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from sqlalchemy import Column, DateTime, ForeignKey, String, UniqueConstraint
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, String, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, relationship
 
@@ -27,8 +27,25 @@ class APIKey(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     key_prefix: Mapped[str] = Column(String(32), nullable=False)
     expiry_type: Mapped[str] = Column(String(16), nullable=False, default="never")
     expires_at = Column(DateTime(timezone=True), nullable=True)
+    has_provider_restrictions: Mapped[bool] = Column(
+        Boolean,
+        nullable=False,
+        server_default=text("FALSE"),
+        default=False,
+    )
 
     user: Mapped["User"] = relationship("User", back_populates="api_keys")
+    allowed_provider_links: Mapped[list["APIKeyAllowedProvider"]] = relationship(
+        "APIKeyAllowedProvider",
+        back_populates="api_key",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
+    )
+
+    @property
+    def allowed_provider_ids(self) -> list[str]:
+        return sorted(link.provider_id for link in self.allowed_provider_links)
 
 
 __all__ = ["APIKey"]

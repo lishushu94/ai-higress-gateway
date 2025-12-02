@@ -3,6 +3,7 @@ import pytest
 from app.schemas import PhysicalModel
 from app.routing.provider_weight import (
     adjust_provider_weight,
+    invalidate_provider_weights,
     load_dynamic_weights,
 )
 
@@ -14,6 +15,9 @@ class FakeRedis:
     def _get(self, key):
         return self._zsets.setdefault(key, {})
 
+    async def delete(self, key):
+        return 1 if self._zsets.pop(key, None) is not None else 0
+
     async def zadd(self, key, mapping, nx: bool = False):
         zset = self._get(key)
         for member, score in mapping.items():
@@ -21,9 +25,25 @@ class FakeRedis:
                 continue
             zset[member] = float(score)
 
+    async def zcard(self, key):
+        return len(self._zsets.get(key, {}))
+
     async def zmscore(self, key, members):
         zset = self._get(key)
         return [zset.get(member) for member in members]
+
+    async def zrem(self, key, *members):
+        zset = self._zsets.get(key)
+        if not zset:
+            return 0
+        removed = 0
+        for member in members:
+            if member in zset:
+                removed += 1
+                del zset[member]
+        if not zset:
+            self._zsets.pop(key, None)
+        return removed
 
     async def zincrby(self, key, delta, member):
         zset = self._get(key)
@@ -81,3 +101,23 @@ async def test_adjust_provider_weight_respects_clamps():
     )
     stored = await redis.zmscore(key, ["primary"])
     assert stored[0] == pytest.approx(0.4)  # 2.0 * _MIN_FACTOR
+
+
+@pytest.mark.asyncio
+async def test_invalidate_provider_weights_supports_partial_and_full_reset():
+    redis = FakeRedis()
+    logical_model = "gpt-4"
+    upstreams = [
+        _upstream("primary", 2.0),
+        _upstream("backup", 1.0),
+    ]
+    await load_dynamic_weights(redis, logical_model, upstreams)
+    key = f"routing:{logical_model}:provider_weights"
+
+    await invalidate_provider_weights(redis, logical_model, ["primary"])
+    stored = await redis.zmscore(key, ["primary", "backup"])
+    assert stored == [None, 1.0]
+
+    await invalidate_provider_weights(redis, logical_model)
+    stored_after = await redis.zmscore(key, ["backup"])
+    assert stored_after == [None]

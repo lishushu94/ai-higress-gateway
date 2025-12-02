@@ -17,6 +17,9 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = Column(String(100), nullable=False)
     base_url: Mapped[str] = Column(String(255), nullable=False)
     transport: Mapped[str] = Column(String(16), nullable=False, server_default=text("'http'"))
+    provider_type: Mapped[str] = Column(
+        String(16), nullable=False, server_default=text("'native'"), default="native"
+    )
     weight: Mapped[float] = Column(Float, nullable=False, server_default=text("1.0"))
     region: Mapped[str | None] = Column(String(50), nullable=True)
     cost_input: Mapped[float | None] = Column(Float, nullable=True)
@@ -42,6 +45,13 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="provider",
         cascade="all, delete-orphan",
         passive_deletes=True,
+    )
+    api_key_restrictions: Mapped[list["APIKeyAllowedProvider"]] = relationship(
+        "APIKeyAllowedProvider",
+        back_populates="provider",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
+        lazy="selectin",
     )
 
 

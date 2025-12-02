@@ -44,5 +44,5 @@
 - Secrets scanning is enforced via pre-commit (`detect-secrets` with `.secrets.baseline`).
 - Run `pre-commit install` once, then `pre-commit run --all-files` before pushing.
 - Never commit real API keys or `.env` contents; update the baseline only to reflect intentional, non-sensitive values.
-- 配置 `SECRET_KEY`：请使用 `bash scripts/generate_secret_key.sh` 生成随机密钥并写入 `.env`，用于对敏感标识做 HMAC/加密，不会存储明文。
-- Configure `SECRET_KEY`: run `bash scripts/generate_secret_key.sh` to generate a random secret and put it into `.env` for HMAC/encryption of sensitive identifiers (no plaintext storage).
+- 配置 `SECRET_KEY`：请使用系统API `POST /system/secret-key/generate` 生成随机密钥并写入 `.env`，用于对敏感标识做 HMAC/加密，不会存储明文。
+- Configure `SECRET_KEY`: use system API `POST /system/secret-key/generate` to generate a random secret and put it into `.env` for HMAC/encryption of sensitive identifiers (no plaintext storage).

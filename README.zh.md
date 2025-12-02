@@ -99,6 +99,7 @@ provider = Provider(
     name="OpenAI",
     base_url="https://api.openai.com",
     transport="http",
+    provider_type="native",
     models_path="/v1/models",
     messages_path="/v1/messages",
     weight=1.0,
@@ -118,19 +119,62 @@ session.close()
 PY
    ```
 
+   如果接入的是聚合/中间平台，请把 `provider_type="aggregator"`；原生直连厂商使用默认的 `"native"` 即可。
+
    其他厂商、静态模型、权重/QPS 等都通过更新数据库记录完成，不再依赖 `LLM_PROVIDER_*` 环境变量。
 
    生成并填入 `SECRET_KEY`（用于派生 Fernet/HMAC 密钥，加密后的密钥才会写入数据库）：
 
    ```bash
-   bash scripts/generate_secret_key.sh
+   curl -X POST "http://localhost:8000/system/secret-key/generate" \
+     -H "Authorization: Bearer <initial_jwt_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"length": 64}'
    ```
 
    将输出的随机字符串填入 `.env` 中的 `SECRET_KEY`。
 
-4. 🔑 初始化用户与密钥（非常重要！）：
+4. 🔑 认证与密钥管理：
 
-   通过 `/users` 以及 `/users/{user_id}/api-keys` 管理接口创建用户并生成密钥。API 只会返回一次明文密钥，请立刻保存，并在调用网关时携带 `Authorization: Bearer <base64(token)>`（可用 `uv run scripts/encode_token.py <token>` 重新编码）。首个管理员账户/密钥可由运维流程（SQL、管理后台等）提前注入。
+   网关使用了重新设计的密钥管理系统，明确分离了不同类型的密钥：
+
+   - **系统主密钥**：用于派生加密密钥和哈希敏感数据。
+   - **用户认证**：基于JWT的用户登录系统。
+   - **API密钥**：用于客户端应用访问AI服务。
+   - **厂商密钥**：用于访问外部AI服务（OpenAI、Claude等）。
+
+   首次启动时，系统会自动创建超级管理员并进行系统初始化：
+   
+   ```bash
+   # 生成并设置系统主密钥（用于加密/哈希）：
+   curl -X POST "http://localhost:8000/system/secret-key/generate" \
+     -H "Content-Type: application/json" \
+     -d '{"length": 64}'
+
+   # 初始化系统管理员（仅在没有用户时有效）：
+   curl -X POST "http://localhost:8000/system/admin/init" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "email": "admin@example.com", "display_name": "系统管理员"}'
+   
+   # 登录获取JWT令牌用于后续API操作：
+   curl -X POST "http://localhost:8000/auth/login" \
+     -H "Content-Type: application/json" \
+     -d '{"username": "admin", "password": "<返回的密码>"}'
+   
+   # 为您的应用程序创建API密钥：
+   curl -X POST "http://localhost:8000/users/{user_id}/api-keys" \
+     -H "Authorization: Bearer <jwt_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"name": "我的应用密钥", "expiry": "MONTH"}'
+   ```
+
+   访问AI服务时，使用API密钥：
+   ```bash
+   curl -X GET "http://localhost:8000/models" \
+     -H "Authorization: Bearer <api_key>"
+   ```
+
+   请参阅 [docs/key-management.md](docs/key-management.md) 了解密钥管理系统的详细信息。
 
 5. 启动服务：
 
@@ -184,7 +228,7 @@ PY
 
    - 将 `REDIS_URL`、`DATABASE_URL` 指向本地服务；
    - 配置 `SECRET_KEY`（`bash scripts/generate_secret_key.sh`）以便派生 Fernet/HMAC 密钥；
-   - 通过 `/users` 与 `/users/{user_id}/api-keys`（或其他运维流程）创建管理员账号和密钥，并在请求里携带 `Authorization: Bearer <base64(token)>`；
+   - 首次启动会在日志中输出默认超级管理员的密码与 API Key，请立即记录并修改。之后通过 `/users` 与 `/users/{user_id}/api-keys` 维护更多用户/密钥，所有调用都需携带 `Authorization: Bearer <base64(token)>`；
    - 直接在数据库中新增/修改 `providers`、`provider_api_keys`、`provider_models` 行，以设置权重、SDK 连接方式、重试状态码等信息。
 
 3. 启动开发服务器：

@@ -99,6 +99,13 @@ class ProviderConfig(BaseModel):
         default="http",
         description="Transport type: default HTTP proxying or provider-native SDK",
     )
+    provider_type: Literal["native", "aggregator"] = Field(
+        default="native",
+        description=(
+            "Provider vendor category. Use 'native' for first-party providers and "
+            "'aggregator' when routing through an intermediary platform."
+        ),
+    )
 
     def get_api_keys(self) -> list[ProviderAPIKey]:
         """
@@ -127,4 +134,79 @@ class Provider(ProviderConfig):
     )
 
 
-__all__ = ["Provider", "ProviderAPIKey", "ProviderConfig", "ProviderStatus"]
+class ProviderAPIKeyCreateRequest(BaseModel):
+    """
+    创建厂商API密钥的请求模型
+    """
+    key: str = Field(..., description="API认证密钥或令牌")
+    label: str = Field(..., description="密钥的可识别标签")
+    weight: float = Field(
+        default=1.0,
+        description="当厂商有多个密钥时的相对路由权重",
+        gt=0,
+    )
+    max_qps: int | None = Field(
+        default=None,
+        description="可选的每密钥QPS限制；达到此限制时将暂时跳过此密钥",
+        gt=0,
+    )
+    status: str = Field(
+        default="active",
+        description="密钥状态：'active'或'inactive'",
+    )
+
+
+class ProviderAPIKeyUpdateRequest(BaseModel):
+    """
+    更新厂商API密钥的请求模型
+    """
+    key: str | None = Field(
+        default=None,
+        description="API认证密钥或令牌",
+    )
+    label: str | None = Field(
+        default=None,
+        description="密钥的可识别标签",
+    )
+    weight: float | None = Field(
+        default=None,
+        description="当厂商有多个密钥时的相对路由权重",
+        gt=0,
+    )
+    max_qps: int | None = Field(
+        default=None,
+        description="可选的每密钥QPS限制；达到此限制时将暂时跳过此密钥",
+        gt=0,
+    )
+    status: str | None = Field(
+        default=None,
+        description="密钥状态：'active'或'inactive'",
+    )
+
+
+class ProviderAPIKeyResponse(BaseModel):
+    """
+    厂商API密钥的响应模型
+    """
+    id: str
+    provider_id: str
+    label: str
+    weight: float
+    max_qps: int | None
+    status: str
+    created_at: str
+    updated_at: str | None = None
+    
+    class Config:
+        from_attributes = True
+
+
+__all__ = [
+    "Provider", 
+    "ProviderAPIKey", 
+    "ProviderConfig", 
+    "ProviderStatus",
+    "ProviderAPIKeyCreateRequest",
+    "ProviderAPIKeyUpdateRequest",
+    "ProviderAPIKeyResponse",
+]

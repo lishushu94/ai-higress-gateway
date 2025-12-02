@@ -8,11 +8,15 @@ from uuid import UUID
 
 from sqlalchemy import Select, select
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from app.models import APIKey, User
 from app.schemas.api_key import APIKeyCreateRequest, APIKeyExpiry, APIKeyUpdateRequest
 from app.settings import settings
+from .api_key_provider_restriction import (
+    APIKeyProviderRestrictionService,
+    UnknownProviderError,
+)
 
 API_KEY_PREFIX_LENGTH = 12
 
@@ -68,6 +72,7 @@ def list_api_keys_for_user(session: Session, user_id: UUID) -> list[APIKey]:
     stmt: Select[tuple[APIKey]] = (
         select(APIKey)
         .where(APIKey.user_id == user_id)
+        .options(selectinload(APIKey.allowed_provider_links))
         .order_by(APIKey.created_at.asc())
     )
     return list(session.execute(stmt).scalars().all())
@@ -76,7 +81,9 @@ def list_api_keys_for_user(session: Session, user_id: UUID) -> list[APIKey]:
 def get_api_key_by_id(
     session: Session, key_id: UUID | str, *, user_id: UUID | None = None
 ) -> APIKey | None:
-    stmt: Select[tuple[APIKey]] = select(APIKey)
+    stmt: Select[tuple[APIKey]] = select(APIKey).options(
+        selectinload(APIKey.allowed_provider_links)
+    )
     try:
         key_uuid = UUID(str(key_id))
     except ValueError:
@@ -88,7 +95,14 @@ def get_api_key_by_id(
 
 
 def find_api_key_by_hash(session: Session, key_hash: str) -> APIKey | None:
-    stmt: Select[tuple[APIKey]] = select(APIKey).where(APIKey.key_hash == key_hash)
+    stmt: Select[tuple[APIKey]] = (
+        select(APIKey)
+        .where(APIKey.key_hash == key_hash)
+        .options(
+            selectinload(APIKey.allowed_provider_links),
+            selectinload(APIKey.user),
+        )
+    )
     return session.execute(stmt).scalars().first()
 
 
@@ -112,8 +126,15 @@ def create_api_key(
     )
 
     session.add(api_key)
+    session.flush()  # ensure api_key.id for relationship inserts
+    restrictions = APIKeyProviderRestrictionService(session)
     try:
+        if payload.allowed_provider_ids is not None:
+            restrictions.set_allowed_providers(api_key, payload.allowed_provider_ids)
         session.commit()
+    except UnknownProviderError:
+        session.rollback()
+        raise
     except IntegrityError as exc:  # pragma: no cover - 极低概率的并发写冲突
         session.rollback()
         raise APIKeyServiceError("无法创建密钥") from exc
@@ -141,8 +162,18 @@ def update_api_key(
         api_key.expiry_type = payload.expiry.value
         api_key.expires_at = _expires_at_for(payload.expiry)
 
-    session.add(api_key)
-    session.commit()
+    restrictions = APIKeyProviderRestrictionService(session)
+    try:
+        if payload.allowed_provider_ids is not None:
+            restrictions.set_allowed_providers(api_key, payload.allowed_provider_ids)
+        session.add(api_key)
+        session.commit()
+    except UnknownProviderError:
+        session.rollback()
+        raise
+    except IntegrityError as exc:  # pragma: no cover - 极低概率的并发写冲突
+        session.rollback()
+        raise APIKeyServiceError("无法更新密钥") from exc
     session.refresh(api_key)
     return api_key
 

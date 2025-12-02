@@ -14,7 +14,7 @@ from app.services.api_key_service import (
     build_api_key_prefix,
     derive_api_key_hash,
 )
-from app.services.user_service import hash_user_password
+from app.services.jwt_auth_service import hash_password
 
 
 def install_inmemory_db(app, *, token_plain: str = "timeline") -> sessionmaker[Session]:
@@ -61,10 +61,20 @@ def seed_user_and_key(
     email: str = "admin@example.com",
     is_superuser: bool = True,
 ) -> tuple[User, APIKey]:
+    def _hash_password_safe(raw: str) -> str:
+        """
+        测试环境缺少 bcrypt 后端时退化为直接写入明文。
+        """
+        try:
+            return hash_password(raw)
+        except ValueError:
+            # 驱动检测在CI容器里可能失败，直接退回到明文方便种子数据写入。
+            return raw
+
     user = User(
         username=username,
         email=email,
-        hashed_password=hash_user_password("Secret123!"),
+        hashed_password=_hash_password_safe("Secret123!"),
         is_active=True,
         is_superuser=is_superuser,
     )

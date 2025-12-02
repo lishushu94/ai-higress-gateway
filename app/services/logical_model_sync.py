@@ -23,6 +23,7 @@ except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is
 from app.db.session import SessionLocal
 from app.logging_config import logger
 from app.models import Provider, ProviderModel
+from app.routing.provider_weight import invalidate_provider_weights
 from app.schemas.logical_model import LogicalModel, PhysicalModel
 from app.schemas.model import ModelCapability
 from app.storage.redis_service import (
@@ -66,6 +67,18 @@ def _build_endpoint(provider: Provider) -> str:
     if not path.startswith("/"):
         path = "/" + path
     return f"{base}{path}"
+
+
+async def _invalidate_weights_for_models(
+    redis: Redis,
+    logical_models: Sequence[LogicalModel],
+    provider_ids: set[str],
+) -> None:
+    if not provider_ids:
+        return
+    provider_list = list(provider_ids)
+    for logical in logical_models:
+        await invalidate_provider_weights(redis, logical.logical_id, provider_list)
 
 
 def collect_logical_models(
@@ -229,8 +242,11 @@ async def sync_logical_models(
 
         if merged_models:
             await sync_logical_models_to_redis(redis, merged_models)
+            if provider_set:
+                await _invalidate_weights_for_models(redis, merged_models, provider_set)
         for stale_id in stale_logical_ids:
             await delete_logical_model(redis, stale_id)
+            await invalidate_provider_weights(redis, stale_id)
         return merged_models
 
     # 全量刷新：写入最新数据，并删除数据库中已不存在的逻辑模型。
@@ -243,6 +259,7 @@ async def sync_logical_models(
     stale_ids = existing_ids - current_ids
     for stale_id in stale_ids:
         await delete_logical_model(redis, stale_id)
+        await invalidate_provider_weights(redis, stale_id)
 
     return logical_models
 

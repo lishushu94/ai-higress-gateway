@@ -5,12 +5,15 @@ from app.provider.config import get_provider_config, load_provider_configs
 from app.services.encryption import encrypt_secret
 
 
-def _build_provider(*, slug: str = "openai", status: str = "active") -> Provider:
+def _build_provider(
+    *, slug: str = "openai", status: str = "active", provider_type: str = "native"
+) -> Provider:
     provider = Provider(
         provider_id=slug,
         name="OpenAI",
         base_url="https://api.openai.com",
         transport="http",
+        provider_type=provider_type,
         models_path="/v1/models",
         messages_path="/v1/messages",
         custom_headers={"X-Test": "1"},
@@ -56,6 +59,7 @@ def test_load_provider_configs_reads_from_db(monkeypatch):
     cfg = configs[0]
     assert cfg.id == "openai"
     assert cfg.transport == "http"
+    assert cfg.provider_type == "native"
     assert cfg.static_models is not None
     assert cfg.static_models[0]["id"] == "gpt-4o"
     assert cfg.custom_headers == {"X-Test": "1"}
@@ -63,6 +67,31 @@ def test_load_provider_configs_reads_from_db(monkeypatch):
     assert len(keys) == 1
     assert keys[0].weight == 2.0
     assert keys[0].label == "primary"
+
+
+def test_aggregator_provider_type_is_preserved(monkeypatch):
+    provider = _build_provider(provider_type="aggregator")
+
+    def _fake_loader(session):
+        return [provider]
+
+    monkeypatch.setattr("app.provider.config._load_providers_from_db", _fake_loader)
+
+    configs = load_provider_configs(session="fake-session")
+    assert configs[0].provider_type == "aggregator"
+
+
+def test_invalid_provider_type_defaults_to_native(monkeypatch):
+    provider = _build_provider()
+    provider.provider_type = "invalid"
+
+    def _fake_loader(session):
+        return [provider]
+
+    monkeypatch.setattr("app.provider.config._load_providers_from_db", _fake_loader)
+
+    configs = load_provider_configs(session="fake-session")
+    assert configs[0].provider_type == "native"
 
 
 def test_provider_without_active_keys_is_skipped(monkeypatch):

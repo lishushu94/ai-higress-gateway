@@ -16,7 +16,10 @@ APIProxy 的基础依赖（Redis、Postgres、日志级别等）仍通过环境�
 2. 生成 `SECRET_KEY`，供 Fernet/HMAC 使用（所有敏感信息都依赖该密钥加密）：
 
    ```bash
-   bash scripts/generate_secret_key.sh
+   curl -X POST "http://localhost:8000/system/secret-key/generate" \
+     -H "Authorization: Bearer <initial_jwt_token>" \
+     -H "Content-Type: application/json" \
+     -d '{"length": 64}'
    ```
 
    将输出写入 `.env` 中的 `SECRET_KEY`。
@@ -44,6 +47,7 @@ provider = Provider(
     name="OpenAI",
     base_url="https://api.openai.com",
     transport="http",
+    provider_type="native",
     models_path="/v1/models",
     messages_path="/v1/messages",
     weight=1.0,
@@ -80,6 +84,7 @@ PY
    ```
 
    - **永远不要**直接在数据库中写入明文 API Key。请使用 `app.services.encryption.encrypt_secret()` 生成密文。  
+   - `provider_type` 字段用于区分原生厂商 (`native`) 与聚合/中间平台 (`aggregator`)，默认 `native` 即可。  
    - `provider_models` 可选，用于没有 `/models` 接口的提供商；`capabilities` 是任意字符串数组（chat/completion/embedding 等）。  
    - 多个 API Key 只需新增多行 `provider_api_keys`，权重/QPS/标签均可按列配置。
 
@@ -91,7 +96,7 @@ PY
 
 | 表 | 关键字段 | 说明 |
 |----|----------|------|
-| `providers` | `provider_id`、`name`、`base_url`、`transport`、`models_path`、`messages_path`、`weight`、`retryable_status_codes`、`max_qps`、`custom_headers` | 描述一个上游提供商。`transport` 支持 `http` / `sdk`。`custom_headers` 用于附加 HTTP 头。 |
+| `providers` | `provider_id`、`name`、`base_url`、`transport`、`provider_type`、`models_path`、`messages_path`、`weight`、`retryable_status_codes`、`max_qps`、`custom_headers` | 描述一个上游提供商。`transport` 支持 `http` / `sdk`，`provider_type` 区分 `native`（原生厂商）和 `aggregator`（中间平台）。`custom_headers` 用于附加 HTTP 头。 |
 | `provider_api_keys` | `provider_uuid`、`encrypted_key`、`weight`、`max_qps`、`label`、`status` | 每行表示一个加密后的 API Key，`status != 'active'` 的记录会被忽略。 |
 | `provider_models` | `provider_id`、`model_id`、`display_name`、`context_length`、`capabilities`、`pricing`、`meta_hash` | 可选的静态模型列表。当某个提供商没有 `/models` 接口或需要手动指定模型能力时使用。 |
 

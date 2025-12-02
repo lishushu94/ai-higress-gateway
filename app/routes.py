@@ -11,6 +11,8 @@ import httpx
 from fastapi import Body, Depends, FastAPI, Header, HTTPException, Request, status
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.schemas import (
     LogicalModel,
@@ -31,6 +33,7 @@ from app.provider.key_pool import (
     record_key_success,
 )
 from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
+from app.routing.exceptions import NoAllowedProvidersAvailable
 from app.routing.mapper import select_candidate_upstreams
 from app.routing.provider_weight import (
     load_dynamic_weights,
@@ -41,17 +44,24 @@ from app.routing.scheduler import CandidateScore, choose_upstream
 from app.routing.session_manager import bind_session, get_session
 from app.storage.redis_service import get_logical_model, get_routing_metrics
 
-from .auth import require_api_key
+from .auth import AuthenticatedAPIKey, require_api_key
 from .context_store import save_context
-from .deps import get_http_client, get_redis
+from .deps import get_db, get_http_client, get_redis
+from .db import SessionLocal
+from .errors import forbidden
 from .logging_config import logger
-from .api.api_key_routes import router as api_key_router
+from .api.auth_routes import router as auth_router
 from .api.logical_model_routes import router as logical_model_router
 from .api.provider_routes import router as provider_router
 from .api.routing_routes import router as routing_router
 from .api.session_routes import router as session_router
-from .api.user_routes import router as user_router
+from .api.system_routes import router as system_router
+from .api.v1.api_key_routes import router as api_key_router
+from .api.v1.provider_key_routes import router as provider_key_router
+from .api.v1.user_routes import router as user_router
 from .model_cache import get_models_from_cache, set_models_cache
+from .models import ProviderModel
+from .services.bootstrap_admin import ensure_initial_admin
 from .settings import settings
 from .upstream import UpstreamStreamError, detect_request_format, stream_upstream
 
@@ -70,6 +80,19 @@ class ModelInfo(BaseModel):
 class ModelsResponse(BaseModel):
     object: str = "list"
     data: list[ModelInfo] = Field(default_factory=list)
+
+
+def _enforce_allowed_providers(
+    candidates: list[PhysicalModel],
+    api_key: AuthenticatedAPIKey,
+) -> list[PhysicalModel]:
+    if not api_key.has_provider_restrictions:
+        return candidates
+    allowed = set(api_key.allowed_provider_ids)
+    filtered = [cand for cand in candidates if cand.provider_id in allowed]
+    if not filtered:
+        raise NoAllowedProvidersAvailable(str(api_key.id), api_key.allowed_provider_ids)
+    return filtered
 
 
 def _apply_upstream_path_override(endpoint: str, override_path: str | None) -> str:
@@ -802,53 +825,28 @@ async def _load_metrics_for_candidates(
 
 
 async def _get_or_fetch_models(
-    client: httpx.AsyncClient,
     redis,
+    db: Session,
 ) -> ModelsResponse:
     """
-    Fetch aggregated model list from all configured providers and return
-    a normalized OpenAI-style ModelsResponse.
+    Return cached models when available, otherwise fall back to the DB snapshot.
     """
-    # Try cache first
     cached = await get_models_from_cache(redis)
     if cached:
         return ModelsResponse(**cached)
 
-    providers = load_provider_configs()
-    models: list[ModelInfo] = []
+    try:
+        stmt = select(ProviderModel.model_id).order_by(ProviderModel.model_id)
+        rows = db.execute(stmt).scalars().all()
+    except Exception:
+        logger.exception("Failed to load provider models from database")
+        rows = []
 
-    for cfg in providers:
-        try:
-            items = await ensure_provider_models_cached(client, redis, cfg)
-        except httpx.HTTPError as exc:
-            # Skip providers whose /models endpoint is currently failing.
-            logger.warning(
-                "Skipping provider %s while aggregating /models: %s",
-                cfg.id,
-                exc,
-            )
-            continue
-
-        for m in items:
-            model_id: str | None = None
-            if isinstance(m, dict):
-                # Prefer explicit id, fall back to model_id.
-                mid = m.get("id") or m.get("model_id")
-                if isinstance(mid, str):
-                    model_id = mid
-            elif isinstance(m, str):
-                model_id = m
-
-            if model_id:
-                models.append(ModelInfo(id=model_id))
+    models = [ModelInfo(id=str(model_id)) for model_id in rows if model_id]
 
     models_response = ModelsResponse(data=models)
-
-    # Store normalized payload in cache
     await set_models_cache(redis, models_response.model_dump())
-
     return models_response
-
 
 def _build_ordered_candidates(
     selected: CandidateScore,
@@ -1513,7 +1511,10 @@ def _wrap_chat_stream_response(chat_response: StreamingResponse) -> StreamingRes
 
 def create_app() -> FastAPI:
     app = FastAPI(title="AI Gateway", version="0.1.0")
-
+    # Authentication API for user login and JWT tokens.
+    app.include_router(auth_router)
+    # System management API.
+    app.include_router(system_router)
     # Provider-management API (multi-provider routing feature).
     app.include_router(provider_router)
     # Logical model mapping API (User Story 2).
@@ -1521,8 +1522,19 @@ def create_app() -> FastAPI:
     # Routing decision and session APIs (User Story 3).
     app.include_router(routing_router)
     app.include_router(session_router)
+    
+    # User and API key management - using JWT authentication
     app.include_router(user_router)
     app.include_router(api_key_router)
+    app.include_router(provider_key_router)
+
+    @app.on_event("startup")
+    async def _ensure_admin_account() -> None:
+        session = SessionLocal()
+        try:
+            ensure_initial_admin(session)
+        finally:
+            session.close()
 
     @app.middleware("http")
     async def log_requests(request: Request, call_next):
@@ -1571,10 +1583,10 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_api_key)],
     )
     async def list_models(
-        client: httpx.AsyncClient = Depends(get_http_client),
         redis=Depends(get_redis),
+        db: Session = Depends(get_db),
     ) -> ModelsResponse:
-        models_response = await _get_or_fetch_models(client, redis)
+        models_response = await _get_or_fetch_models(redis, db)
         return models_response
 
     @app.get(
@@ -1583,24 +1595,22 @@ def create_app() -> FastAPI:
         dependencies=[Depends(require_api_key)],
     )
     async def list_models_v1(
-        client: httpx.AsyncClient = Depends(get_http_client),
         redis=Depends(get_redis),
+        db: Session = Depends(get_db),
     ) -> ModelsResponse:
         """
         向后兼容的别名：某些 SDK 默认请求 /v1/models。
         """
-        return await list_models(client=client, redis=redis)
+        return await list_models(redis=redis, db=db)
 
-    @app.post(
-        "/v1/chat/completions",
-        dependencies=[Depends(require_api_key)],
-    )
+    @app.post("/v1/chat/completions")
     async def chat_completions(
         request: Request,
         client: httpx.AsyncClient = Depends(get_http_client),
         redis=Depends(get_redis),
         x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
         raw_body: dict[str, Any] = Body(...),
+        current_key: AuthenticatedAPIKey = Depends(require_api_key),
     ):
         """
         Gateway endpoint that accepts both OpenAI-style and Claude-style payloads.
@@ -1735,6 +1745,18 @@ def create_app() -> FastAPI:
                         f"No upstreams available for logical model "
                         f"'{logical_model.logical_id}'"
                     ),
+                )
+
+            try:
+                candidates = _enforce_allowed_providers(candidates, current_key)
+            except NoAllowedProvidersAvailable:
+                raise forbidden(
+                    "当前 API Key 未允许访问任何可用的提供商",
+                    details={
+                        "api_key_id": str(current_key.id),
+                        "allowed_provider_ids": current_key.allowed_provider_ids,
+                        "logical_model": logical_model.logical_id,
+                    },
                 )
 
             # 2) Optional session stickiness using X-Session-Id as conversation id.
@@ -2507,16 +2529,14 @@ def create_app() -> FastAPI:
                 routed_iterator(), media_type="text/event-stream"
             )
 
-    @app.post(
-        "/v1/responses",
-        dependencies=[Depends(require_api_key)],
-    )
+    @app.post("/v1/responses")
     async def responses_endpoint(
         request: Request,
         client: httpx.AsyncClient = Depends(get_http_client),
         redis=Depends(get_redis),
         x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
         raw_body: dict[str, Any] = Body(...),
+        current_key: AuthenticatedAPIKey = Depends(require_api_key),
     ):
         """
         OpenAI Responses API 兼容端点，默认以 Responses 形态透传到上游。
@@ -2535,6 +2555,7 @@ def create_app() -> FastAPI:
             redis=redis,
             x_session_id=x_session_id,
             raw_body=forward_body,
+            current_key=current_key,
         )
         if isinstance(base_response, StreamingResponse):
             if passthrough:
@@ -2560,16 +2581,14 @@ def create_app() -> FastAPI:
             )
         return base_response
 
-    @app.post(
-        "/v1/messages",
-        dependencies=[Depends(require_api_key)],
-    )
+    @app.post("/v1/messages")
     async def claude_messages_endpoint(
         request: Request,
         client: httpx.AsyncClient = Depends(get_http_client),
         redis=Depends(get_redis),
         x_session_id: str | None = Header(default=None, alias="X-Session-Id"),
         raw_body: dict[str, Any] = Body(...),
+        current_key: AuthenticatedAPIKey = Depends(require_api_key),
     ):
         """
         Claude/Anthropic Messages API 兼容端点，向上游的 /v1/message 转发。
@@ -2586,6 +2605,7 @@ def create_app() -> FastAPI:
             redis=redis,
             x_session_id=x_session_id,
             raw_body=forward_body,
+            current_key=current_key,
         )
 
     @app.get(

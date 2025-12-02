@@ -19,6 +19,10 @@ class APIKeyCreateRequest(BaseModel):
     expiry: APIKeyExpiry = Field(
         default=APIKeyExpiry.NEVER, description="密钥有效期（周、月、年、不过期）"
     )
+    allowed_provider_ids: list[str] | None = Field(
+        default=None,
+        description="允许访问的 provider_id 列表；省略表示无限制",
+    )
 
 
 class APIKeyUpdateRequest(BaseModel):
@@ -26,10 +30,18 @@ class APIKeyUpdateRequest(BaseModel):
     expiry: APIKeyExpiry | None = Field(
         default=None, description="新的有效期选项；留空表示保持不变"
     )
+    allowed_provider_ids: list[str] | None = Field(
+        default=None,
+        description="新的 provider_id 列表；空数组表示清除限制",
+    )
 
     @model_validator(mode="after")
     def ensure_any_field(self) -> "APIKeyUpdateRequest":
-        if self.name is None and self.expiry is None:
+        if (
+            self.name is None
+            and self.expiry is None
+            and self.allowed_provider_ids is None
+        ):
             raise ValueError("至少需要提供一个可更新字段")
         return self
 
@@ -43,6 +55,8 @@ class APIKeyResponse(BaseModel):
     expires_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+    has_provider_restrictions: bool
+    allowed_provider_ids: list[str] = Field(default_factory=list)
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -54,7 +68,23 @@ class APIKeyCreateResponse(APIKeyResponse):
     )
 
 
+class APIKeyAllowedProvidersRequest(BaseModel):
+    allowed_provider_ids: list[str] = Field(
+        default_factory=list,
+        description="新的 provider_id 列表；为空表示清除限制",
+    )
+
+
+class APIKeyAllowedProvidersResponse(BaseModel):
+    has_provider_restrictions: bool
+    allowed_provider_ids: list[str] = Field(default_factory=list)
+
+
+
+
 __all__ = [
+    "APIKeyAllowedProvidersRequest",
+    "APIKeyAllowedProvidersResponse",
     "APIKeyCreateRequest",
     "APIKeyCreateResponse",
     "APIKeyExpiry",

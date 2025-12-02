@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict, ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from app.models import APIKey
-from app.redis_client import redis_delete, redis_get_json, redis_set_json
+from app.logging_config import logger
+from app.redis_client import get_redis_client, redis_delete, redis_get_json, redis_set_json
 
 CACHE_KEY_TEMPLATE = "auth:api-key:{key_hash}"
 CACHE_TTL_SECONDS = 600
@@ -21,6 +23,8 @@ class CachedAPIKey(BaseModel):
     user_is_superuser: bool
     name: str
     expires_at: datetime | None = None
+    has_provider_restrictions: bool = False
+    allowed_provider_ids: list[str] = Field(default_factory=list)
 
 
 def build_cache_entry(api_key: APIKey) -> CachedAPIKey:
@@ -36,6 +40,8 @@ def build_cache_entry(api_key: APIKey) -> CachedAPIKey:
         user_is_superuser=is_superuser,
         name=api_key.name,
         expires_at=api_key.expires_at,
+        has_provider_restrictions=api_key.has_provider_restrictions,
+        allowed_provider_ids=list(api_key.allowed_provider_ids),
     )
 
 
@@ -75,11 +81,36 @@ async def invalidate_cached_api_key(redis, key_hash: str) -> None:
     await redis_delete(redis, key)
 
 
+def cache_api_key_sync(api_key: APIKey) -> None:
+    """
+    Best-effort helper to cache API key metadata from sync endpoints.
+    """
+    try:
+        redis = get_redis_client()
+        entry = build_cache_entry(api_key)
+        asyncio.run(cache_api_key(redis, api_key.key_hash, entry))
+    except Exception:  # pragma: no cover - logging best-effort
+        logger.exception("Failed to cache API key %s", api_key.id)
+
+
+def invalidate_api_key_cache_sync(key_hash: str) -> None:
+    """
+    Best-effort helper to drop cached API key data from sync endpoints.
+    """
+    try:
+        redis = get_redis_client()
+        asyncio.run(invalidate_cached_api_key(redis, key_hash))
+    except Exception:  # pragma: no cover - logging best-effort
+        logger.exception("Failed to invalidate API key cache for %s", key_hash)
+
+
 __all__ = [
     "CACHE_KEY_TEMPLATE",
     "CachedAPIKey",
     "build_cache_entry",
     "cache_api_key",
+    "cache_api_key_sync",
     "get_cached_api_key",
     "invalidate_cached_api_key",
+    "invalidate_api_key_cache_sync",
 ]
