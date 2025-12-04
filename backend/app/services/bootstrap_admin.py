@@ -42,7 +42,9 @@ def ensure_initial_admin(session: Session) -> BootstrapAdminResult | None:
         
         # 获取API密钥并缓存
         from app.services.api_key_service import list_api_keys_for_user
-        api_keys = list_api_keys_for_user(session, admin_credentials["username"])
+        # admin_credentials 包含 user 对象，不是字符串
+        user = admin_credentials["user"]
+        api_keys = list_api_keys_for_user(session, user.id)
         if api_keys:
             cache_api_key_sync(api_keys[0])
         

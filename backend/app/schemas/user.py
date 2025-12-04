@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, model_validator
 
 
 class UserCreateRequest(BaseModel):
-    username: str = Field(
-        ..., min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$"
+    username: str | None = Field(
+        None, min_length=3, max_length=64, pattern=r"^[A-Za-z0-9_.-]+$"
     )
     email: EmailStr
     password: str = Field(..., min_length=8, max_length=128)
@@ -38,6 +38,19 @@ class UserStatusUpdateRequest(BaseModel):
     is_active: bool
 
 
+class UserPermissionFlag(BaseModel):
+    """前端可见的权限能力标记，用列表封装布尔值。"""
+
+    key: str = Field(
+        ...,
+        description="权限能力键，例如 can_create_private_provider",
+    )
+    value: bool = Field(
+        ...,
+        description="该能力是否启用",
+    )
+
+
 class UserResponse(BaseModel):
     id: UUID
     username: str
@@ -46,6 +59,10 @@ class UserResponse(BaseModel):
     avatar: str | None = None
     is_active: bool
     is_superuser: bool
+    # 当前用户拥有的角色编码列表（例如 ["default_user", "system_admin"]）
+    role_codes: list[str] = Field(default_factory=list)
+    # 能力标记列表，用于前端控制界面权限（后端仍做强校验）
+    permission_flags: list[UserPermissionFlag] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -54,6 +71,7 @@ class UserResponse(BaseModel):
 
 __all__ = [
     "UserCreateRequest",
+    "UserPermissionFlag",
     "UserResponse",
     "UserStatusUpdateRequest",
     "UserUpdateRequest",

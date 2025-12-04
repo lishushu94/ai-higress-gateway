@@ -116,6 +116,10 @@ def create_api_key(
         raise APIKeyNameAlreadyExistsError("duplicate api key name")
 
     token = secrets.token_urlsafe(48)
+    print(f"API token length: {len(token.encode('utf-8'))} bytes")
+    if len(token.encode('utf-8')) > 72:
+        token = token[:72]
+        print(f"Truncated API token to: {len(token.encode('utf-8'))} bytes")
     api_key = APIKey(
         user_id=user.id,
         name=payload.name,

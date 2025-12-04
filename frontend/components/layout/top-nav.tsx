@@ -1,14 +1,20 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { Bell, User, Moon, Sun } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Bell, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n-context";
+import { useAuthStore } from "@/lib/stores/auth-store";
+import { UserMenu } from "./user-menu";
+import { Button } from "@/components/ui/button";
 
 export function TopNav() {
     const [mounted, setMounted] = useState(false);
     const { setTheme, theme } = useTheme();
     const { language, setLanguage, t } = useI18n();
+    const { isAuthenticated, isLoading } = useAuthStore();
+    const router = useRouter();
 
     useEffect(() => {
         setMounted(true);
@@ -61,15 +67,21 @@ export function TopNav() {
                     <span className="absolute top-1.5 right-1.5 w-2 h-2 bg-destructive rounded-full" />
                 </button>
 
-                {/* User Profile */}
-                <div className="flex items-center space-x-3 pl-4 border-l">
-                    <div className="text-right hidden md:block">
-                        <p className="text-sm font-medium">{t("topnav.admin_user_name")}</p>
-                        <p className="text-xs text-muted-foreground">{t("topnav.admin_role")}</p>
-                    </div>
-                    <div className="h-9 w-9 rounded-full bg-muted flex items-center justify-center">
-                        <User className="w-5 h-5 text-foreground" />
-                    </div>
+                {/* User Profile or Login Button */}
+                <div className="flex items-center pl-4 border-l">
+                    {!isLoading && (
+                        isAuthenticated ? (
+                            <UserMenu />
+                        ) : (
+                            <Button 
+                                variant="default" 
+                                size="sm"
+                                onClick={() => router.push('/login')}
+                            >
+                                登录
+                            </Button>
+                        )
+                    )}
                 </div>
             </div>
         </header>

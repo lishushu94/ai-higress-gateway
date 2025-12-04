@@ -1,4 +1,6 @@
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 from .model import ModelCapability
@@ -21,6 +23,9 @@ class PhysicalModel(BaseModel):
         None, description="Metadata hash to track upstream version"
     )
     updated_at: float = Field(..., description="Last update timestamp (epoch seconds)")
+    api_style: Literal["openai", "responses", "claude"] = Field(
+        default="openai", description="Upstream API style"
+    )
 
 
 class LogicalModel(BaseModel):
@@ -45,4 +50,3 @@ class LogicalModel(BaseModel):
 
 
 __all__ = ["LogicalModel", "PhysicalModel"]
-

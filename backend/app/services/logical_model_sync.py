@@ -57,16 +57,25 @@ def _dedup_capabilities(caps: Iterable[ModelCapability]) -> list[ModelCapability
     return ordered
 
 
-def _build_endpoint(provider: Provider) -> str:
+def _build_endpoint(provider: Provider) -> tuple[str, str]:
     base = str(provider.base_url).rstrip("/")
     transport = (provider.transport or "http").lower()
     if transport == "sdk":
-        return base
+        return base, "openai"
 
-    path = (provider.messages_path or "/v1/chat/completions").strip()
-    if not path.startswith("/"):
-        path = "/" + path
-    return f"{base}{path}"
+    api_style = "openai"
+    path = provider.chat_completions_path or "/v1/chat/completions"
+    if provider.messages_path:
+        api_style = "claude"
+        path = provider.messages_path
+    elif provider.responses_path:
+        api_style = "responses"
+        path = provider.responses_path
+
+    cleaned = (path or "/v1/chat/completions").strip()
+    if not cleaned.startswith("/"):
+        cleaned = "/" + cleaned
+    return f"{base}{cleaned}", api_style
 
 
 async def _invalidate_weights_for_models(
@@ -119,16 +128,18 @@ def collect_logical_models(
         )
 
         updated_at = provider_model.updated_at.timestamp() if provider_model.updated_at else now
+        endpoint, api_style = _build_endpoint(provider)
         upstreams_by_logical[provider_model.model_id].append(
             PhysicalModel(
                 provider_id=provider.provider_id,
                 model_id=provider_model.model_id,
-                endpoint=_build_endpoint(provider),
+                endpoint=endpoint,
                 base_weight=provider.weight or 1.0,
                 region=provider.region,
                 max_qps=provider.max_qps,
                 meta_hash=provider_model.meta_hash,
                 updated_at=updated_at,
+                api_style=api_style,
             )
         )
 

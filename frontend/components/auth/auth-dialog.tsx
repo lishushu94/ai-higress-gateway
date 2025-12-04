@@ -1,6 +1,10 @@
 "use client";
 
 import React, { useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import { z } from "zod";
 import Link from "next/link";
 import { BrushBorder } from "@/components/ink/brush-border";
 import { InkButton } from "@/components/ink/ink-button";
@@ -13,14 +17,80 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n-context";
+import { useAuthStore } from "@/lib/stores/auth-store";
 
 type AuthMode = "login" | "register";
 
+// 登录表单验证
+const loginSchema = z.object({
+  email: z.string().email("请输入有效的邮箱地址"),
+  password: z.string().min(6, "密码至少6个字符").max(128, "密码最多128个字符"),
+});
+
+// 注册表单验证
+const registerSchema = z.object({
+  email: z.string().email("请输入有效的邮箱地址"),
+  password: z.string().min(6, "密码至少6个字符").max(128, "密码最多128个字符"),
+  confirmPassword: z.string(),
+  display_name: z.string().optional(),
+}).refine((data) => data.password === data.confirmPassword, {
+  message: "两次输入的密码不一致",
+  path: ["confirmPassword"],
+});
+
+type LoginFormData = z.infer<typeof loginSchema>;
+type RegisterFormData = z.infer<typeof registerSchema>;
+
 export function AuthDialog() {
   const { t } = useI18n();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [mode, setMode] = useState<AuthMode>("login");
+  const { login, register: registerUser, isLoading } = useAuthStore();
 
   const isLogin = mode === "login";
+  const redirectTo = searchParams.get('redirect') || '/dashboard/overview';
+
+  // 登录表单
+  const loginForm = useForm<LoginFormData>({
+    resolver: zodResolver(loginSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  });
+
+  // 注册表单
+  const registerForm = useForm<RegisterFormData>({
+    resolver: zodResolver(registerSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+      confirmPassword: "",
+      display_name: "",
+    },
+  });
+
+  // 处理登录
+  const handleLogin = async (data: LoginFormData) => {
+    try {
+      await login(data);
+      router.push(redirectTo);
+    } catch (error) {
+      console.error('Login error:', error);
+    }
+  };
+
+  // 处理注册
+  const handleRegister = async (data: RegisterFormData) => {
+    try {
+      const { confirmPassword, ...registerData } = data;
+      await registerUser(registerData);
+      router.push(redirectTo);
+    } catch (error) {
+      console.error('Register error:', error);
+    }
+  };
 
   return (
     <Dialog defaultOpen>
@@ -35,40 +105,24 @@ export function AuthDialog() {
         </DialogHeader>
 
         <BrushBorder className="mt-4">
-          <form className="space-y-6">
-            {!isLogin && (
+          {isLogin ? (
+            <form onSubmit={loginForm.handleSubmit(handleLogin)} className="space-y-6">
               <FormInput
-                label={t("auth.name_label")}
-                type="text"
-                placeholder={t("auth.name_placeholder")}
-                required
+                label={t("auth.email_label")}
+                type="email"
+                placeholder={t("auth.email_placeholder")}
+                {...loginForm.register("email")}
+                error={loginForm.formState.errors.email?.message}
               />
-            )}
 
-            <FormInput
-              label={t("auth.email_label")}
-              type="email"
-              placeholder={t("auth.email_placeholder")}
-              required
-            />
-
-            <FormInput
-              label={t("auth.password_label")}
-              type="password"
-              placeholder={t("auth.password_placeholder")}
-              required
-            />
-
-            {!isLogin && (
               <FormInput
-                label={t("auth.confirm_password_label")}
+                label={t("auth.password_label")}
                 type="password"
-                placeholder={t("auth.confirm_password_placeholder")}
-                required
+                placeholder={t("auth.password_placeholder")}
+                {...loginForm.register("password")}
+                error={loginForm.formState.errors.password?.message}
               />
-            )}
 
-            {isLogin && (
               <div className="flex items-center justify-between text-sm">
                 <label className="flex items-center space-x-2 cursor-pointer">
                   <input type="checkbox" className="rounded border-gray-300" />
@@ -78,12 +132,58 @@ export function AuthDialog() {
                   {t("auth.forgot_password")}
                 </Link>
               </div>
-            )}
 
-            <InkButton className="w-full" type="submit">
-              {isLogin ? t("auth.login_button") : t("auth.register_button")}
-            </InkButton>
-          </form>
+              <InkButton 
+                className="w-full" 
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? "登录中..." : t("auth.login_button")}
+              </InkButton>
+            </form>
+          ) : (
+            <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-6">
+              <FormInput
+                label={t("auth.name_label")}
+                type="text"
+                placeholder={t("auth.name_placeholder")}
+                {...registerForm.register("display_name")}
+                error={registerForm.formState.errors.display_name?.message}
+              />
+
+              <FormInput
+                label={t("auth.email_label")}
+                type="email"
+                placeholder={t("auth.email_placeholder")}
+                {...registerForm.register("email")}
+                error={registerForm.formState.errors.email?.message}
+              />
+
+              <FormInput
+                label={t("auth.password_label")}
+                type="password"
+                placeholder={t("auth.password_placeholder")}
+                {...registerForm.register("password")}
+                error={registerForm.formState.errors.password?.message}
+              />
+
+              <FormInput
+                label={t("auth.confirm_password_label")}
+                type="password"
+                placeholder={t("auth.confirm_password_placeholder")}
+                {...registerForm.register("confirmPassword")}
+                error={registerForm.formState.errors.confirmPassword?.message}
+              />
+
+              <InkButton 
+                className="w-full" 
+                type="submit"
+                disabled={isLoading}
+              >
+                {isLoading ? "注册中..." : t("auth.register_button")}
+              </InkButton>
+            </form>
+          )}
         </BrushBorder>
 
         <div className="mt-4 text-center text-sm">
@@ -115,4 +215,3 @@ export function AuthDialog() {
     </Dialog>
   );
 }
-

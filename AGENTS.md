@@ -6,6 +6,7 @@
 - `tests/`: Pytest suite (async and sync tests), mirror new features here.
 - `scripts/`: Helper scripts (e.g. `scripts/list_models.py`).
 - `docs/`: Design notes (model routing, session context) that should stay in sync with code changes.
+- `docs/api`: API 文档目录；若任务涉及任何 API 请求/响应、鉴权或错误码的改动，需在任务结束后立即更新对应文档，避免前端继续依赖过时说明。
 
 ## Build, Run & Test Commands
 - Create env & install: `python -m venv .venv && source .venv/bin/activate && pip install .`

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import List, Optional
 from uuid import UUID
 
@@ -20,10 +21,6 @@ class UserProviderServiceError(RuntimeError):
     """Base error for user-private provider operations."""
 
 
-class ProviderIdAlreadyExistsError(UserProviderServiceError):
-    """Raised when provider_id is already in use."""
-
-
 class UserProviderNotFoundError(UserProviderServiceError):
     """Raised when a private provider cannot be found for a user."""
 
@@ -35,6 +32,33 @@ def _provider_exists(session: Session, provider_id: str) -> bool:
     return session.execute(stmt).scalars().first() is not None
 
 
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or "provider"
+
+
+def _generate_unique_provider_id(
+    session: Session,
+    owner_id: UUID,
+    provider_name: str,
+) -> str:
+    base_slug = _slugify(provider_name)
+    owner_prefix = str(owner_id).split("-")[0][:8]
+    base = f"{base_slug}-{owner_prefix}" if owner_prefix else base_slug
+    base = base[:50]
+
+    candidate = base
+    suffix = 1
+    while _provider_exists(session, candidate):
+        suffix_str = str(suffix)
+        trimmed = base[: max(1, 50 - len(suffix_str) - 1)]
+        candidate = f"{trimmed}-{suffix_str}"
+        suffix += 1
+        if suffix > 50:
+            raise UserProviderServiceError("无法生成唯一 provider_id，请稍后重试")
+    return candidate
+
+
 def create_private_provider(
     session: Session,
     owner_id: UUID,
@@ -42,15 +66,19 @@ def create_private_provider(
 ) -> Provider:
     """为指定用户创建一个私有 Provider 并写入一条上游密钥。"""
 
-    if _provider_exists(session, payload.provider_id):
-        raise ProviderIdAlreadyExistsError(
-            f"provider_id '{payload.provider_id}' already exists"
-        )
+    provider_name = payload.name or "provider"
+    if payload.base_url is None:
+        raise UserProviderServiceError("base_url 不能为空")
+    generated_provider_id = _generate_unique_provider_id(
+        session, owner_id, provider_name
+    )
+
+    base_url = str(payload.base_url)
 
     provider = Provider(
-        provider_id=payload.provider_id,
-        name=payload.name,
-        base_url=str(payload.base_url),
+        provider_id=generated_provider_id,
+        name=provider_name,
+        base_url=base_url,
         transport=payload.transport or "http",
         provider_type=payload.provider_type or "native",
         weight=payload.weight or 1.0,
@@ -184,7 +212,6 @@ def count_user_private_providers(session: Session, owner_id: UUID) -> int:
 
 __all__ = [
     "UserProviderServiceError",
-    "ProviderIdAlreadyExistsError",
     "UserProviderNotFoundError",
     "create_private_provider",
     "list_private_providers",
@@ -192,4 +219,3 @@ __all__ = [
     "update_private_provider",
     "count_user_private_providers",
 ]
-

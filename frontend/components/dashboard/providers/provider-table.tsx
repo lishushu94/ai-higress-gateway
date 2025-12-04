@@ -23,7 +23,8 @@ import {
     DropdownMenuItem,
     DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Server, Settings, Plus, Minus, Pencil, Trash2 } from "lucide-react";
+import Link from "next/link";
+import { Server, Settings, Plus, Minus, Pencil, Trash2, Brain, Eye } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 
 type ProviderStatus = "Active" | "Inactive";
@@ -46,12 +47,12 @@ interface ProviderTableProps {
     onViewModels: (providerId: string) => void;
 }
 
-export function ProviderTable({ 
-    providers, 
-    onToggleStatus, 
-    onEdit, 
-    onDelete, 
-    onViewModels 
+export function ProviderTable({
+    providers,
+    onToggleStatus,
+    onEdit,
+    onDelete,
+    onViewModels
 }: ProviderTableProps) {
     const { t } = useI18n();
 
@@ -88,7 +89,9 @@ export function ProviderTable({
                                 <TableCell className="font-medium">
                                     <div className="flex items-center">
                                         <Server className="w-4 h-4 mr-2 text-muted-foreground" />
-                                        {provider.name}
+                                        <Link href={`/dashboard/providers/${provider.id}`} className="hover:underline">
+                                            {provider.name}
+                                        </Link>
                                     </div>
                                 </TableCell>
                                 <TableCell>{provider.vendor}</TableCell>
@@ -99,11 +102,10 @@ export function ProviderTable({
                                 </TableCell>
                                 <TableCell>
                                     <span
-                                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${
-                                            provider.status === "Active"
-                                                ? "bg-green-100 text-green-700"
-                                                : "bg-gray-100 text-gray-700"
-                                        }`}
+                                        className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium ${provider.status === "Active"
+                                            ? "bg-green-100 text-green-700"
+                                            : "bg-gray-100 text-gray-700"
+                                            }`}
                                     >
                                         {provider.status === "Active"
                                             ? t("providers.status_active")
@@ -126,10 +128,16 @@ export function ProviderTable({
                                             </Button>
                                         </DropdownMenuTrigger>
                                         <DropdownMenuContent align="end">
+                                            <DropdownMenuItem asChild>
+                                                <Link href={`/dashboard/providers/${provider.id}`} className="cursor-pointer">
+                                                    <Eye className="mr-2 h-4 w-4" />
+                                                    View Details
+                                                </Link>
+                                            </DropdownMenuItem>
                                             <DropdownMenuItem
                                                 onClick={() => onViewModels(provider.id)}
                                             >
-                                                {/* <Eye className="mr-2 h-4 w-4" /> */}
+                                                <Brain className="mr-2 h-4 w-4" />
                                                 {t("providers.action_view_models")}
                                             </DropdownMenuItem>
                                             <DropdownMenuItem

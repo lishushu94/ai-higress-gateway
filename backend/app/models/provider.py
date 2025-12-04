@@ -8,6 +8,7 @@ from uuid import UUID
 from app.db.types import JSONBCompat
 
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from .provider_preset import ProviderPreset
 
 
 class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
@@ -31,7 +32,12 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     custom_headers = Column(JSONBCompat(), nullable=True)
     models_path: Mapped[str] = Column(String(100), nullable=False, server_default=text("'/v1/models'"))
     messages_path: Mapped[str | None] = Column(String(100), nullable=True)
+    chat_completions_path: Mapped[str] = Column(
+        String(100), nullable=False, server_default=text("/v1/chat/completions"), default="/v1/chat/completions"
+    )
+    responses_path: Mapped[str | None] = Column(String(100), nullable=True)
     static_models = Column(JSONBCompat(), nullable=True)
+    supported_api_styles = Column(JSONBCompat(), nullable=True)
     status: Mapped[str] = Column(String(16), nullable=False, server_default=text("'healthy'"))
     last_check = Column(DateTime(timezone=True), nullable=True)
     metadata_json = Column("metadata", JSONBCompat(), nullable=True)
@@ -43,6 +49,12 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     owner_id: Mapped[UUID | None] = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("users.id", ondelete="CASCADE"),
+        nullable=True,
+        index=True,
+    )
+    preset_uuid: Mapped[UUID | None] = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("provider_presets.id", ondelete="SET NULL"),
         nullable=True,
         index=True,
     )
@@ -73,6 +85,15 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         lazy="selectin",
     )
     owner: Mapped["User"] = relationship("User")
+    preset: Mapped[ProviderPreset | None] = relationship(
+        "ProviderPreset", back_populates="providers", foreign_keys=[preset_uuid]
+    )
+
+    @property
+    def preset_id(self) -> str | None:
+        if self.preset is None:
+            return None
+        return self.preset.preset_id
 
 
 __all__ = ["Provider"]

@@ -44,6 +44,17 @@
   "avatar": "string | null",
   "is_active": true,
   "is_superuser": false,
+  "role_codes": ["default_user"],
+  "permission_flags": [
+    {
+      "key": "can_create_private_provider",
+      "value": false
+    },
+    {
+      "key": "can_submit_shared_provider",
+      "value": false
+    }
+  ],
   "created_at": "datetime",
   "updated_at": "datetime"
 }
@@ -183,6 +194,17 @@
   "avatar": "string | null",
   "is_active": true,
   "is_superuser": false,
+  "role_codes": ["default_user"],
+  "permission_flags": [
+    {
+      "key": "can_create_private_provider",
+      "value": false
+    },
+    {
+      "key": "can_submit_shared_provider",
+      "value": false
+    }
+  ],
   "created_at": "datetime",
   "updated_at": "datetime"
 }
@@ -208,6 +230,9 @@
   "avatar": "string | null",
   "is_active": true,
   "is_superuser": false,
+  "role_codes": ["default_user"],
+  "can_create_private_provider": false,
+  "can_submit_shared_provider": false,
   "created_at": "datetime",
   "updated_at": "datetime"
 }
@@ -243,6 +268,17 @@
   "avatar": "string | null",
   "is_active": true,
   "is_superuser": false,
+  "role_codes": ["default_user"],
+  "permission_flags": [
+    {
+      "key": "can_create_private_provider",
+      "value": false
+    },
+    {
+      "key": "can_submit_shared_provider",
+      "value": false
+    }
+  ],
   "created_at": "datetime",
   "updated_at": "datetime"
 }
@@ -339,6 +375,237 @@
 **认证**: JWT 令牌 (仅限超级用户)
 
 **成功响应**: 204 No Content
+
+---
+
+### 8. 超级管理员管理角色与权限（RBAC）
+
+以下接口仅面向超级管理员 (`is_superuser = true`)，用于通过“角色 + 权限”集中管理用户能力。  
+权限判断统一走后端的 `UserPermissionService.has_permission(user_id, permission_code)`，会综合：
+- `is_superuser`
+- 用户直挂权限 `user_permissions.permission_type`
+- 用户所属角色上的权限 `permissions.code`
+
+#### 8.1 查询权限定义列表
+
+**接口**: `GET /admin/permissions`
+
+**描述**: 列出系统中所有可用的权限定义（`Permission.code`），供前端做勾选。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "code": "create_private_provider",
+    "description": "允许创建私有 Provider",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+]
+```
+
+---
+
+#### 8.2 查询角色列表
+
+**接口**: `GET /admin/roles`
+
+**描述**: 列出所有已创建的角色。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "code": "system_admin",
+    "name": "系统管理员",
+    "description": "拥有系统全部管理能力",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+]
+```
+
+---
+
+#### 8.3 创建角色
+
+**接口**: `POST /admin/roles`
+
+**描述**: 创建新角色，例如 `system_admin`、`operator`、`viewer` 等。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**请求体**:
+```json
+{
+  "code": "system_admin",          // 角色唯一编码，建议使用小写+下划线
+  "name": "系统管理员",             // 展示名称
+  "description": "拥有系统全部管理能力" // 可选描述
+}
+```
+
+**响应**: 与角色列表中的单条记录结构相同。
+
+**错误响应**:
+- 400: 角色编码已存在
+
+---
+
+#### 8.4 更新角色
+
+**接口**: `PUT /admin/roles/{role_id}`
+
+**描述**: 更新角色的名称和描述（`code` 视为稳定主键，不允许修改）。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**请求体**:
+```json
+{
+  "name": "新的角色名称",
+  "description": "新的角色描述"
+}
+```
+
+**响应**: 与角色列表中的单条记录结构相同。
+
+---
+
+#### 8.5 删除角色
+
+**接口**: `DELETE /admin/roles/{role_id}`
+
+**描述**: 删除一个角色，会级联删除该角色上的权限绑定和用户角色绑定。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**成功响应**: 204 No Content
+
+**注意**: 删除角色不会删除 `permissions` 中的权限定义，也不会影响用户直挂的 `user_permissions`。
+
+---
+
+#### 8.6 查询角色已绑定的权限
+
+**接口**: `GET /admin/roles/{role_id}/permissions`
+
+**描述**: 查看指定角色当前绑定的权限列表。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**响应**:
+```json
+{
+  "role_id": "uuid",
+  "role_code": "system_admin",
+  "permission_codes": [
+    "manage_users",
+    "manage_user_permissions",
+    "admin_view_providers",
+    "manage_provider_keys"
+  ]
+}
+```
+
+---
+
+#### 8.7 设置角色的权限列表（全量覆盖）
+
+**接口**: `PUT /admin/roles/{role_id}/permissions`  
+**别名**: `POST /admin/roles/{role_id}/permissions`
+
+**描述**: 将角色的权限列表设置为给定的 `permission_codes` 集合，采用“全量覆盖”语义：  
+- 请求体为空数组 → 清空角色的全部权限  
+- 请求体为非空数组 → 删除多余权限、添加缺少权限
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**请求体**:
+```json
+{
+  "permission_codes": [
+    "manage_users",
+    "manage_user_permissions",
+    "admin_view_providers"
+  ]
+}
+```
+
+**响应**:
+```json
+{
+  "role_id": "uuid",
+  "role_code": "system_admin",
+  "permission_codes": [
+    "manage_users",
+    "manage_user_permissions",
+    "admin_view_providers"
+  ]
+}
+```
+
+**错误响应**:
+- 400: 存在无效的权限编码  
+  - `details.missing_permission_codes`: 无效的 `code` 列表
+
+---
+
+#### 8.8 查询用户当前角色列表
+
+**接口**: `GET /admin/users/{user_id}/roles`
+
+**描述**: 查看指定用户当前拥有的角色列表。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "code": "system_admin",
+    "name": "系统管理员",
+    "description": "拥有系统全部管理能力",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+]
+```
+
+---
+
+#### 8.9 为用户设置角色列表（全量覆盖）
+
+**接口**: `PUT /admin/users/{user_id}/roles`  
+**别名**: `POST /admin/users/{user_id}/roles`
+
+**描述**: 为用户设置角色列表，采用“全量覆盖”语义：
+- `role_ids` 为空数组 → 清空用户的所有角色
+- `role_ids` 非空 → 移除不在列表中的角色，添加新增角色
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**请求体**:
+```json
+{
+  "role_ids": [
+    "uuid-of-system-admin-role",
+    "uuid-of-operator-role"
+  ]
+}
+```
+
+**响应**: 与用户当前角色列表结构相同（`list[RoleResponse]`）。
+
+**错误响应**:
+- 400: 存在无效的角色 ID  
+  - `details.missing_role_ids`: 无效的 `role_id` 列表
 
 ---
 
@@ -1056,7 +1323,6 @@
 **请求体（核心字段）**:
 ```json
 {
-  "provider_id": "string (1-50字符, 全局唯一)",
   "name": "string (1-100字符)",
   "base_url": "url",
   "api_key": "string",
@@ -1066,6 +1332,7 @@
   // retryable_status_codes, custom_headers, models_path, messages_path, static_models
 }
 ```
+> 说明：`provider_id` 由系统自动根据用户与厂商信息生成，无需在请求体中提供。
 
 **响应**:
 ```json

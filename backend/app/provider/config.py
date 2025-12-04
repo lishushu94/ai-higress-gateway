@@ -148,6 +148,16 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
     if provider.messages_path:
         trimmed = provider.messages_path.strip()
         data["messages_path"] = trimmed if trimmed else None
+    chat_path = getattr(provider, "chat_completions_path", None)
+    if chat_path:
+        trimmed = chat_path.strip()
+        data["chat_completions_path"] = trimmed if trimmed else "/v1/chat/completions"
+    else:
+        data["chat_completions_path"] = "/v1/chat/completions"
+    responses_path = getattr(provider, "responses_path", None)
+    if responses_path:
+        trimmed = responses_path.strip()
+        data["responses_path"] = trimmed if trimmed else None
     if provider.region:
         data["region"] = provider.region
     if provider.cost_input is not None:
@@ -156,6 +166,15 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
         data["cost_output"] = provider.cost_output
     if provider.max_qps is not None:
         data["max_qps"] = provider.max_qps
+    supported_styles = getattr(provider, "supported_api_styles", None)
+    if isinstance(supported_styles, list):
+        normalized = []
+        for item in supported_styles:
+            value = str(item or "").strip().lower()
+            if value and value not in normalized:
+                normalized.append(value)
+        if normalized:
+            data["supported_api_styles"] = normalized
 
     headers = _convert_headers(provider.custom_headers)
     if headers is not None:

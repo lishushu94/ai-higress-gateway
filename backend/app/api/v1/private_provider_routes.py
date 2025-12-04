@@ -15,7 +15,6 @@ from app.schemas import (
 )
 from app.services.user_permission_service import UserPermissionService
 from app.services.user_provider_service import (
-    ProviderIdAlreadyExistsError,
     UserProviderNotFoundError,
     UserProviderServiceError,
     count_user_private_providers,
@@ -64,8 +63,6 @@ def create_private_provider_endpoint(
 
     try:
         provider = create_private_provider(db, user_id, payload)
-    except ProviderIdAlreadyExistsError:
-        raise bad_request("provider_id 已存在，请换一个")
     except UserProviderServiceError as exc:
         raise bad_request(str(exc))
 
@@ -114,4 +111,3 @@ def update_private_provider_endpoint(
 
 
 __all__ = ["router"]
-

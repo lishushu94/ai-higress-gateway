@@ -2,6 +2,7 @@ import json
 import re
 import time
 import uuid
+from uuid import UUID
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
 from typing import Any
@@ -53,11 +54,14 @@ from .logging_config import logger
 from .api.auth_routes import router as auth_router
 from .api.logical_model_routes import router as logical_model_router
 from .api.provider_routes import router as provider_router
+from .api.provider_preset_routes import router as provider_preset_router
 from .api.metrics_routes import router as metrics_router
 from .api.routing_routes import router as routing_router
 from .api.session_routes import router as session_router
 from .api.system_routes import router as system_router
 from .api.v1.admin_provider_routes import router as admin_provider_router
+from .api.v1.admin_provider_preset_routes import router as admin_provider_preset_router
+from .api.v1.admin_role_routes import router as admin_role_router
 from .api.v1.admin_user_permission_routes import router as admin_user_permission_router
 from .api.v1.api_key_routes import router as api_key_router
 from .api.v1.private_provider_routes import router as private_provider_router
@@ -121,6 +125,65 @@ def _apply_upstream_path_override(endpoint: str, override_path: str | None) -> s
     return urlunsplit((parsed.scheme, parsed.netloc, normalized, "", ""))
 
 
+@dataclass
+class ProviderEndpointSelection:
+    url: str
+    api_style: str
+
+
+_STYLE_PRIORITY: dict[str, list[str]] = {
+    "responses": ["responses", "openai"],
+    "claude": ["claude", "openai"],
+    "openai": ["openai", "claude"],
+}
+
+
+def _provider_supports_api_style(cfg: ProviderConfig, style: str) -> bool:
+    declared = {str(item).lower() for item in (cfg.supported_api_styles or []) if item}
+    if declared:
+        return style in declared
+    if style == "responses":
+        return bool(getattr(cfg, "responses_path", None))
+    if style == "claude":
+        return bool(getattr(cfg, "messages_path", None))
+    return True
+
+
+def _path_for_api_style(cfg: ProviderConfig, style: str) -> str | None:
+    if style == "responses":
+        return getattr(cfg, "responses_path", None)
+    if style == "claude":
+        return getattr(cfg, "messages_path", None)
+    return getattr(cfg, "chat_completions_path", None) or "/v1/chat/completions"
+
+
+def _select_provider_endpoint(
+    cfg: ProviderConfig, requested_style: str
+) -> ProviderEndpointSelection | None:
+    transport = getattr(cfg, "transport", "http")
+    if transport == "sdk":
+        return ProviderEndpointSelection(
+            url=str(cfg.base_url).rstrip("/"),
+            api_style="openai",
+        )
+
+    priorities = _STYLE_PRIORITY.get(requested_style, ["openai"])
+    base = str(cfg.base_url).rstrip("/")
+    for style in priorities:
+        if not _provider_supports_api_style(cfg, style):
+            continue
+        path = _path_for_api_style(cfg, style)
+        if not path:
+            continue
+        trimmed = path.strip()
+        if not trimmed:
+            continue
+        if not trimmed.startswith("/"):
+            trimmed = "/" + trimmed
+        return ProviderEndpointSelection(url=f"{base}{trimmed}", api_style=style)
+    return None
+
+
 async def _build_provider_headers(
     provider_cfg: ProviderConfig, redis
 ) -> tuple[dict[str, str], SelectedProviderKey]:
@@ -152,7 +215,7 @@ async def _build_provider_headers(
 
 
 @dataclass
-class ClaudeFallbackOutcome:
+class FallbackOutcome:
     response: Any | None = None
     retryable: bool = False
     status_code: int | None = None
@@ -160,6 +223,20 @@ class ClaudeFallbackOutcome:
 
 
 class ClaudeMessagesFallbackStreamError(Exception):
+    def __init__(
+        self,
+        *,
+        status_code: int | None,
+        text: str,
+        retryable: bool,
+    ) -> None:
+        super().__init__(text)
+        self.status_code = status_code
+        self.text = text
+        self.retryable = retryable
+
+
+class ResponsesFallbackStreamError(Exception):
     def __init__(
         self,
         *,
@@ -506,9 +583,9 @@ async def _send_claude_fallback_non_stream(
     db: Session,
     user_id: UUID | None,
     api_key_id: UUID | None,
-) -> ClaudeFallbackOutcome:
+) -> FallbackOutcome:
     if not fallback_url:
-        return ClaudeFallbackOutcome(
+        return FallbackOutcome(
             response=None,
             retryable=False,
             status_code=None,
@@ -536,7 +613,7 @@ async def _send_claude_fallback_non_stream(
             api_key_id=api_key_id,
         )
     except httpx.HTTPError as exc:
-        return ClaudeFallbackOutcome(
+        return FallbackOutcome(
             response=None, retryable=True, status_code=None, error_text=str(exc)
         )
 
@@ -544,7 +621,7 @@ async def _send_claude_fallback_non_stream(
     status_code = response.status_code
 
     if status_code >= 400:
-        return ClaudeFallbackOutcome(
+        return FallbackOutcome(
             response=None,
             retryable=_is_retryable_upstream_status(provider_id, status_code),
             status_code=status_code,
@@ -560,15 +637,95 @@ async def _send_claude_fallback_non_stream(
         payload_json = None
 
     if not isinstance(payload_json, dict):
-        return ClaudeFallbackOutcome(
+        return FallbackOutcome(
             response=JSONResponse(content={"raw": text}, status_code=status_code)
         )
 
     claude_payload = _openai_chat_to_claude_response(
         payload_json, request_model=payload.get("model") or model_id
     )
-    return ClaudeFallbackOutcome(
+    return FallbackOutcome(
         response=JSONResponse(content=claude_payload, status_code=status_code)
+    )
+
+
+async def _send_responses_fallback_non_stream(
+    *,
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    provider_id: str,
+    model_id: str,
+    logical_model_id: str,
+    payload: dict[str, Any],
+    target_url: str,
+    redis,
+    x_session_id: str | None,
+    bind_session,
+    db: Session,
+    user_id: UUID | None,
+    api_key_id: UUID | None,
+) -> FallbackOutcome:
+    if not target_url:
+        return FallbackOutcome(
+            response=None,
+            retryable=False,
+            status_code=None,
+            error_text="Responses fallback URL unavailable",
+        )
+    logger.info(
+        "responses_fallback: forwarding via chat.completions (provider=%s model=%s url=%s)",
+        provider_id,
+        model_id,
+        target_url,
+    )
+    fallback_payload = _adapt_responses_payload(payload)
+    fallback_payload["model"] = model_id
+    try:
+        response = await call_upstream_http_with_metrics(
+            client=client,
+            url=target_url,
+            headers=headers,
+            json_body=fallback_payload,
+            db=db,
+            provider_id=provider_id,
+            logical_model=logical_model_id,
+            user_id=user_id,
+            api_key_id=api_key_id,
+        )
+    except httpx.HTTPError as exc:
+        return FallbackOutcome(
+            response=None,
+            retryable=True,
+            status_code=None,
+            error_text=str(exc),
+        )
+
+    text = response.text
+    status_code = response.status_code
+    if status_code >= 400:
+        return FallbackOutcome(
+            response=None,
+            retryable=_is_retryable_upstream_status(provider_id, status_code),
+            status_code=status_code,
+            error_text=text,
+        )
+
+    await bind_session(provider_id, model_id)
+    await save_context(redis, x_session_id, payload, text)
+
+    try:
+        payload_json = response.json()
+    except ValueError:
+        payload_json = None
+
+    if isinstance(payload_json, dict):
+        converted = _chat_to_responses_payload(payload_json)
+        return FallbackOutcome(
+            response=JSONResponse(content=converted, status_code=status_code)
+        )
+
+    return FallbackOutcome(
+        response=JSONResponse(content={"raw": text}, status_code=status_code)
     )
 
 
@@ -632,6 +789,69 @@ async def _claude_streaming_fallback_iterator(
 
     for tail in adapter.finalize():
         yield tail
+
+
+async def _responses_streaming_fallback_iterator(
+    *,
+    client: httpx.AsyncClient,
+    headers: dict[str, str],
+    provider_id: str,
+    model_id: str,
+    logical_model_id: str,
+    target_url: str,
+    payload: dict[str, Any],
+    redis,
+    session_id: str | None,
+    bind_session_cb,
+    db: Session,
+    user_id: UUID | None,
+    api_key_id: UUID | None,
+) -> AsyncIterator[bytes]:
+    if not target_url:
+        raise ResponsesFallbackStreamError(
+            status_code=None, text="Responses fallback URL unavailable", retryable=False
+        )
+    logger.info(
+        "responses_fallback: streaming via chat.completions (provider=%s model=%s url=%s)",
+        provider_id,
+        model_id,
+        target_url,
+    )
+    fallback_payload = _adapt_responses_payload(payload)
+    fallback_payload["model"] = model_id
+
+    async def upstream_iterator():
+        async for chunk in stream_upstream_with_metrics(
+            client=client,
+            method="POST",
+            url=target_url,
+            headers=headers,
+            json_body=fallback_payload,
+            redis=redis,
+            session_id=session_id,
+            db=db,
+            provider_id=provider_id,
+            logical_model=logical_model_id,
+            user_id=user_id,
+            api_key_id=api_key_id,
+        ):
+            yield chunk
+
+    chat_response = StreamingResponse(upstream_iterator(), media_type="text/event-stream")
+    wrapped = _wrap_chat_stream_response(chat_response)
+    first_chunk = True
+    try:
+        async for chunk in wrapped.body_iterator:
+            if first_chunk:
+                first_chunk = False
+                await bind_session_cb(provider_id, model_id)
+            yield chunk
+    except UpstreamStreamError as err:
+        raise ResponsesFallbackStreamError(
+            status_code=err.status_code,
+            text=err.text,
+            retryable=_is_retryable_upstream_status(provider_id, err.status_code),
+        ) from err
 
 
 def _inline_data_to_data_url(inline: Any) -> str | None:
@@ -1056,18 +1276,11 @@ async def _build_dynamic_logical_model_for_group(
         if matched_full_id is None:
             continue
 
-        is_sdk_transport = getattr(cfg, "transport", "http") == "sdk"
-        if is_sdk_transport:
-            endpoint = str(cfg.base_url).rstrip("/")
-        else:
-            if api_style == "claude":
-                relative_path = getattr(cfg, "messages_path", None) or "/v1/message"
-            elif api_style == "responses":
-                relative_path = "/v1/responses"
-            else:
-                relative_path = "/v1/chat/completions"
-
-            endpoint = f"{str(cfg.base_url).rstrip('/')}{relative_path}"
+        selection = _select_provider_endpoint(cfg, api_style)
+        if selection is None:
+            continue
+        endpoint = selection.url
+        upstream_style = selection.api_style
         base_weight = getattr(cfg, "weight", 1.0) or 1.0
 
         candidate_upstreams.append(
@@ -1080,9 +1293,9 @@ async def _build_dynamic_logical_model_for_group(
                 max_qps=getattr(cfg, "max_qps", None),
                 meta_hash=None,
                 updated_at=now,
+                api_style=upstream_style,
             )
         )
-
     if not candidate_upstreams:
         return None
 
@@ -1580,6 +1793,7 @@ def create_app() -> FastAPI:
     app.include_router(system_router)
     # Provider-management API (multi-provider routing feature).
     app.include_router(provider_router)
+    app.include_router(provider_preset_router)
     # Logical model mapping API (User Story 2).
     app.include_router(logical_model_router)
     # Routing decision and session APIs (User Story 3).
@@ -1595,9 +1809,11 @@ def create_app() -> FastAPI:
     # User private providers and provider submissions.
     app.include_router(private_provider_router)
     app.include_router(provider_submission_router)
-    # Admin management for providers and user permissions.
+    # Admin management for providers, roles and user permissions.
+    app.include_router(admin_role_router)
     app.include_router(admin_user_permission_router)
     app.include_router(admin_provider_router)
+    app.include_router(admin_provider_preset_router)
 
     @app.on_event("startup")
     async def _ensure_admin_account() -> None:
@@ -1937,6 +2153,7 @@ def create_app() -> FastAPI:
                     url = base_endpoint
                     provider_id = cand.upstream.provider_id
                     model_id = cand.upstream.model_id
+                    upstream_style = getattr(cand.upstream, "api_style", "openai")
                     key_selection: SelectedProviderKey | None = None
                     provider_cfg = get_provider_config(provider_id)
                     if provider_cfg is None:
@@ -2091,6 +2308,62 @@ def create_app() -> FastAPI:
                                 status_code=status.HTTP_502_BAD_GATEWAY,
                                 detail=detail,
                             )
+
+                    if api_style == "responses" and upstream_style == "openai":
+                        outcome = await _send_responses_fallback_non_stream(
+                            client=client,
+                            headers=headers,
+                            provider_id=provider_id,
+                            model_id=model_id,
+                            logical_model_id=logical_model.logical_id,
+                            payload=payload,
+                            target_url=base_endpoint,
+                            redis=redis,
+                            x_session_id=x_session_id,
+                            bind_session=_bind_session_for_upstream,
+                            db=db,
+                            user_id=current_key.user_id,
+                            api_key_id=current_key.id,
+                        )
+                        if outcome.response is not None:
+                            if key_selection:
+                                record_key_success(key_selection, redis=redis)
+                            _mark_provider_success(provider_id)
+                            return outcome.response
+                        last_status = outcome.status_code
+                        last_error_text = outcome.error_text
+                        if outcome.retryable:
+                            if key_selection:
+                                record_key_failure(
+                                    key_selection,
+                                    retryable=True,
+                                    status_code=outcome.status_code,
+                                    redis=redis,
+                                )
+                            _mark_provider_failure(provider_id, retryable=True)
+                            continue
+                        detail = outcome.error_text or (
+                            f"Upstream error {outcome.status_code or '?'}"
+                        )
+                        logger.warning(
+                            "Responses fallback failed for provider=%s model=%s: %s",
+                            provider_id,
+                            model_id,
+                            detail,
+                        )
+                        await save_context(redis, x_session_id, payload, detail)
+                        if key_selection:
+                            record_key_failure(
+                                key_selection,
+                                retryable=False,
+                                status_code=outcome.status_code,
+                                redis=redis,
+                            )
+                        _mark_provider_failure(provider_id, retryable=False)
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=detail,
+                        )
 
                     logger.info(
                         "chat_completions: sending non-streaming request to "
@@ -2396,6 +2669,79 @@ def create_app() -> FastAPI:
                                 yield b"data: [DONE]\n\n"
                             record_key_success(key_selection, redis=redis)
                             _mark_provider_success(provider_id)
+                            return
+                        except Exception as exc:
+                            last_status = None
+                            last_error_text = str(exc)
+                            record_key_failure(
+                                key_selection,
+                                retryable=True,
+                                status_code=None,
+                                redis=redis,
+                            )
+                            _mark_provider_failure(provider_id, retryable=True)
+                            continue
+                    if api_style == "responses" and upstream_style == "openai":
+                        try:
+                            async for chunk in _responses_streaming_fallback_iterator(
+                                client=client,
+                                headers=headers,
+                                provider_id=provider_id,
+                                model_id=model_id,
+                                logical_model_id=logical_model.logical_id,
+                                target_url=base_endpoint,
+                                payload=payload,
+                                redis=redis,
+                                session_id=x_session_id,
+                                bind_session_cb=_bind_session_for_upstream,
+                                db=db,
+                                user_id=current_key.user_id,
+                                api_key_id=current_key.id,
+                            ):
+                                yield chunk
+                            if key_selection:
+                                record_key_success(key_selection, redis=redis)
+                            _mark_provider_success(provider_id)
+                            return
+                        except ResponsesFallbackStreamError as resp_err:
+                            last_status = resp_err.status_code
+                            last_error_text = resp_err.text
+                            retryable = resp_err.retryable
+                            if retryable and not is_last:
+                                if key_selection:
+                                    record_key_failure(
+                                        key_selection,
+                                        retryable=True,
+                                        status_code=resp_err.status_code,
+                                        redis=redis,
+                                    )
+                                _mark_provider_failure(provider_id, retryable=True)
+                                continue
+                            if key_selection:
+                                record_key_failure(
+                                    key_selection,
+                                    retryable=retryable,
+                                    status_code=resp_err.status_code,
+                                    redis=redis,
+                                )
+                            _mark_provider_failure(provider_id, retryable=retryable)
+                            payload_json = {
+                                "error": {
+                                    "type": "upstream_error",
+                                    "status": resp_err.status_code,
+                                    "message": resp_err.text,
+                                }
+                            }
+                            error_chunk = (
+                                f"data: {json.dumps(payload_json, ensure_ascii=False)}\n\n"
+                            ).encode()
+                            await save_context(
+                                redis,
+                                x_session_id,
+                                payload,
+                                error_chunk.decode("utf-8", errors="ignore"),
+                            )
+                            yield error_chunk
                             return
                         except Exception as exc:
                             last_status = None

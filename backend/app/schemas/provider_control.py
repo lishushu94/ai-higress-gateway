@@ -6,13 +6,15 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+ApiStyleValue = Literal["openai", "responses", "claude"]
+
 
 class UserProviderCreateRequest(BaseModel):
     """创建用户私有提供商的请求模型。"""
 
-    provider_id: str = Field(..., min_length=1, max_length=50, description="用于路由及授权的唯一短 ID")
-    name: str = Field(..., min_length=1, max_length=100, description="展示用名称")
-    base_url: HttpUrl = Field(..., description="上游 API 的 base URL")
+    preset_id: str | None = Field(default=None, description="可选的官方预设 ID")
+    name: str | None = Field(default=None, min_length=1, max_length=100, description="展示用名称")
+    base_url: HttpUrl | None = Field(default=None, description="上游 API 的 base URL")
     api_key: str = Field(..., min_length=1, description="上游厂商 API Key，将以加密形式存储")
 
     provider_type: Literal["native", "aggregator"] = Field(
@@ -36,10 +38,46 @@ class UserProviderCreateRequest(BaseModel):
     custom_headers: Dict[str, str] | None = Field(default=None)
     models_path: str | None = Field(default="/v1/models")
     messages_path: str | None = Field(default="/v1/message")
+    chat_completions_path: str | None = Field(default="/v1/chat/completions")
+    responses_path: str | None = Field(default=None)
+    supported_api_styles: List[ApiStyleValue] | None = Field(default=None)
     static_models: List[Dict[str, Any]] | None = Field(
         default=None,
         description="当上游不提供 /models 时可手动配置的模型列表",
     )
+
+    @model_validator(mode="after")
+    def ensure_required_fields(self) -> "UserProviderCreateRequest":
+        if self.preset_id:
+            return self
+        required = {
+            "name": self.name,
+            "base_url": self.base_url,
+        }
+        missing = [field for field, value in required.items() if value in (None, "")]
+        if missing:
+            raise ValueError("当未指定 preset_id 时，name/base_url 均为必填")
+        return self
+
+    @model_validator(mode="after")
+    def validate_paths(self) -> "UserProviderCreateRequest":
+        for field_name in (
+            "models_path",
+            "messages_path",
+            "chat_completions_path",
+            "responses_path",
+        ):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            trimmed = value.strip()
+            if not trimmed:
+                setattr(self, field_name, None)
+                continue
+            if not trimmed.startswith("/"):
+                raise ValueError(f"{field_name} 必须以 / 开头")
+            setattr(self, field_name, trimmed)
+        return self
 
 
 class UserProviderUpdateRequest(BaseModel):
@@ -58,6 +96,9 @@ class UserProviderUpdateRequest(BaseModel):
     custom_headers: Dict[str, str] | None = None
     models_path: str | None = None
     messages_path: str | None = None
+    chat_completions_path: str | None = None
+    responses_path: str | None = None
+    supported_api_styles: List[ApiStyleValue] | None = None
     static_models: List[Dict[str, Any]] | None = None
 
     @model_validator(mode="after")
@@ -78,10 +119,30 @@ class UserProviderUpdateRequest(BaseModel):
                 "custom_headers",
                 "models_path",
                 "messages_path",
+                "chat_completions_path",
+                "responses_path",
+                "supported_api_styles",
                 "static_models",
             )
         ):
             raise ValueError("至少需要提供一个可更新字段")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_paths(self) -> "UserProviderUpdateRequest":
+        for field_name in (
+            "models_path",
+            "messages_path",
+            "chat_completions_path",
+            "responses_path",
+        ):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            trimmed = value.strip()
+            if not trimmed.startswith("/"):
+                raise ValueError(f"{field_name} 必须以 / 开头")
+            setattr(self, field_name, trimmed)
         return self
 
 
@@ -94,6 +155,7 @@ class UserProviderResponse(BaseModel):
     base_url: HttpUrl
     provider_type: str
     transport: str
+    preset_id: str | None = None
     visibility: str
     owner_id: UUID | None
     status: str
@@ -180,6 +242,7 @@ class AdminProviderResponse(BaseModel):
     base_url: HttpUrl
     provider_type: str
     transport: str
+    preset_id: str | None = None
     visibility: str
     owner_id: UUID | None
     status: str
@@ -198,6 +261,180 @@ class ProviderVisibilityUpdateRequest(BaseModel):
     visibility: Literal["public", "restricted", "private"]
 
 
+class ProviderPresetBase(BaseModel):
+    preset_id: str = Field(..., min_length=1, max_length=50, description="官方预设 ID")
+    display_name: str = Field(..., max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    provider_type: Literal["native", "aggregator"] = Field(default="native")
+    transport: Literal["http", "sdk"] = Field(default="http")
+    base_url: HttpUrl
+    models_path: str = Field(default="/v1/models")
+    messages_path: str | None = Field(default="/v1/message")
+    chat_completions_path: str = Field(default="/v1/chat/completions")
+    responses_path: str | None = Field(default=None)
+    supported_api_styles: List[ApiStyleValue] | None = Field(default=None)
+    retryable_status_codes: List[int] | None = Field(default=None)
+    custom_headers: Dict[str, str] | None = Field(default=None)
+    static_models: List[Dict[str, Any]] | None = Field(default=None)
+
+    @model_validator(mode="after")
+    def ensure_paths(self) -> "ProviderPresetBase":
+        for field_name in (
+            "models_path",
+            "messages_path",
+            "chat_completions_path",
+            "responses_path",
+        ):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            trimmed = value.strip()
+            if not trimmed:
+                setattr(self, field_name, None)
+                continue
+            if not trimmed.startswith("/"):
+                raise ValueError(f"{field_name} 必须以 / 开头")
+            setattr(self, field_name, trimmed)
+        return self
+
+
+class ProviderPresetCreateRequest(ProviderPresetBase):
+    pass
+
+
+class ProviderPresetUpdateRequest(BaseModel):
+    display_name: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+    provider_type: Literal["native", "aggregator"] | None = None
+    transport: Literal["http", "sdk"] | None = None
+    base_url: HttpUrl | None = None
+    models_path: str | None = None
+    messages_path: str | None = None
+    chat_completions_path: str | None = None
+    responses_path: str | None = None
+    supported_api_styles: List[ApiStyleValue] | None = None
+    retryable_status_codes: List[int] | None = None
+    custom_headers: Dict[str, str] | None = None
+    static_models: List[Dict[str, Any]] | None = None
+
+    @model_validator(mode="after")
+    def ensure_any_field(self) -> "ProviderPresetUpdateRequest":
+        if all(
+            getattr(self, attr) is None
+            for attr in (
+                "display_name",
+                "description",
+                "provider_type",
+                "transport",
+                "base_url",
+                "models_path",
+                "messages_path",
+                "chat_completions_path",
+                "responses_path",
+                "supported_api_styles",
+                "retryable_status_codes",
+                "custom_headers",
+                "static_models",
+            )
+        ):
+            raise ValueError("至少需要提供一个可更新字段")
+        return self
+
+    @model_validator(mode="after")
+    def normalize_paths(self) -> "ProviderPresetUpdateRequest":
+        for field_name in (
+            "models_path",
+            "messages_path",
+            "chat_completions_path",
+            "responses_path",
+        ):
+            value = getattr(self, field_name)
+            if value is None:
+                continue
+            trimmed = value.strip()
+            if not trimmed.startswith("/"):
+                raise ValueError(f"{field_name} 必须以 / 开头")
+            setattr(self, field_name, trimmed)
+        return self
+
+
+class ProviderPresetResponse(ProviderPresetBase):
+    id: UUID
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class ProviderPresetListResponse(BaseModel):
+    items: List[ProviderPresetResponse]
+    total: int
+
+
+class PermissionResponse(BaseModel):
+    """权限定义信息。"""
+
+    id: UUID
+    code: str
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleResponse(BaseModel):
+    """角色基础信息。"""
+
+    id: UUID
+    code: str
+    name: str
+    description: str | None
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class RoleCreateRequest(BaseModel):
+    code: str = Field(..., max_length=64, description="角色唯一编码")
+    name: str = Field(..., max_length=100, description="角色名称")
+    description: str | None = Field(
+        default=None, max_length=2000, description="角色描述"
+    )
+
+
+class RoleUpdateRequest(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=2000)
+
+    @model_validator(mode="after")
+    def ensure_any_field(self) -> "RoleUpdateRequest":
+        if self.name is None and self.description is None:
+            raise ValueError("至少需要提供一个可更新字段")
+        return self
+
+
+class RolePermissionsResponse(BaseModel):
+    role_id: UUID
+    role_code: str
+    permission_codes: List[str]
+
+
+class RolePermissionsUpdateRequest(BaseModel):
+    permission_codes: List[str] = Field(
+        default_factory=list,
+        description="要设置到该角色上的权限 code 列表（全量覆盖）",
+    )
+
+
+class UserRolesUpdateRequest(BaseModel):
+    role_ids: List[UUID] = Field(
+        default_factory=list,
+        description="要设置给用户的角色 ID 列表（全量覆盖）",
+    )
+
+
 __all__ = [
     "AdminProviderResponse",
     "AdminProvidersResponse",
@@ -206,10 +443,15 @@ __all__ = [
     "ProviderSubmissionResponse",
     "ProviderValidationResult",
     "ProviderVisibilityUpdateRequest",
+    "PermissionResponse",
+    "RoleCreateRequest",
+    "RolePermissionsResponse",
+    "RolePermissionsUpdateRequest",
+    "RoleResponse",
+    "UserRolesUpdateRequest",
     "UserPermissionGrantRequest",
     "UserPermissionResponse",
     "UserProviderCreateRequest",
     "UserProviderUpdateRequest",
     "UserProviderResponse",
 ]
-

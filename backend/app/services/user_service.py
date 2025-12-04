@@ -70,13 +70,28 @@ def create_user(
 ) -> User:
     """Create a new user after checking for unique username/email."""
 
-    if _username_exists(session, payload.username):
-        raise UsernameAlreadyExistsError("username already taken")
+    # 只检查邮箱唯一性，用户名在注册时自动生成
     if _email_exists(session, payload.email):
         raise EmailAlreadyExistsError("email already in use")
+    
+    # 如果没有提供用户名，根据邮箱自动生成
+    username = payload.username
+    if username is None:
+        username_prefix = payload.email.split("@")[0]
+        # 确保用户名唯一性
+        from sqlalchemy import select
+        existing_user = session.execute(select(User).where(User.username == username_prefix)).scalar_one_or_none()
+        
+        # 如果存在，添加数字后缀
+        counter = 1
+        username = username_prefix
+        while existing_user is not None:
+            username = f"{username_prefix}{counter}"
+            existing_user = session.execute(select(User).where(User.username == username)).scalar_one_or_none()
+            counter += 1
 
     user = User(
-        username=payload.username,
+        username=username,
         email=payload.email,
         display_name=payload.display_name,
         avatar=payload.avatar,

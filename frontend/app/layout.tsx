@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import { ToastProvider } from "./toast-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 import { I18nProvider } from "@/lib/i18n-context";
+import { AuthProvider } from "@/components/providers/auth-provider";
+import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
   title: "AI Higress Frontend",
@@ -24,10 +25,11 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <I18nProvider>
-            <ToastProvider>
+            <AuthProvider>
               {children}
-            </ToastProvider>
+            </AuthProvider>
           </I18nProvider>
+          <Toaster richColors closeButton />
         </ThemeProvider>
       </body>
     </html>

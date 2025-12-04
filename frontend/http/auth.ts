@@ -2,12 +2,11 @@ import { httpClient } from './client';
 
 // 认证相关接口
 export interface LoginRequest {
-  username: string;
+  email: string;
   password: string;
 }
 
 export interface RegisterRequest {
-  username: string;
   email: string;
   password: string;
   display_name?: string;
@@ -32,6 +31,7 @@ export interface UserInfo {
   avatar: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  role_codes?: string[];
   created_at: string;
   updated_at: string;
 }

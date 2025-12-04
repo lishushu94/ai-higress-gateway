@@ -14,7 +14,8 @@ import {
     Activity,
     Settings,
     Users,
-    UserCircle
+    UserCircle,
+    Shield
 } from "lucide-react";
 
 const navItems = [
@@ -60,6 +61,11 @@ const adminItems = [
         titleKey: "nav.users",
         href: "/system/users",
         icon: Users,
+    },
+    {
+        titleKey: "nav.roles",
+        href: "/system/roles",
+        icon: Shield,
     },
 ];
 

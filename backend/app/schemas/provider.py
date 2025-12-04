@@ -62,6 +62,14 @@ class ProviderConfig(BaseModel):
             "provider only supports chat completions and requires fallback."
         ),
     )
+    chat_completions_path: str = Field(
+        default="/v1/chat/completions",
+        description="Preferred Chat Completions endpoint path",
+    )
+    responses_path: str | None = Field(
+        default=None,
+        description="Optional Responses API endpoint path",
+    )
     weight: float = Field(
         default=1.0,
         description="Base routing weight used by the scheduler",
@@ -105,6 +113,11 @@ class ProviderConfig(BaseModel):
             "Provider vendor category. Use 'native' for first-party providers and "
             "'aggregator' when routing through an intermediary platform."
         ),
+    )
+
+    supported_api_styles: list[Literal["openai", "responses", "claude"]] | None = Field(
+        default=None,
+        description="Explicit upstream API styles supported by this provider",
     )
 
     def get_api_keys(self) -> list[ProviderAPIKey]:

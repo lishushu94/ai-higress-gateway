@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Iterable, List, Optional
+from typing import Optional
 from uuid import UUID
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, exists, or_, select
 from sqlalchemy.orm import Session
 
 from app.logging_config import logger
-from app.models import UserPermission
+from app.models import Permission, RolePermission, UserPermission, UserRole
 from app.services.user_service import get_user_by_id
 from app.settings import settings
 
@@ -26,9 +26,12 @@ class UserPermissionService:
     # ---- 查询能力 ----
 
     def has_permission(self, user_id: UUID, permission_type: str) -> bool:
-        """检查用户是否拥有指定权限。
+        """检查用户是否拥有指定权限（角色 + 用户直挂）。
 
-        超级用户默认拥有所有权限。
+        优先级：
+        - 超级用户默认拥有所有权限；
+        - 用户直接授予的 `UserPermission` 记录；
+        - 用户所属角色 `UserRole` 上绑定的 `RolePermission` 所关联的 `Permission.code`。
         """
         user = get_user_by_id(self.session, user_id)
         if user is None:
@@ -36,13 +39,65 @@ class UserPermissionService:
         if user.is_superuser:
             return True
 
+        # 1. 先看用户是否有直挂的有效权限记录（支持 expires_at）
         now = datetime.now(timezone.utc)
-        stmt: Select[tuple[UserPermission]] = select(UserPermission).where(
+        direct_stmt: Select[tuple[UserPermission]] = select(UserPermission).where(
             UserPermission.user_id == user_id,
             UserPermission.permission_type == permission_type,
             or_(UserPermission.expires_at.is_(None), UserPermission.expires_at > now),
         )
-        return self.session.execute(stmt).scalars().first() is not None
+        if self.session.execute(direct_stmt).scalars().first() is not None:
+            return True
+
+        # 2. 再看用户所属角色是否包含该权限代码
+        role_stmt = (
+            select(RolePermission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .join(Permission, Permission.id == RolePermission.permission_id)
+            .where(UserRole.user_id == user_id, Permission.code == permission_type)
+            .limit(1)
+        )
+        return self.session.execute(role_stmt).first() is not None
+
+    def get_effective_permission_codes(self, user_id: UUID) -> list[str]:
+        """返回用户当前生效的权限编码列表（角色 + 用户直挂）。
+
+        - 对于超级用户：返回系统中所有已定义的 Permission.code；
+        - 对于普通用户：返回
+          * 未过期的 UserPermission.permission_type
+          * 以及其角色上的 Permission.code。
+        """
+        user = get_user_by_id(self.session, user_id)
+        if user is None:
+            return []
+
+        # 超级用户：拥有所有权限，直接列出所有 Permission.code
+        if user.is_superuser:
+            stmt_all = select(Permission.code)
+            codes = self.session.execute(stmt_all).scalars().all()
+            # 去重 + 排序，方便前端展示
+            return sorted(set(codes))
+
+        now = datetime.now(timezone.utc)
+
+        # 1. 用户直挂权限
+        direct_stmt: Select[tuple[UserPermission]] = select(UserPermission).where(
+            UserPermission.user_id == user_id,
+            or_(UserPermission.expires_at.is_(None), UserPermission.expires_at > now),
+        )
+        direct_records = list(self.session.execute(direct_stmt).scalars().all())
+        direct_codes = {rec.permission_type for rec in direct_records}
+
+        # 2. 角色上的权限
+        role_codes_stmt = (
+            select(Permission.code)
+            .join(RolePermission, RolePermission.permission_id == Permission.id)
+            .join(UserRole, UserRole.role_id == RolePermission.role_id)
+            .where(UserRole.user_id == user_id)
+        )
+        role_codes = set(self.session.execute(role_codes_stmt).scalars().all())
+
+        return sorted(direct_codes | role_codes)
 
     def get_provider_limit(self, user_id: UUID) -> Optional[int]:
         """获取用户可创建私有提供商的数量上限。
@@ -142,4 +197,3 @@ class UserPermissionService:
 
 
 __all__ = ["UserPermissionService", "UserPermissionServiceError"]
-

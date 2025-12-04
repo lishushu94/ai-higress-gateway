@@ -3,12 +3,16 @@ from .api_key_allowed_provider import APIKeyAllowedProvider
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
 from .identity import Identity
 from .permission import Permission
+from .role import Role
+from .role_permission import RolePermission
 from .provider import Provider
+from .provider_preset import ProviderPreset
 from .provider_api_key import ProviderAPIKey
 from .provider_model import ProviderModel
 from .provider_submission import ProviderSubmission
 from .provider_metrics_history import ProviderRoutingMetricsHistory
 from .user_permission import UserPermission
+from .user_role import UserRole
 from .user import User
 
 __all__ = [
@@ -17,7 +21,10 @@ __all__ = [
     "Base",
     "Identity",
     "Permission",
+    "Role",
+    "RolePermission",
     "Provider",
+    "ProviderPreset",
     "ProviderAPIKey",
     "ProviderModel",
     "ProviderSubmission",
@@ -25,5 +32,6 @@ __all__ = [
     "TimestampMixin",
     "UUIDPrimaryKeyMixin",
     "UserPermission",
+    "UserRole",
     "User",
 ]

@@ -3,7 +3,6 @@ import { UserInfo } from './auth';
 
 // 用户管理相关接口
 export interface CreateUserRequest {
-  username: string;
   email: string;
   password: string;
   display_name?: string;

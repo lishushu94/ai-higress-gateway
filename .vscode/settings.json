@@ -25,5 +25,6 @@
         "${workspaceFolder}/pyproject.toml"
     ],
     "ruff.lint.run": "onSave",
-    "ruff.format.enable": true
+    "ruff.format.enable": true,
+    "codingcopilot.enableCompletionLanguage": {}
 }

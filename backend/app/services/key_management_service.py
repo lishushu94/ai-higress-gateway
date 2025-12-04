@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.logging_config import logger
 from app.models import User
 from app.schemas.api_key import APIKeyCreateRequest, APIKeyExpiry
+from app.schemas.user import UserCreateRequest
 from app.services.api_key_service import create_api_key
 from app.services.jwt_auth_service import hash_password
 from app.services.user_service import create_user
@@ -71,7 +72,11 @@ def generate_secure_random_password(length: int = 16) -> str:
         SystemKeyGenerationError: 如果生成失败
     """
     try:
-        password = secrets.token_urlsafe(length)
+        # 直接生成固定长度的随机密码，确保不超过 72 字节（bcrypt 限制）
+        # 使用较小的参数确保生成的字符串不会太长
+        # secrets.token_urlsafe(n) 生成大约 1.3*n 长度的字符串
+        # 所以我们使用 n=48 可以生成大约 64 字符长度的字符串，远小于 72 字节限制
+        password = secrets.token_urlsafe(48)
         return password
     except Exception as exc:
         raise SystemKeyGenerationError(f"Failed to generate secure password: {exc}") from exc
@@ -113,12 +118,16 @@ def create_user_with_api_key(
             password = generate_secure_random_password()
         
         # 创建用户
-        user_payload = {
-            "username": username,
-            "email": email,
-            "password": password,
-            "display_name": display_name or username,
-        }
+        user_payload = UserCreateRequest(
+            username=username,
+            email=email,
+            password=password,
+            display_name=display_name or username,
+        )
+        
+        # 打印密码长度以调试
+        if password and len(password.encode('utf-8')) > 72:
+            print(f"Password too long: {len(password.encode('utf-8'))} bytes, truncating")
         
         user = create_user(session, user_payload, is_superuser=is_superuser)
         
@@ -182,6 +191,7 @@ def initialize_system_admin(
         )
         
         result = {
+            "user": user,
             "username": user.username,
             "email": user.email,
             "password": password,

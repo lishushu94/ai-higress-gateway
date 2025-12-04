@@ -3,11 +3,11 @@ export { httpClient, type AxiosRequestConfig, type AxiosResponse, type AxiosErro
 export { authService, type LoginRequest, type RegisterRequest, type AuthResponse, type UserInfo } from './auth';
 export { userService, type CreateUserRequest, type UpdateUserRequest, type UpdateUserStatusRequest } from './user';
 export { apiKeyService, type CreateApiKeyRequest, type UpdateApiKeyRequest, type ApiKey, type AllowedProviders } from './api-key';
-export { 
-  providerService, 
-  type Provider, 
-  type ProviderKey, 
-  type CreateProviderKeyRequest, 
+export {
+  providerService,
+  type Provider,
+  type ProviderKey,
+  type CreateProviderKeyRequest,
   type UpdateProviderKeyRequest,
   type ProviderKeyDetail,
   type Model,
@@ -15,22 +15,22 @@ export {
   type ProviderMetrics,
   type MetricsResponse
 } from './provider';
-export { 
-  logicalModelService, 
-  type LogicalModel, 
-  type UpstreamModel, 
-  type UpstreamsResponse 
+export {
+  logicalModelService,
+  type LogicalModel,
+  type UpstreamModel,
+  type UpstreamsResponse
 } from './logical-model';
-export { 
-  routingService, 
-  type RoutingDecisionRequest, 
-  type RoutingDecisionResponse, 
+export {
+  routingService,
+  type RoutingDecisionRequest,
+  type RoutingDecisionResponse,
   type CandidateInfo,
   type SessionInfo
 } from './routing';
-export { 
-  systemService, 
-  type GenerateSecretKeyRequest, 
+export {
+  systemService,
+  type GenerateSecretKeyRequest,
   type GenerateSecretKeyResponse,
   type InitAdminRequest,
   type InitAdminResponse,
@@ -38,3 +38,12 @@ export {
   type ValidateKeyResponse,
   type SystemStatusResponse
 } from './system';
+export {
+  adminService,
+  type Permission,
+  type Role,
+  type CreateRoleRequest,
+  type UpdateRoleRequest,
+  type RolePermissionsResponse,
+  type SetRolePermissionsRequest
+} from './admin';

@@ -30,6 +30,12 @@ def hash_password(password: str) -> str:
     Returns:
         哈希后的密码
     """
+    # 确保密码不超过 72 字节（bcrypt 限制）
+    password_bytes = password.encode('utf-8')
+    print(f"Password length: {len(password_bytes)} bytes")
+    if len(password_bytes) > 72:
+        password = password[:72]
+        print(f"Truncated password to: {len(password.encode('utf-8'))} bytes")
     return pwd_context.hash(password)
 
 
