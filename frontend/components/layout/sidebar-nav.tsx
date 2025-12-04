@@ -31,11 +31,6 @@ const navItems = [
         icon: Server,
     },
     {
-        titleKey: "nav.provider_presets",
-        href: "/dashboard/provider-presets",
-        icon: Package,
-    },
-    {
         titleKey: "nav.logical_models",
         href: "/dashboard/logical-models",
         icon: Cpu,
@@ -58,6 +53,11 @@ const navItems = [
 ];
 
 const adminItems = [
+    {
+        titleKey: "nav.provider_presets",
+        href: "/dashboard/provider-presets",
+        icon: Package,
+    },
     {
         titleKey: "nav.system",
         href: "/system/admin",

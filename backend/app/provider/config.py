@@ -166,6 +166,9 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
         data["cost_output"] = provider.cost_output
     if provider.max_qps is not None:
         data["max_qps"] = provider.max_qps
+    sdk_vendor = getattr(provider, "sdk_vendor", None)
+    if sdk_vendor:
+        data["sdk_vendor"] = sdk_vendor
     supported_styles = getattr(provider, "supported_api_styles", None)
     if isinstance(supported_styles, list):
         normalized = []

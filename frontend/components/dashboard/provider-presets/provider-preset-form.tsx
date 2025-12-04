@@ -6,6 +6,7 @@ import {
   CreateProviderPresetRequest,
   UpdateProviderPresetRequest,
   providerPresetService,
+  SdkVendor,
 } from "@/http/provider-preset";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -40,6 +41,7 @@ export function ProviderPresetForm({
   const [baseUrl, setBaseUrl] = useState("");
   const [providerType, setProviderType] = useState<"native" | "aggregator">("native");
   const [transport, setTransport] = useState<"http" | "sdk">("http");
+  const [sdkVendor, setSdkVendor] = useState<SdkVendor | "" >("");
 
   // 高级配置
   const [modelsPath, setModelsPath] = useState("/v1/models");
@@ -65,6 +67,7 @@ export function ProviderPresetForm({
         setBaseUrl(preset.base_url);
         setProviderType(preset.provider_type);
         setTransport(preset.transport);
+        setSdkVendor(preset.sdk_vendor ?? "");
         setModelsPath(preset.models_path);
         setMessagesPath(preset.messages_path || "");
         setChatCompletionsPath(preset.chat_completions_path);
@@ -91,9 +94,10 @@ export function ProviderPresetForm({
     setPresetId("");
     setDisplayName("");
     setDescription("");
-    setBaseUrl("");
-    setProviderType("native");
-    setTransport("http");
+        setBaseUrl("");
+        setProviderType("native");
+        setTransport("http");
+        setSdkVendor("");
     setModelsPath("/v1/models");
     setMessagesPath("");
     setChatCompletionsPath("/v1/chat/completions");
@@ -122,6 +126,11 @@ export function ProviderPresetForm({
       newErrors.baseUrl = "基础URL不能为空";
     } else if (!/^https?:\/\/.+/.test(baseUrl)) {
       newErrors.baseUrl = "请输入有效的HTTP/HTTPS URL";
+    }
+
+    // SDK 配置校验
+    if (transport === "sdk" && !sdkVendor) {
+      newErrors.sdkVendor = "当传输方式为 SDK 时必须选择 SDK 类型";
     }
 
     // 路径验证
@@ -189,6 +198,7 @@ export function ProviderPresetForm({
           description: description || undefined,
           provider_type: providerType,
           transport,
+          sdk_vendor: transport === "sdk" ? (sdkVendor as SdkVendor) : undefined,
           base_url: baseUrl,
           models_path: modelsPath,
           messages_path: messagesPath || undefined,
@@ -210,6 +220,7 @@ export function ProviderPresetForm({
           description: description || undefined,
           provider_type: providerType,
           transport,
+          sdk_vendor: transport === "sdk" ? (sdkVendor as SdkVendor) : undefined,
           base_url: baseUrl,
           models_path: modelsPath,
           messages_path: messagesPath || undefined,
@@ -339,19 +350,44 @@ export function ProviderPresetForm({
                 </Select>
               </div>
 
-              {/* 传输方式 */}
+            {/* 传输方式 */}
+            <div className="space-y-2">
+              <Label htmlFor="transport">传输方式</Label>
+              <Select value={transport} onValueChange={(v: any) => setTransport(v)}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="http">HTTP</SelectItem>
+                  <SelectItem value="sdk">SDK</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* SDK 类型（仅在 transport=sdk 时显示） */}
+            {transport === "sdk" && (
               <div className="space-y-2">
-                <Label htmlFor="transport">传输方式</Label>
-                <Select value={transport} onValueChange={(v: any) => setTransport(v)}>
-                  <SelectTrigger>
-                    <SelectValue />
+                <Label htmlFor="sdkVendor">
+                  SDK 类型 <span className="text-destructive">*</span>
+                </Label>
+                <Select
+                  value={sdkVendor}
+                  onValueChange={(v: any) => setSdkVendor(v)}
+                >
+                  <SelectTrigger className={errors.sdkVendor ? "border-destructive" : ""}>
+                    <SelectValue placeholder="选择 SDK 厂商" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="http">HTTP</SelectItem>
-                    <SelectItem value="sdk">SDK</SelectItem>
+                    <SelectItem value="openai">OpenAI SDK</SelectItem>
+                    <SelectItem value="google">Google / Gemini SDK</SelectItem>
+                    <SelectItem value="claude">Claude / Anthropic SDK</SelectItem>
                   </SelectContent>
                 </Select>
+                {errors.sdkVendor && (
+                  <p className="text-sm text-destructive">{errors.sdkVendor}</p>
+                )}
               </div>
+            )}
             </TabsContent>
 
             <TabsContent value="advanced" className="space-y-4 mt-4">

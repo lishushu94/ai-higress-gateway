@@ -1,5 +1,7 @@
 import { httpClient } from './client';
 
+export type SdkVendor = 'openai' | 'google' | 'claude';
+
 // 提供商预设接口
 export interface ProviderPreset {
   id: string;
@@ -8,6 +10,7 @@ export interface ProviderPreset {
   description: string | null;
   provider_type: 'native' | 'aggregator';
   transport: 'http' | 'sdk';
+  sdk_vendor: SdkVendor | null;
   base_url: string;
   models_path: string;
   messages_path: string | null;
@@ -28,6 +31,7 @@ export interface CreateProviderPresetRequest {
   description?: string;
   provider_type?: 'native' | 'aggregator';
   transport?: 'http' | 'sdk';
+  sdk_vendor?: SdkVendor;
   base_url: string;
   models_path?: string;
   messages_path?: string;
@@ -45,6 +49,7 @@ export interface UpdateProviderPresetRequest {
   description?: string;
   provider_type?: 'native' | 'aggregator';
   transport?: 'http' | 'sdk';
+  sdk_vendor?: SdkVendor;
   base_url?: string;
   models_path?: string;
   messages_path?: string;

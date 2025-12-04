@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Button } from "@/components/ui/button";
-import { ProviderForm } from "@/components/dashboard/providers/provider-form";
+import { ProviderFormEnhanced } from "@/components/dashboard/providers/provider-form";
 import { ProviderTable } from "@/components/dashboard/providers/provider-table";
 import { ProviderModelsDialog } from "@/components/dashboard/providers/provider-models-dialog";
 import { useI18n } from "@/lib/i18n-context";
@@ -230,7 +230,7 @@ return (
                 onViewModels={handleViewModels}
             />
 
-            <ProviderForm 
+            <ProviderFormEnhanced 
                 open={open}
                 onOpenChange={setOpen}
             />

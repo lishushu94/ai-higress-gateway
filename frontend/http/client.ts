@@ -12,6 +12,19 @@ const showError = (msg: string) => {
   }
 };
 
+// 认证状态变更回调
+let authErrorCallback: (() => void) | null = null;
+
+// 设置认证错误回调
+export const setAuthErrorCallback = (callback: () => void) => {
+  authErrorCallback = callback;
+};
+
+// 清除认证错误回调
+export const clearAuthErrorCallback = () => {
+  authErrorCallback = null;
+};
+
 // 环境变量
 const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
 
@@ -108,45 +121,62 @@ const createHttpClient = (): AxiosInstance => {
         const status = error.response.status;
         const errorData = error.response.data as { detail?: string };
 
-        // 401 错误 - 尝试刷新 token
-        if (status === 401 && !originalRequest._retry) {
-          if (isRefreshing) {
-            // 如果正在刷新，将请求加入队列
-            return new Promise((resolve, reject) => {
-              failedQueue.push({ resolve, reject });
-            }).then(token => {
+        // 401 错误处理
+        if (status === 401) {
+          // 检查是否是刷新token的请求
+          const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
+          
+          // 如果是刷新token请求失败，触发认证错误回调
+          if (isRefreshRequest) {
+            tokenManager.clearAll();
+            if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+              authErrorCallback?.();
+            }
+            showError('登录已过期，请重新登录');
+            return Promise.reject(error);
+          }
+          
+          // 如果不是刷新token请求，且不是已重试的请求，尝试刷新token
+          if (!originalRequest._retry) {
+            if (isRefreshing) {
+              // 如果正在刷新，将请求加入队列
+              return new Promise((resolve, reject) => {
+                failedQueue.push({ resolve, reject });
+              }).then(token => {
+                if (originalRequest.headers) {
+                  originalRequest.headers.Authorization = `Bearer ${token}`;
+                }
+                return instance(originalRequest);
+              }).catch(err => {
+                return Promise.reject(err);
+              });
+            }
+
+            originalRequest._retry = true;
+            isRefreshing = true;
+
+            try {
+              const newToken = await refreshAccessToken();
+              processQueue(null, newToken);
+              
+              // 更新原请求的 token 并重试
               if (originalRequest.headers) {
-                originalRequest.headers.Authorization = `Bearer ${token}`;
+                originalRequest.headers.Authorization = `Bearer ${newToken}`;
               }
               return instance(originalRequest);
-            }).catch(err => {
-              return Promise.reject(err);
-            });
-          }
-
-          originalRequest._retry = true;
-          isRefreshing = true;
-
-          try {
-            const newToken = await refreshAccessToken();
-            processQueue(null, newToken);
-            
-            // 更新原请求的 token 并重试
-            if (originalRequest.headers) {
-              originalRequest.headers.Authorization = `Bearer ${newToken}`;
+            } catch (refreshError) {
+              processQueue(refreshError, null);
+              
+              // 刷新失败，清除所有token并触发认证错误回调
+              tokenManager.clearAll();
+              if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+                authErrorCallback?.();
+              }
+              showError('会话已过期，请重新登录');
+              return Promise.reject(refreshError);
+            } finally {
+              isRefreshing = false;
             }
-            return instance(originalRequest);
-          } catch (refreshError) {
-            processQueue(refreshError, null);
-            
-            // 刷新失败，跳转到登录页
-            if (typeof window !== 'undefined') {
-              window.location.href = '/login';
-            }
-            showError('会话已过期，请重新登录');
-            return Promise.reject(refreshError);
-          } finally {
-            isRefreshing = false;
           }
         }
 

@@ -211,17 +211,15 @@ async def login(
     # 如果用户不存在，返回通用错误信息
     if user is None:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
         )
     
     # 验证密码
     if not verify_password(request.password, user.hashed_password):
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="用户名或密码错误",
-            headers={"WWW-Authenticate": "Bearer"},
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="邮箱或密码错误",
         )
     
     # 检查用户是否处于活动状态

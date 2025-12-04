@@ -45,8 +45,6 @@ bun dev
 1. 打开浏览器，访问 `http://localhost:3000/login`
 2. 点击"注册"切换到注册表单
 3. 填写注册信息：
-   - 显示名称：`测试用户`
-   - 用户名：`testuser`
    - 邮箱：`test@example.com`
    - 密码：`password123`
    - 确认密码：`password123`
@@ -76,7 +74,7 @@ console.log('Cookies:', document.cookie);
 1. 如果已登录，先登出（点击用户菜单 → 退出登录）
 2. 访问 `http://localhost:3000/login`
 3. 填写登录信息：
-   - 用户名：`testuser`（或邮箱 `test@example.com`）
+   - 邮箱：`test@example.com`
    - 密码：`password123`
 4. 点击"登录"按钮
 
@@ -169,7 +167,7 @@ console.log('Cookies:', document.cookie);
 1. 访问 `/login`
 2. 尝试提交空表单
 3. 输入无效数据：
-   - 用户名：`ab`（少于 3 个字符）
+   - 邮箱：`invalid-email`（不符合邮箱格式）
    - 密码：`12345`（少于 6 个字符）
 
 #### 预期结果：
@@ -180,7 +178,6 @@ console.log('Cookies:', document.cookie);
 #### 步骤（注册表单）：
 1. 切换到注册表单
 2. 测试各种无效输入：
-   - 用户名太短/太长
    - 无效邮箱格式
    - 密码太短
    - 两次密码不一致
@@ -195,19 +192,19 @@ console.log('Cookies:', document.cookie);
 
 #### 步骤：
 1. 尝试使用错误的凭据登录
-   - 用户名：`wronguser`
+   - 邮箱：`wrong@example.com`
    - 密码：`wrongpass`
 
 #### 预期结果：
-- ✅ 显示"用户名或密码错误"提示
+- ✅ 显示"邮箱或密码错误"提示
 - ✅ 不会跳转
 - ✅ 表单保持可用
 
 #### 步骤：
-2. 尝试注册已存在的用户名
+2. 尝试注册已存在的邮箱
 
 #### 预期结果：
-- ✅ 显示"用户名已存在"提示
+- ✅ 显示"邮箱已被使用"提示
 
 ---
 
@@ -216,7 +213,6 @@ console.log('Cookies:', document.cookie);
 完成所有测试后，确认以下功能正常：
 
 - [ ] 用户可以成功注册
-- [ ] 用户可以使用用户名登录
 - [ ] 用户可以使用邮箱登录
 - [ ] 注册后自动登录
 - [ ] 登录后跳转到 dashboard

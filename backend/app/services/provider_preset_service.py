@@ -46,6 +46,7 @@ def create_provider_preset(session: Session, payload: ProviderPresetCreateReques
         description=payload.description,
         provider_type=payload.provider_type,
         transport=payload.transport,
+        sdk_vendor=payload.sdk_vendor,
         base_url=str(payload.base_url),
         models_path=payload.models_path,
         messages_path=payload.messages_path,
@@ -84,6 +85,8 @@ def update_provider_preset(
         preset.provider_type = payload.provider_type
     if payload.transport is not None:
         preset.transport = payload.transport
+    if payload.sdk_vendor is not None:
+        preset.sdk_vendor = payload.sdk_vendor
     if payload.base_url is not None:
         preset.base_url = str(payload.base_url)
     if payload.models_path is not None:

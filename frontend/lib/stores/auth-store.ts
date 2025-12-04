@@ -7,10 +7,13 @@ interface AuthState {
   user: UserInfo | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  isAuthDialogOpen: boolean;
   
   // Actions
   setUser: (user: UserInfo | null) => void;
   setLoading: (loading: boolean) => void;
+  openAuthDialog: () => void;
+  closeAuthDialog: () => void;
   login: (credentials: LoginRequest) => Promise<void>;
   register: (data: RegisterRequest) => Promise<UserInfo>;
   logout: () => Promise<void>;
@@ -21,17 +24,26 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   user: null,
   isAuthenticated: false,
   isLoading: true,
+  isAuthDialogOpen: false,
 
   setUser: (user) => {
-    set({ 
-      user, 
+    set({
+      user,
       isAuthenticated: !!user,
-      isLoading: false 
+      isLoading: false
     });
   },
 
   setLoading: (loading) => {
     set({ isLoading: loading });
+  },
+
+  openAuthDialog: () => {
+    set({ isAuthDialogOpen: true });
+  },
+
+  closeAuthDialog: () => {
+    set({ isAuthDialogOpen: false });
   },
 
   login: async (credentials) => {
@@ -49,10 +61,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       const user = await authService.getCurrentUser();
       
       // 更新状态
-      set({ 
-        user, 
+      set({
+        user,
         isAuthenticated: true,
-        isLoading: false 
+        isLoading: false,
+        isAuthDialogOpen: false  // 登录成功后关闭对话框
       });
       
       toast.success('登录成功');

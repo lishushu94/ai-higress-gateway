@@ -32,7 +32,6 @@ const registerSchema = z.object({
   email: z.string().email("请输入有效的邮箱地址"),
   password: z.string().min(6, "密码至少6个字符").max(128, "密码最多128个字符"),
   confirmPassword: z.string(),
-  display_name: z.string().optional(),
 }).refine((data) => data.password === data.confirmPassword, {
   message: "两次输入的密码不一致",
   path: ["confirmPassword"],
@@ -46,7 +45,13 @@ export function AuthDialog() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [mode, setMode] = useState<AuthMode>("login");
-  const { login, register: registerUser, isLoading } = useAuthStore();
+  const {
+    login,
+    register: registerUser,
+    isLoading,
+    isAuthDialogOpen,
+    closeAuthDialog
+  } = useAuthStore();
 
   const isLogin = mode === "login";
   const redirectTo = searchParams.get('redirect') || '/dashboard/overview';
@@ -67,7 +72,6 @@ export function AuthDialog() {
       email: "",
       password: "",
       confirmPassword: "",
-      display_name: "",
     },
   });
 
@@ -75,9 +79,16 @@ export function AuthDialog() {
   const handleLogin = async (data: LoginFormData) => {
     try {
       await login(data);
-      router.push(redirectTo);
+      // 登录成功后，对话框会自动关闭（在 auth-store 中处理）
+      // 如果有重定向参数，则跳转；否则刷新当前页面
+      if (searchParams.get('redirect')) {
+        router.push(redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch (error) {
       console.error('Login error:', error);
+      // 不做额外处理，错误已经在 auth-store 中通过 toast 显示
     }
   };
 
@@ -86,14 +97,20 @@ export function AuthDialog() {
     try {
       const { confirmPassword, ...registerData } = data;
       await registerUser(registerData);
-      router.push(redirectTo);
+      // 注册成功后会自动登录，对话框会自动关闭
+      if (searchParams.get('redirect')) {
+        router.push(redirectTo);
+      } else {
+        router.refresh();
+      }
     } catch (error) {
       console.error('Register error:', error);
+      // 不做额外处理，错误已经在 auth-store 中通过 toast 显示
     }
   };
 
   return (
-    <Dialog defaultOpen>
+    <Dialog open={isAuthDialogOpen} onOpenChange={closeAuthDialog}>
       <DialogContent className="max-w-md w-full">
         <DialogHeader className="text-center">
           <DialogTitle className="text-2xl font-serif font-bold">
@@ -143,14 +160,6 @@ export function AuthDialog() {
             </form>
           ) : (
             <form onSubmit={registerForm.handleSubmit(handleRegister)} className="space-y-6">
-              <FormInput
-                label={t("auth.name_label")}
-                type="text"
-                placeholder={t("auth.name_placeholder")}
-                {...registerForm.register("display_name")}
-                error={registerForm.formState.errors.display_name?.message}
-              />
-
               <FormInput
                 label={t("auth.email_label")}
                 type="email"

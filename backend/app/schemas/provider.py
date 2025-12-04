@@ -4,6 +4,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, HttpUrl
 
 
+SdkVendorValue = Literal["openai", "google", "claude"]
+
+
 class ProviderStatus(str, Enum):
     """
     Runtime health state for a provider.
@@ -112,6 +115,13 @@ class ProviderConfig(BaseModel):
         description=(
             "Provider vendor category. Use 'native' for first-party providers and "
             "'aggregator' when routing through an intermediary platform."
+        ),
+    )
+    sdk_vendor: SdkVendorValue | None = Field(
+        default=None,
+        description=(
+            "When transport='sdk', identifies which official SDK implementation to use "
+            "(e.g. openai/google/claude)."
         ),
     )
 

@@ -22,6 +22,11 @@ class ProviderPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     transport: Mapped[str] = Column(
         String(16), nullable=False, server_default=text("'http'"), default="http"
     )
+    sdk_vendor: Mapped[str | None] = Column(
+        String(32),
+        nullable=True,
+        doc="When transport='sdk', identifies which official SDK implementation to use (e.g. openai/google/claude).",
+    )
     base_url: Mapped[str] = Column(String(255), nullable=False)
     models_path: Mapped[str] = Column(
         String(100), nullable=False, server_default=text("'/v1/models'"), default="/v1/models"

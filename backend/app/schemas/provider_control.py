@@ -6,6 +6,8 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
+from app.schemas.provider import SdkVendorValue
+
 ApiStyleValue = Literal["openai", "responses", "claude"]
 
 
@@ -24,6 +26,10 @@ class UserProviderCreateRequest(BaseModel):
     transport: Literal["http", "sdk"] = Field(
         default="http",
         description="调用方式：HTTP 代理或 SDK",
+    )
+    sdk_vendor: SdkVendorValue | None = Field(
+        default=None,
+        description="当 transport=sdk 时必须指定的 SDK 厂商标识，例如 openai/google/claude",
     )
     weight: float | None = Field(
         default=1.0,
@@ -79,6 +85,16 @@ class UserProviderCreateRequest(BaseModel):
             setattr(self, field_name, trimmed)
         return self
 
+    @model_validator(mode="after")
+    def validate_sdk_vendor(self) -> "UserProviderCreateRequest":
+        # 明确约束：仅当 transport=sdk 时才需要 sdk_vendor
+        if self.transport == "sdk" and self.sdk_vendor is None:
+            raise ValueError("当 transport=sdk 时，必须指定 sdk_vendor")
+        if self.transport == "http":
+            # HTTP 模式下忽略 sdk_vendor，避免产生误导
+            self.sdk_vendor = None
+        return self
+
 
 class UserProviderUpdateRequest(BaseModel):
     """更新用户私有提供商的请求模型。"""
@@ -87,6 +103,7 @@ class UserProviderUpdateRequest(BaseModel):
     base_url: HttpUrl | None = None
     provider_type: Literal["native", "aggregator"] | None = None
     transport: Literal["http", "sdk"] | None = None
+    sdk_vendor: SdkVendorValue | None = None
     weight: float | None = Field(default=None, gt=0)
     region: str | None = None
     cost_input: float | None = Field(default=None, gt=0)
@@ -110,6 +127,7 @@ class UserProviderUpdateRequest(BaseModel):
                 "base_url",
                 "provider_type",
                 "transport",
+                "sdk_vendor",
                 "weight",
                 "region",
                 "cost_input",
@@ -145,6 +163,13 @@ class UserProviderUpdateRequest(BaseModel):
             setattr(self, field_name, trimmed)
         return self
 
+    @model_validator(mode="after")
+    def validate_sdk_vendor(self) -> "UserProviderUpdateRequest":
+        # 如果显式切换到 HTTP，则清空 sdk_vendor
+        if self.transport == "http":
+            self.sdk_vendor = None
+        return self
+
 
 class UserProviderResponse(BaseModel):
     """用户私有提供商的响应模型。"""
@@ -155,6 +180,7 @@ class UserProviderResponse(BaseModel):
     base_url: HttpUrl
     provider_type: str
     transport: str
+    sdk_vendor: str | None = None
     preset_id: str | None = None
     visibility: str
     owner_id: UUID | None
@@ -242,6 +268,7 @@ class AdminProviderResponse(BaseModel):
     base_url: HttpUrl
     provider_type: str
     transport: str
+    sdk_vendor: str | None = None
     preset_id: str | None = None
     visibility: str
     owner_id: UUID | None
@@ -267,6 +294,10 @@ class ProviderPresetBase(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     provider_type: Literal["native", "aggregator"] = Field(default="native")
     transport: Literal["http", "sdk"] = Field(default="http")
+    sdk_vendor: SdkVendorValue | None = Field(
+        default=None,
+        description="当 transport=sdk 时必须指定的 SDK 厂商标识，例如 openai/google/claude",
+    )
     base_url: HttpUrl
     models_path: str = Field(default="/v1/models")
     messages_path: str | None = Field(default="/v1/message")
@@ -297,6 +328,14 @@ class ProviderPresetBase(BaseModel):
             setattr(self, field_name, trimmed)
         return self
 
+    @model_validator(mode="after")
+    def validate_sdk_vendor(self) -> "ProviderPresetBase":
+        if self.transport == "sdk" and self.sdk_vendor is None:
+            raise ValueError("当 transport=sdk 时，必须指定 sdk_vendor")
+        if self.transport == "http":
+            self.sdk_vendor = None
+        return self
+
 
 class ProviderPresetCreateRequest(ProviderPresetBase):
     pass
@@ -307,6 +346,7 @@ class ProviderPresetUpdateRequest(BaseModel):
     description: str | None = Field(default=None, max_length=2000)
     provider_type: Literal["native", "aggregator"] | None = None
     transport: Literal["http", "sdk"] | None = None
+    sdk_vendor: SdkVendorValue | None = None
     base_url: HttpUrl | None = None
     models_path: str | None = None
     messages_path: str | None = None
@@ -326,6 +366,7 @@ class ProviderPresetUpdateRequest(BaseModel):
                 "description",
                 "provider_type",
                 "transport",
+                "sdk_vendor",
                 "base_url",
                 "models_path",
                 "messages_path",
@@ -355,6 +396,12 @@ class ProviderPresetUpdateRequest(BaseModel):
             if not trimmed.startswith("/"):
                 raise ValueError(f"{field_name} 必须以 / 开头")
             setattr(self, field_name, trimmed)
+        return self
+
+    @model_validator(mode="after")
+    def validate_sdk_vendor(self) -> "ProviderPresetUpdateRequest":
+        if self.transport == "http":
+            self.sdk_vendor = None
         return self
 
 

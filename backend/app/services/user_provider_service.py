@@ -81,6 +81,7 @@ def create_private_provider(
         base_url=base_url,
         transport=payload.transport or "http",
         provider_type=payload.provider_type or "native",
+        sdk_vendor=payload.sdk_vendor,
         weight=payload.weight or 1.0,
         region=payload.region,
         cost_input=payload.cost_input,
@@ -166,8 +167,13 @@ def update_private_provider(
         provider.base_url = str(payload.base_url)
     if payload.transport is not None:
         provider.transport = payload.transport
+        # 切换到 HTTP 时清空 sdk_vendor，避免产生误导配置
+        if payload.transport == "http":
+            provider.sdk_vendor = None
     if payload.provider_type is not None:
         provider.provider_type = payload.provider_type
+    if payload.sdk_vendor is not None:
+        provider.sdk_vendor = payload.sdk_vendor
     if payload.weight is not None:
         provider.weight = payload.weight
     if payload.region is not None:

@@ -26,15 +26,6 @@ class SDKDriver:
     error_types: SDKErrorTypes
 
 
-def _normalized_host(base_url: Any) -> str:
-    try:
-        host = base_url.host  # pydantic HttpUrl
-    except Exception:
-        parsed = urlparse(str(base_url))
-        host = parsed.hostname or ""
-    return host.lower()
-
-
 def normalize_base_url(value: Any) -> str | None:
     if value is None:
         return None
@@ -44,25 +35,10 @@ def normalize_base_url(value: Any) -> str | None:
 
 def detect_sdk_vendor(provider: ProviderConfig) -> str | None:
     """
-    根据 provider id 与 base_url 主机名推断使用哪个官方 SDK。
+    根据 ProviderConfig 中的 sdk_vendor 显式选择官方 SDK。
+    当 transport='sdk' 时，管理员必须在配置中指定 sdk_vendor；否则返回 None。
     """
-    pid = provider.id.lower()
-    host = _normalized_host(provider.base_url)
-
-    if ("openai" in pid or "openai" in host) and "azure" not in pid and "azure" not in host:
-        return "openai"
-
-    if any(key in pid for key in ("claude", "anthropic")) or any(
-        key in host for key in ("anthropic", "claude.ai")
-    ):
-        return "claude"
-
-    if any(key in pid for key in ("google", "gemini")) or any(
-        key in host for key in ("generativelanguage", "googleapis", "gemini")
-    ):
-        return "google"
-
-    return None
+    return getattr(provider, "sdk_vendor", None)
 
 
 def get_sdk_driver(provider: ProviderConfig) -> SDKDriver | None:

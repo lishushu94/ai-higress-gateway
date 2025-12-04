@@ -3,6 +3,8 @@ import "./globals.css";
 import { ThemeProvider } from "@/components/theme-provider";
 import { I18nProvider } from "@/lib/i18n-context";
 import { AuthProvider } from "@/components/providers/auth-provider";
+import { AuthDialog } from "@/components/auth/auth-dialog";
+import { SWRProvider } from "@/lib/swr";
 import { Toaster } from "@/components/ui/sonner";
 
 export const metadata: Metadata = {
@@ -25,9 +27,13 @@ export default function RootLayout({
           disableTransitionOnChange
         >
           <I18nProvider>
-            <AuthProvider>
-              {children}
-            </AuthProvider>
+            <SWRProvider>
+              <AuthProvider>
+                {children}
+                {/* 全局登录对话框 - 由 Zustand 状态控制显示 */}
+                <AuthDialog />
+              </AuthProvider>
+            </SWRProvider>
           </I18nProvider>
           <Toaster richColors closeButton />
         </ThemeProvider>
