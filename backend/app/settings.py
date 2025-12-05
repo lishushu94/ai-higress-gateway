@@ -69,6 +69,20 @@ class Settings(BaseSettings):
         description="Timezone used by Celery beat / scheduled tasks.",
     )
 
+    # Provider health-check intervals and cache TTL
+    provider_health_check_interval_seconds: int = Field(
+        60,
+        alias="PROVIDER_HEALTH_CHECK_INTERVAL_SECONDS",
+        description="定时检测厂商健康状态的间隔（秒）",
+        ge=10,
+    )
+    provider_health_cache_ttl_seconds: int = Field(
+        300,
+        alias="PROVIDER_HEALTH_CACHE_TTL_SECONDS",
+        description="厂商健康状态写入 Redis 时的缓存 TTL（秒）",
+        ge=30,
+    )
+
     # Metrics buffer & sampling
     metrics_buffer_enabled: bool = Field(
         True,

@@ -1,0 +1,114 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any, TYPE_CHECKING
+
+from sqlalchemy.orm import Session
+
+from app.models import Provider
+from app.provider.health import HealthStatus
+from app.redis_client import redis_get_json, redis_set_json
+from app.schemas import ProviderStatus
+from app.settings import settings
+
+if TYPE_CHECKING:  # pragma: no cover - typing hint only
+    from redis.asyncio import Redis
+else:  # pragma: no cover - fallback type when redis isn't installed
+    Redis = Any
+
+
+HEALTH_STATUS_KEY_TEMPLATE = "llm:provider:health:{provider_id}"
+
+
+async def cache_health_status(
+    redis: Redis, status: HealthStatus, *, ttl_seconds: int | None = None
+) -> None:
+    key = HEALTH_STATUS_KEY_TEMPLATE.format(provider_id=status.provider_id)
+    await redis_set_json(redis, key, status.model_dump(), ttl_seconds=ttl_seconds)
+
+
+async def get_cached_health_status(redis: Redis, provider_id: str) -> HealthStatus | None:
+    key = HEALTH_STATUS_KEY_TEMPLATE.format(provider_id=provider_id)
+    data = await redis_get_json(redis, key)
+    if not data:
+        return None
+    try:
+        return HealthStatus.model_validate(data)
+    except Exception:
+        return None
+
+
+def _convert_metadata(metadata: dict[str, Any] | None, key: str) -> Any:
+    if not metadata:
+        return None
+    return metadata.get(key)
+
+
+def _provider_to_health_status(provider: Provider) -> HealthStatus | None:
+    if provider is None:
+        return None
+
+    metadata: dict[str, Any] | None = provider.metadata_json or None
+    try:
+        status = ProviderStatus(provider.status)
+    except Exception:
+        status = ProviderStatus.DOWN
+
+    timestamp = provider.last_check
+    if timestamp is None:
+        return None
+
+    return HealthStatus(
+        provider_id=provider.provider_id,
+        status=status,
+        timestamp=timestamp.timestamp(),
+        response_time_ms=_convert_metadata(metadata, "response_time_ms"),
+        error_message=_convert_metadata(metadata, "error_message"),
+        last_successful_check=_convert_metadata(metadata, "last_successful_check"),
+    )
+
+
+async def get_health_status_with_fallback(
+    redis: Redis, session: Session, provider_id: str
+) -> HealthStatus | None:
+    cached = await get_cached_health_status(redis, provider_id)
+    if cached is not None:
+        return cached
+
+    provider = (
+        session.query(Provider).filter(Provider.provider_id == provider_id).first()
+    )
+    if provider is None:
+        return None
+
+    return _provider_to_health_status(provider)
+
+
+async def persist_provider_health(
+    redis: Redis,
+    session: Session,
+    provider: Provider,
+    status: HealthStatus,
+    *,
+    cache_ttl_seconds: int | None = None,
+) -> None:
+    provider.status = status.status.value
+    provider.last_check = datetime.fromtimestamp(status.timestamp, tz=timezone.utc)
+    provider.metadata_json = {
+        "response_time_ms": status.response_time_ms,
+        "error_message": status.error_message,
+        "last_successful_check": status.last_successful_check,
+    }
+    session.add(provider)
+
+    ttl = cache_ttl_seconds or settings.provider_health_cache_ttl_seconds
+    await cache_health_status(redis, status, ttl_seconds=ttl)
+
+
+__all__ = [
+    "HEALTH_STATUS_KEY_TEMPLATE",
+    "cache_health_status",
+    "get_cached_health_status",
+    "get_health_status_with_fallback",
+    "persist_provider_health",
+]
