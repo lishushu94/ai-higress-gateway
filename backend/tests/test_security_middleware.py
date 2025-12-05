@@ -1,0 +1,238 @@
+"""
+Tests for security middleware.
+"""
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from app.middleware import (
+    RateLimitMiddleware,
+    RequestValidatorMiddleware,
+    SecurityHeadersMiddleware,
+)
+
+
+@pytest.fixture
+def app_with_security_headers():
+    """Create a test app with security headers middleware."""
+    app = FastAPI()
+    app.add_middleware(SecurityHeadersMiddleware, enable_hsts=False)
+
+    @app.get("/test")
+    async def test_endpoint():
+        return {"message": "ok"}
+
+    return app
+
+
+@pytest.fixture
+def app_with_rate_limit():
+    """Create a test app with rate limit middleware."""
+    app = FastAPI()
+    app.add_middleware(
+        RateLimitMiddleware,
+        redis_client=None,  # Use in-memory storage for tests
+        default_max_requests=5,
+        default_window_seconds=60,
+    )
+
+    @app.get("/test")
+    async def test_endpoint():
+        return {"message": "ok"}
+
+    return app
+
+
+@pytest.fixture
+def app_with_request_validator():
+    """Create a test app with request validator middleware."""
+    app = FastAPI()
+    app.add_middleware(
+        RequestValidatorMiddleware,
+        enable_sql_injection_check=True,
+        enable_xss_check=True,
+        enable_path_traversal_check=True,
+        log_suspicious_requests=False,  # Disable logging in tests
+    )
+
+    @app.get("/test")
+    async def test_endpoint():
+        return {"message": "ok"}
+
+    return app
+
+
+class TestSecurityHeadersMiddleware:
+    """Test security headers middleware."""
+
+    def test_security_headers_added(self, app_with_security_headers):
+        """Test that security headers are added to responses."""
+        client = TestClient(app_with_security_headers)
+        response = client.get("/test")
+
+        assert response.status_code == 200
+        assert "X-Content-Type-Options" in response.headers
+        assert response.headers["X-Content-Type-Options"] == "nosniff"
+        assert "X-Frame-Options" in response.headers
+        assert response.headers["X-Frame-Options"] == "DENY"
+        assert "X-XSS-Protection" in response.headers
+        assert "Content-Security-Policy" in response.headers
+        assert "Referrer-Policy" in response.headers
+
+    def test_hsts_not_enabled_in_dev(self, app_with_security_headers):
+        """Test that HSTS is not enabled when explicitly disabled."""
+        client = TestClient(app_with_security_headers)
+        response = client.get("/test")
+
+        assert "Strict-Transport-Security" not in response.headers
+
+
+class TestRateLimitMiddleware:
+    """Test rate limit middleware."""
+
+    def test_rate_limit_allows_normal_requests(self, app_with_rate_limit):
+        """Test that normal requests are allowed."""
+        client = TestClient(app_with_rate_limit)
+
+        # Make 3 requests (under the limit of 5)
+        for _ in range(3):
+            response = client.get("/test")
+            assert response.status_code == 200
+            assert "X-RateLimit-Limit" in response.headers
+            assert "X-RateLimit-Remaining" in response.headers
+
+    def test_rate_limit_blocks_excessive_requests(self, app_with_rate_limit):
+        """Test that excessive requests are blocked."""
+        client = TestClient(app_with_rate_limit)
+
+        # Make 5 successful requests
+        for i in range(5):
+            response = client.get("/test")
+            assert response.status_code == 200
+
+        # 6th request should be rate limited
+        response = client.get("/test")
+        assert response.status_code == 429
+        assert response.json()["error"] == "rate_limit_exceeded"
+        assert "Retry-After" in response.headers
+
+    def test_rate_limit_headers_present(self, app_with_rate_limit):
+        """Test that rate limit headers are present."""
+        client = TestClient(app_with_rate_limit)
+        response = client.get("/test")
+
+        assert "X-RateLimit-Limit" in response.headers
+        assert "X-RateLimit-Remaining" in response.headers
+        assert "X-RateLimit-Reset" in response.headers
+
+
+class TestRequestValidatorMiddleware:
+    """Test request validator middleware."""
+
+    def test_normal_requests_allowed(self, app_with_request_validator):
+        """Test that normal requests are allowed."""
+        client = TestClient(app_with_request_validator)
+        response = client.get("/test")
+        assert response.status_code == 200
+
+    def test_sql_injection_blocked(self, app_with_request_validator):
+        """Test that SQL injection attempts are blocked."""
+        client = TestClient(app_with_request_validator)
+
+        # Test various SQL injection patterns
+        sql_patterns = [
+            "/test?id=1' OR '1'='1",
+            "/test?id=1 UNION SELECT * FROM users",
+            "/test?id=1; DROP TABLE users--",
+        ]
+
+        for pattern in sql_patterns:
+            response = client.get(pattern)
+            assert response.status_code == 403
+            assert response.json()["error"] == "forbidden"
+
+    def test_xss_blocked(self, app_with_request_validator):
+        """Test that XSS attempts are blocked."""
+        client = TestClient(app_with_request_validator)
+
+        # Test various XSS patterns
+        xss_patterns = [
+            "/test?name=<script>alert('xss')</script>",
+            "/test?name=javascript:alert(1)",
+            "/test?name=<img src=x onerror=alert(1)>",
+        ]
+
+        for pattern in xss_patterns:
+            response = client.get(pattern)
+            assert response.status_code == 403
+
+    def test_path_traversal_blocked(self, app_with_request_validator):
+        """Test that path traversal attempts are blocked."""
+        client = TestClient(app_with_request_validator)
+
+        # Test various path traversal patterns
+        traversal_patterns = [
+            "/test/../../../etc/passwd",
+            "/test?file=../../config.ini",
+        ]
+
+        for pattern in traversal_patterns:
+            response = client.get(pattern)
+            assert response.status_code == 403
+
+    def test_suspicious_user_agent_blocked(self, app_with_request_validator):
+        """Test that suspicious user agents are blocked."""
+        client = TestClient(app_with_request_validator)
+
+        # Test various scanning tool user agents
+        suspicious_agents = [
+            "sqlmap/1.0",
+            "nikto/2.1.6",
+            "nmap scripting engine",
+        ]
+
+        for agent in suspicious_agents:
+            response = client.get("/test", headers={"User-Agent": agent})
+            assert response.status_code == 403
+
+
+class TestMiddlewareIntegration:
+    """Test middleware integration."""
+
+    def test_all_middleware_together(self):
+        """Test that all middleware work together correctly."""
+        app = FastAPI()
+
+        # Add all middleware
+        app.add_middleware(SecurityHeadersMiddleware, enable_hsts=False)
+        app.add_middleware(
+            RateLimitMiddleware,
+            redis_client=None,
+            default_max_requests=10,
+            default_window_seconds=60,
+        )
+        app.add_middleware(
+            RequestValidatorMiddleware,
+            log_suspicious_requests=False,
+        )
+
+        @app.get("/test")
+        async def test_endpoint():
+            return {"message": "ok"}
+
+        client = TestClient(app)
+
+        # Normal request should work
+        response = client.get("/test")
+        assert response.status_code == 200
+
+        # Should have security headers
+        assert "X-Content-Type-Options" in response.headers
+
+        # Should have rate limit headers
+        assert "X-RateLimit-Limit" in response.headers
+
+        # Malicious request should be blocked
+        response = client.get("/test?id=1' OR '1'='1")
+        assert response.status_code == 403

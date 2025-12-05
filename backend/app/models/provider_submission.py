@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from uuid import UUID as PyUUID
+
 from sqlalchemy import Column, DateTime, ForeignKey, LargeBinary, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, relationship
@@ -37,8 +39,19 @@ class ProviderSubmission(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     review_notes: Mapped[str | None] = Column(Text, nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
 
+    # 关联到批准后创建的 Provider（用于取消提交时删除对应的公共 Provider）
+    approved_provider_uuid: Mapped[PyUUID | None] = Column(
+        UUID(as_uuid=True),
+        ForeignKey("providers.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+
     user: Mapped["User"] = relationship("User", foreign_keys=[user_id])
     reviewer: Mapped["User"] = relationship("User", foreign_keys=[reviewed_by])
+    approved_provider: Mapped["Provider | None"] = relationship(
+        "Provider", foreign_keys=[approved_provider_uuid]
+    )
 
 
 __all__ = ["ProviderSubmission"]

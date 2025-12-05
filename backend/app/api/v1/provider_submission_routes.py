@@ -17,6 +17,7 @@ from app.services.provider_submission_service import (
     ProviderSubmissionNotFoundError,
     ProviderSubmissionServiceError,
     approve_submission,
+    cancel_submission,
     create_submission,
     get_submission,
     list_submissions,
@@ -131,6 +132,31 @@ def review_provider_submission_endpoint(
         if submission is None:
             raise not_found("提交记录不存在")
         return ProviderSubmissionResponse.model_validate(submission)
+    except ProviderSubmissionNotFoundError:
+        raise not_found("提交记录不存在")
+    except ProviderSubmissionServiceError as exc:
+        raise bad_request(str(exc))
+
+
+@router.delete(
+    "/providers/submissions/{submission_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def cancel_submission_endpoint(
+    submission_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> None:
+    """用户取消自己的提交。
+    
+    根据提交状态执行不同的操作：
+    - pending: 直接删除提交记录
+    - approved: 删除对应的公共 Provider 和提交记录
+    - rejected: 直接删除提交记录
+    """
+    
+    try:
+        cancel_submission(db, submission_id, UUID(current_user.id))
     except ProviderSubmissionNotFoundError:
         raise not_found("提交记录不存在")
     except ProviderSubmissionServiceError as exc:

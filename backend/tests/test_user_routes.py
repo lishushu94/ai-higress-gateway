@@ -20,7 +20,7 @@ def _jwt_auth_headers(user_id: str) -> dict[str, str]:
 
 
 @pytest.fixture()
-def client_with_db() -> tuple[TestClient, sessionmaker[Session]]:
+def client_with_db() -> tuple[TestClient, sessionmaker[Session], str, InMemoryRedis]:
     engine = create_engine(
         "sqlite+pysqlite:///:memory:",
         future=True,
@@ -52,13 +52,14 @@ def client_with_db() -> tuple[TestClient, sessionmaker[Session]]:
         admin_user, _ = seed_user_and_key(session, token_plain="timeline")
 
     with TestClient(app, base_url="http://test") as client:
-        yield client, TestingSessionLocal, str(admin_user.id)
+        # 返回客户端、Session 工厂、管理员用户 ID 以及用于检查会话状态的 InMemoryRedis
+        yield client, TestingSessionLocal, str(admin_user.id), fake_redis
 
     Base.metadata.drop_all(bind=engine)
 
 
 def test_register_user_persists_record(client_with_db):
-    client, session_factory, admin_id = client_with_db
+    client, session_factory, admin_id, _redis = client_with_db
     payload = {
         "username": "alice",
         "email": "alice@example.com",
@@ -83,7 +84,7 @@ def test_register_user_persists_record(client_with_db):
 
 
 def test_register_user_duplicate_username_returns_400(client_with_db):
-    client, _, admin_id = client_with_db
+    client, _, admin_id, _redis = client_with_db
     base_payload = {
         "username": "bob",
         "email": "bob@example.com",
@@ -102,7 +103,7 @@ def test_register_user_duplicate_username_returns_400(client_with_db):
 
 
 def test_update_user_changes_profile_and_password(client_with_db):
-    client, session_factory, admin_id = client_with_db
+    client, session_factory, admin_id, _redis = client_with_db
     payload = {
         "username": "charlie",
         "email": "charlie@example.com",
@@ -138,7 +139,7 @@ def test_update_user_changes_profile_and_password(client_with_db):
 
 
 def test_update_missing_user_returns_404(client_with_db):
-    client, _, admin_id = client_with_db
+    client, _, admin_id, _redis = client_with_db
     resp = client.put(
         "/users/00000000-0000-0000-0000-000000000000",
         json={"display_name": "n/a"},
@@ -148,7 +149,7 @@ def test_update_missing_user_returns_404(client_with_db):
 
 
 def test_superuser_can_ban_user_and_revoke_access(client_with_db):
-    client, _, admin_id = client_with_db
+    client, _, admin_id, _redis = client_with_db
 
     create_payload = {
         "username": "diana",
@@ -192,8 +193,60 @@ def test_superuser_can_ban_user_and_revoke_access(client_with_db):
     assert resp_after_ban.json()["detail"] == "User account is disabled"
 
 
+def test_ban_user_also_revokes_jwt_sessions_in_redis(client_with_db):
+    """
+    禁用用户时，除了数据库标记 is_active=False，还应清理其在 Redis 中登记的会话信息。
+    这里通过直接检查 InMemoryRedis 中的会话 key 是否被删除来验证。
+    """
+    import asyncio
+
+    client, _, admin_id, redis = client_with_db
+
+    # 1. 创建一个普通用户
+    create_payload = {
+        "username": "frank",
+        "email": "frank@example.com",
+        "password": "Secret123!",
+    }
+    resp_user = client.post("/users", json=create_payload, headers=_jwt_auth_headers(admin_id))
+    assert resp_user.status_code == 201
+    user_id = resp_user.json()["id"]
+
+    # 2. 通过 /auth/login 登录，触发 TokenRedisService.store_* 将会话写入 Redis
+    login_resp = client.post(
+        "/auth/login",
+        json={"email": create_payload["email"], "password": create_payload["password"]},
+    )
+    assert login_resp.status_code == 200
+    tokens = login_resp.json()
+    access_token = tokens["access_token"]
+
+    # 确认会话 key 已经写入 Redis
+    sessions_key = f"auth:user:{user_id}:sessions"
+    raw_before = asyncio.run(redis.get(sessions_key))
+    assert raw_before is not None
+
+    # 3. 管理员禁用该用户
+    ban_resp = client.put(
+        f"/users/{user_id}/status",
+        json={"is_active": False},
+        headers=_jwt_auth_headers(admin_id),
+    )
+    assert ban_resp.status_code == 200
+    assert ban_resp.json()["is_active"] is False
+
+    # 4. 禁用后，会话 key 应被删除，视为所有 JWT 会话已被撤销
+    raw_after = asyncio.run(redis.get(sessions_key))
+    assert raw_after is None
+
+    # 同一个 access_token 再访问受保护接口，应不再被视为有效会话
+    user_headers = {"Authorization": f"Bearer {access_token}"}
+    me_resp = client.get("/auth/me", headers=user_headers)
+    assert me_resp.status_code in (401, 403)
+
+
 def test_non_superuser_cannot_ban_user(client_with_db):
-    client, session_factory, admin_id = client_with_db
+    client, session_factory, admin_id, _redis = client_with_db
 
     target_payload = {
         "username": "eve",

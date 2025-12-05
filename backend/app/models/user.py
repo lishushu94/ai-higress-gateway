@@ -34,6 +34,12 @@ class User(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         back_populates="user",
         cascade="all, delete-orphan",
     )
+    credit_account: Mapped["CreditAccount"] = relationship(
+        "CreditAccount",
+        back_populates="user",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
 
 __all__ = ["User"]

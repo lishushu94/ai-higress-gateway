@@ -7,6 +7,7 @@
 - [认证](#认证)
 - [用户管理](#用户管理)
 - [API密钥管理](#api密钥管理)
+- [积分与额度](#积分与额度)
 - [厂商密钥管理](#厂商密钥管理)
 - [提供商管理](#提供商管理)
 - [逻辑模型管理](#逻辑模型管理)
@@ -70,7 +71,10 @@
 
 **接口**: `POST /auth/login`
 
-**描述**: 用户登录获取 JWT 令牌。
+**描述**: 用户登录获取 JWT 令牌。登录成功后，系统会将 Token 信息存储到 Redis 中，包括设备信息（User-Agent、IP地址）用于会话管理和安全审计。
+
+**请求头**:
+- `User-Agent` (可选): 客户端标识，用于记录设备信息
 
 **请求体**:
 ```json
@@ -86,9 +90,19 @@
   "access_token": "string",
   "refresh_token": "string",
   "token_type": "bearer",
-  "expires_in": 3600 // 访问令牌过期时间(秒)
+  "expires_in": 1800 // 访问令牌过期时间(秒)，默认30分钟
 }
 ```
+
+**Token 存储说明**:
+- Access Token 有效期：30 分钟
+- Refresh Token 有效期：7 天
+- Token 信息存储在 Redis 中，包含：
+  - Token ID (JTI)
+  - 用户 ID
+  - 设备信息（User-Agent、IP地址）
+  - Token 家族 ID（用于检测 Refresh Token 重用攻击）
+  - 创建时间和过期时间
 
 **错误响应**:
 - 401: 用户名或密码错误
@@ -100,7 +114,10 @@
 
 **接口**: `POST /auth/refresh`
 
-**描述**: 使用刷新令牌获取新的访问令牌。
+**描述**: 使用刷新令牌获取新的访问令牌。系统实现了 Token 轮换机制，每次刷新都会生成新的 Refresh Token 并撤销旧的 Refresh Token，防止 Token 重用攻击。
+
+**请求头**:
+- `User-Agent` (可选): 客户端标识，用于记录设备信息
 
 **请求体**:
 ```json
@@ -113,14 +130,22 @@
 ```json
 {
   "access_token": "string",
-  "refresh_token": "string",
+  "refresh_token": "string", // 新的 Refresh Token
   "token_type": "bearer",
-  "expires_in": 3600
+  "expires_in": 1800 // 30分钟
 }
 ```
 
+**Token 轮换机制**:
+- 每次刷新都会生成新的 Access Token 和 Refresh Token
+- 旧的 Refresh Token 会被立即撤销并加入黑名单
+- 新的 Refresh Token 继承相同的 Token 家族 ID
+- 如果检测到已撤销的 Refresh Token 被重用，系统会撤销整个 Token 家族，防止安全攻击
+
 **错误响应**:
 - 401: 无效的刷新令牌
+- 401: Token 已被撤销
+- 401: Token 家族已被撤销（检测到重用攻击）
 
 ---
 
@@ -150,7 +175,7 @@
 
 **接口**: `POST /auth/logout`
 
-**描述**: 用户登出。
+**描述**: 用户登出，撤销当前 Access Token 和 Refresh Token。Token 会被加入黑名单，立即失效。
 
 **认证**: JWT 令牌
 
@@ -160,6 +185,128 @@
   "message": "已成功登出"
 }
 ```
+
+**Token 撤销说明**:
+- 当前 Access Token 会被加入黑名单
+- 关联的 Refresh Token 也会被撤销
+- 撤销后的 Token 无法再用于任何 API 请求
+- 黑名单记录会保留到 Token 原本的过期时间
+
+**错误响应**:
+- 401: Token 无效或已过期
+
+---
+
+### 6. 登出所有设备
+
+**接口**: `POST /auth/logout-all`
+
+**描述**: 撤销当前用户的所有 Token，强制所有设备登出。适用于账户安全事件（如密码泄露）或用户主动清理所有会话。
+
+**认证**: JWT 令牌
+
+**响应**:
+```json
+{
+  "message": "已成功登出所有设备",
+  "revoked_count": 5 // 撤销的 Token 数量
+}
+```
+
+**撤销范围**:
+- 撤销用户的所有 Access Token
+- 撤销用户的所有 Refresh Token
+- 清除用户的所有活跃会话记录
+- 所有设备需要重新登录
+
+**错误响应**:
+- 401: Token 无效或已过期
+
+---
+
+## 会话管理
+
+### 1. 获取用户会话列表
+
+**接口**: `GET /v1/sessions`
+
+**描述**: 获取当前用户的所有活跃会话列表，包括设备信息、登录时间、最后活跃时间等。
+
+**认证**: JWT 令牌
+
+**响应**:
+```json
+{
+  "sessions": [
+    {
+      "token_id": "string",
+      "device_info": {
+        "user_agent": "Mozilla/5.0 ...",
+        "ip_address": "192.168.1.100"
+      },
+      "created_at": "2025-12-04T10:30:00Z",
+      "last_used_at": "2025-12-04T12:00:00Z",
+      "expires_at": "2025-12-11T10:30:00Z",
+      "is_current": true // 是否为当前会话
+    }
+  ],
+  "total": 3
+}
+```
+
+**字段说明**:
+- `token_id`: Token 的唯一标识符
+- `device_info`: 设备信息
+  - `user_agent`: 浏览器/客户端标识
+  - `ip_address`: 登录时的 IP 地址
+- `created_at`: 会话创建时间（登录时间）
+- `last_used_at`: 最后活跃时间
+- `expires_at`: 会话过期时间
+- `is_current`: 是否为当前请求使用的会话
+
+**错误响应**:
+- 401: Token 无效或已过期
+
+---
+
+### 2. 撤销指定会话
+
+**接口**: `DELETE /v1/sessions/{token_id}`
+
+**描述**: 撤销指定的会话，使该设备的 Token 失效。用户可以远程登出其他设备。
+
+**认证**: JWT 令牌
+
+**路径参数**:
+- `token_id`: 要撤销的会话 Token ID
+
+**成功响应**: 204 No Content
+
+**错误响应**:
+- 401: Token 无效或已过期
+- 403: 无权撤销其他用户的会话
+- 404: 会话不存在或已过期
+
+---
+
+### 3. 撤销所有其他会话
+
+**接口**: `DELETE /v1/sessions/others`
+
+**描述**: 撤销当前用户的所有其他会话，保留当前会话。适用于用户发现异常登录时快速清理其他设备。
+
+**认证**: JWT 令牌
+
+**响应**:
+```json
+{
+  "message": "已成功撤销所有其他会话",
+  "revoked_count": 4 // 撤销的会话数量
+}
+```
+
+**错误响应**:
+- 401: Token 无效或已过期
 
 ---
 
@@ -290,7 +437,7 @@
 
 **接口**: `PUT /users/{user_id}/status`
 
-**描述**: 允许超级用户启用/禁用用户。
+**描述**: 允许超级用户启用/禁用用户。禁用用户时，系统会立即撤销该用户在 Redis 中登记的所有 JWT Token（包括所有设备/会话），并清理其 API 密钥缓存，使禁用操作立刻生效。
 
 **认证**: JWT 令牌 (仅限超级用户)
 
@@ -783,6 +930,93 @@
 
 ---
 
+## 积分与额度
+
+系统支持按“用户账户积分”维度控制网关调用额度。所有通过 API Key 访问的网关请求，最终都会映射到某个用户账户下的积分余额。
+
+> 说明：只有在环境变量 `ENABLE_CREDIT_CHECK=true` 时，积分不足才会阻断网关调用；默认情况下仅记录流水，不做强制限制。
+
+当 `ENABLE_CREDIT_CHECK=true` 且用户余额小于等于 0 时：
+- `POST /v1/chat/completions`
+- `POST /v1/responses`
+- `POST /v1/messages`
+
+会返回 `402 Payment Required`，错误体示例：
+
+```json
+{
+  "detail": {
+    "code": "CREDIT_NOT_ENOUGH",
+    "message": "积分不足，请先充值后再调用接口",
+    "balance": 0
+  }
+}
+```
+
+### 1. 查询当前用户积分
+
+**接口**: `GET /v1/credits/me`  
+**认证**: JWT 令牌
+
+**成功响应示例**:
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "balance": 1200,
+  "daily_limit": null,
+  "status": "active",
+  "created_at": "2025-01-01T00:00:00Z",
+  "updated_at": "2025-01-02T12:34:56Z"
+}
+```
+
+### 2. 查询当前用户积分流水
+
+**接口**: `GET /v1/credits/me/transactions`  
+**认证**: JWT 令牌
+
+**查询参数**:
+- `limit` (int, 默认 50, 1-100): 返回的最大记录数  
+- `offset` (int, 默认 0): 起始偏移量
+
+**成功响应示例**:
+```json
+[
+  {
+    "id": "uuid",
+    "account_id": "uuid",
+    "user_id": "uuid",
+    "api_key_id": "uuid",
+    "amount": -25,
+    "reason": "usage",
+    "description": null,
+    "model_name": "gpt-4o-mini",
+    "input_tokens": 500,
+    "output_tokens": 300,
+    "total_tokens": 800,
+    "created_at": "2025-01-02T12:34:56Z"
+  }
+]
+```
+
+### 3. 管理员为用户充值积分
+
+**接口**: `POST /v1/credits/admin/users/{user_id}/topup`  
+**认证**: JWT 令牌（仅限超级管理员）
+
+**请求体**:
+```json
+{
+  "amount": 1000,
+  "description": "测试充值 / 赠送额度"
+}
+```
+
+**成功响应**: 返回更新后的用户积分账户结构，字段与 `GET /v1/credits/me` 相同。
+
+---
+
 ## 厂商密钥管理
 
 ### 1. 获取厂商API密钥列表
@@ -926,7 +1160,7 @@
 
 **接口**: `GET /providers`
 
-**描述**: 获取所有已配置的提供商列表。
+**描述**: 获取所有已配置的提供商列表（从数据库加载）。
 
 **认证**: API密钥
 
@@ -934,36 +1168,44 @@
 ```json
 {
   "providers": [
-    {
-      "id": "string",
-      "name": "string",
-      "base_url": "url",
-      "api_key": "string | null",
-      "api_keys": [
-        {
-          "key": "string",
-          "weight": 1.0,
-          "max_qps": 1000,
-          "label": "string"
-        }
-      ],
-      "models_path": "/v1/models",
-      "messages_path": "/v1/message",
-      "weight": 1.0,
-      "region": "string | null",
-      "cost_input": 0.0,
-      "cost_output": 0.0,
-      "max_qps": 1000,
-      "custom_headers": {},
-      "retryable_status_codes": [429, 500, 502, 503, 504],
-      "static_models": [],
-      "transport": "http/sdk",
-      "provider_type": "native/aggregator"
-    }
-  ],
+  {
+    "id": "string",
+    "name": "string",
+    "base_url": "url",
+    "api_key": "string | null",
+    "api_keys": [
+      {
+        "key": "string",
+        "weight": 1.0,
+        "max_qps": 1000,
+        "label": "string"
+      }
+    ],
+    "models_path": "/v1/models",
+    "messages_path": "/v1/message",
+    "chat_completions_path": "/v1/chat/completions",
+    "responses_path": "/v1/responses 或 null",
+    "weight": 1.0,
+    "region": "string | null",
+    "cost_input": 0.0,
+    "cost_output": 0.0,
+    "max_qps": 1000,
+    "custom_headers": {},
+    "retryable_status_codes": [429, 500, 502, 503, 504],
+    "static_models": [],
+    "transport": "http/sdk",
+    "provider_type": "native/aggregator",
+    "sdk_vendor": "openai/google/claude 或 null",
+    "supported_api_styles": ["openai", "responses", "claude"] 或 null
+  }
+],
   "total": 1
 }
 ```
+
+> 说明：
+> - 当 `transport = "sdk"` 时，必须在后台配置 `sdk_vendor` 为 `openai` / `google` / `claude`，网关才会走对应官方 SDK；
+> - 当 `transport = "http"` 时，`sdk_vendor` 一律为 `null`，表示纯 HTTP 代理模式。
 
 ---
 
@@ -992,6 +1234,8 @@
   ],
   "models_path": "/v1/models",
   "messages_path": "/v1/message",
+  "chat_completions_path": "/v1/chat/completions",
+  "responses_path": "/v1/responses 或 null",
   "weight": 1.0,
   "region": "string | null",
   "cost_input": 0.0,
@@ -1001,7 +1245,9 @@
   "retryable_status_codes": [429, 500, 502, 503, 504],
   "static_models": [],
   "transport": "http/sdk",
-  "provider_type": "native/aggregator"
+  "provider_type": "native/aggregator",
+  "sdk_vendor": "openai/google/claude 或 null",
+  "supported_api_styles": ["openai", "responses", "claude"] 或 null
 }
 ```
 
@@ -1297,6 +1543,8 @@
     "base_url": "url",
     "provider_type": "native/aggregator",
     "transport": "http/sdk",
+    "sdk_vendor": "openai/google/claude 或 null",
+    "preset_id": "string | null",
     "visibility": "private",
     "owner_id": "uuid",
     "status": "healthy/degraded/down",
@@ -1327,9 +1575,12 @@
   "base_url": "url",
   "api_key": "string",
   "provider_type": "native 或 aggregator (可选, 默认native)",
-  "transport": "http 或 sdk (可选, 默认http)"
+  "transport": "http 或 sdk (可选, 默认http)",
+  "sdk_vendor": "openai/google/claude (当 transport=sdk 时必填)"
   // 其余可选字段: weight, region, cost_input, cost_output, max_qps,
-  // retryable_status_codes, custom_headers, models_path, messages_path, static_models
+  // retryable_status_codes, custom_headers,
+  // models_path, messages_path, chat_completions_path, responses_path,
+  // static_models, supported_api_styles
 }
 ```
 > 说明：`provider_id` 由系统自动根据用户与厂商信息生成，无需在请求体中提供。
@@ -1343,6 +1594,8 @@
   "base_url": "url",
   "provider_type": "native/aggregator",
   "transport": "http/sdk",
+   "sdk_vendor": "openai/google/claude 或 null",
+   "preset_id": "string | null",
   "visibility": "private",
   "owner_id": "uuid",
   "status": "healthy",
@@ -1373,6 +1626,7 @@
   "base_url": "url (可选)",
   "provider_type": "native/aggregator (可选)",
   "transport": "http/sdk (可选)",
+  "sdk_vendor": "openai/google/claude (可选；当 transport 变更为 sdk 时建议显式设置)",
   "weight": 1.0,
   "region": "string | null",
   "cost_input": 0.0,
@@ -1382,7 +1636,10 @@
   "custom_headers": { "Header-Name": "value" },
   "models_path": "/v1/models",
   "messages_path": "/v1/message",
-  "static_models": [ /* 可选的静态模型配置 */ ]
+  "chat_completions_path": "/v1/chat/completions",
+  "responses_path": "/v1/responses",
+  "static_models": [ /* 可选的静态模型配置 */ ],
+  "supported_api_styles": ["openai", "responses", "claude"]
 }
 ```
 

@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
-import { ProviderPreset, providerPresetService } from "@/http/provider-preset";
+import React, { useState } from "react";
+import { ProviderPreset } from "@/http/provider-preset";
+import { useProviderPresets } from "@/lib/hooks/use-provider-presets";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,29 +24,18 @@ export function PresetSelector({
   disabled = false,
   error,
 }: PresetSelectorProps) {
-  const [presets, setPresets] = useState<ProviderPreset[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const {
+    presets,
+    loading: isLoading,
+    error: presetsError,
+  } = useProviderPresets();
   const [searchQuery, setSearchQuery] = useState("");
-  const [loadError, setLoadError] = useState<string | null>(null);
-
-  // 加载预设列表
-  useEffect(() => {
-    const loadPresets = async () => {
-      try {
-        setIsLoading(true);
-        setLoadError(null);
-        const response = await providerPresetService.getProviderPresets();
-        setPresets(response.items);
-      } catch (err: any) {
-        console.error("加载预设失败:", err);
-        setLoadError(err.message || "加载预设失败");
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    loadPresets();
-  }, []);
+  const loadError =
+    presetsError && (presetsError as any).message
+      ? (presetsError as any).message
+      : presetsError
+      ? "加载预设失败"
+      : null;
 
   // 过滤预设
   const filteredPresets = presets.filter((preset) => {

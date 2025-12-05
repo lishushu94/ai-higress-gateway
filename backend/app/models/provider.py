@@ -32,6 +32,11 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     region: Mapped[str | None] = Column(String(50), nullable=True)
     cost_input: Mapped[float | None] = Column(Float, nullable=True)
     cost_output: Mapped[float | None] = Column(Float, nullable=True)
+    billing_factor: Mapped[float] = Column(
+        Float,
+        nullable=False,
+        server_default=text("1.0"),
+    )
     max_qps: Mapped[int | None] = Column(Integer, nullable=True)
     retryable_status_codes = Column(JSONBCompat(), nullable=True)
     custom_headers = Column(JSONBCompat(), nullable=True)

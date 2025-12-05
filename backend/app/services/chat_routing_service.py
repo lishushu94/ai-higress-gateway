@@ -157,6 +157,9 @@ _STYLE_PRIORITY: dict[str, list[str]] = {
 
 
 def _provider_supports_api_style(cfg: ProviderConfig, style: str) -> bool:
+    # When supported_api_styles is explicitly configured, it is treated as the
+    # authoritative declaration of what this provider supports. Only when it
+    # is empty do we fall back to heuristics based on configured paths.
     declared = {str(item).lower() for item in (cfg.supported_api_styles or []) if item}
     if declared:
         return style in declared

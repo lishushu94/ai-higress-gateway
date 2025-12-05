@@ -47,6 +47,28 @@ class Settings(BaseSettings):
         description="SQLAlchemy database URL, e.g. postgresql+psycopg://user:pass@host:port/db",
     )
 
+    # Celery task queue configuration (defaults assume local Redis; override in .env for Docker/prod).
+    celery_broker_url: str = Field(
+        "redis://localhost:6379/0",
+        alias="CELERY_BROKER_URL",
+        description="Celery broker URL; typically a Redis instance, e.g. redis://:password@redis:6379/1",
+    )
+    celery_result_backend: str = Field(
+        "redis://localhost:6379/0",
+        alias="CELERY_RESULT_BACKEND",
+        description="Celery result backend URL; can reuse the broker URL or a dedicated DB.",
+    )
+    celery_task_default_queue: str = Field(
+        "default",
+        alias="CELERY_TASK_DEFAULT_QUEUE",
+        description="Default Celery queue name.",
+    )
+    celery_timezone: str = Field(
+        "Asia/Shanghai",
+        alias="CELERY_TIMEZONE",
+        description="Timezone used by Celery beat / scheduled tasks.",
+    )
+
     # HTTP timeouts
     upstream_timeout: float = 600.0
 
@@ -101,6 +123,31 @@ class Settings(BaseSettings):
         True,
         alias="REQUIRE_APPROVAL_FOR_SHARED_PROVIDERS",
         description="是否要求用户提交的共享提供商必须经过管理员审核",
+    )
+
+    # Credit / billing settings
+    credits_base_per_1k_tokens: int = Field(
+        10,
+        alias="CREDITS_BASE_PER_1K_TOKENS",
+        description="基础计费单价：1x 模型每 1000 tokens 消耗的积分数",
+        ge=0,
+    )
+    initial_user_credits: int = Field(
+        0,
+        alias="INITIAL_USER_CREDITS",
+        description="新建用户默认初始化的积分余额",
+        ge=0,
+    )
+    enable_credit_check: bool = Field(
+        False,
+        alias="ENABLE_CREDIT_CHECK",
+        description="是否在网关层强制校验用户积分余额，不足时拒绝请求",
+    )
+    streaming_min_tokens: int = Field(
+        500,
+        alias="STREAMING_MIN_TOKENS",
+        description="流式请求在无法获取 usage 时用于预估扣费的最小 token 数",
+        ge=0,
     )
 
 settings = Settings()  # Reads from environment if available

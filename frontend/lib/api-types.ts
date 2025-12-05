@@ -52,3 +52,34 @@ export interface ProviderMetrics {
     window_start: number;
     window_duration: number;
 }
+
+export interface ApiKey {
+    id: string;
+    user_id: string;
+    name: string;
+    key_prefix: string;
+    expiry_type: 'week' | 'month' | 'year' | 'never';
+    expires_at: string | null;
+    created_at: string;
+    updated_at: string;
+    has_provider_restrictions: boolean;
+    allowed_provider_ids: string[];
+    token?: string;
+}
+
+export interface CreateApiKeyRequest {
+    name: string;
+    expiry?: 'week' | 'month' | 'year' | 'never';
+    allowed_provider_ids?: string[];
+}
+
+export interface UpdateApiKeyRequest {
+    name?: string;
+    expiry?: 'week' | 'month' | 'year' | 'never';
+    allowed_provider_ids?: string[];
+}
+
+export interface AllowedProviders {
+    has_provider_restrictions: boolean;
+    allowed_provider_ids: string[];
+}

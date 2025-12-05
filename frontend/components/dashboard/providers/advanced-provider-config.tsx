@@ -2,6 +2,7 @@
 
 import React from "react";
 import { Input } from "@/components/ui/input";
+import { FormField } from "@/components/ui/form";
 import { JsonEditor } from "./json-editor";
 import { NumberArrayEditor } from "./array-editor";
 import { ApiStylesConfig } from "./api-styles-config";

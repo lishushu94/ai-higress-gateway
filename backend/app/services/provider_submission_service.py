@@ -98,11 +98,6 @@ def approve_submission(
     if submission is None:
         raise ProviderSubmissionNotFoundError(f"Submission {submission_id} not found")
 
-    submission.approval_status = "approved"
-    submission.reviewed_by = reviewer_id
-    submission.review_notes = review_notes
-    submission.reviewed_at = datetime.now(timezone.utc)
-
     provider = Provider(
         provider_id=submission.provider_id,
         name=submission.name,
@@ -125,6 +120,13 @@ def approve_submission(
             status="active",
         )
         session.add(api_key)
+
+    # 关键：保存 Provider 关联到 Submission，用于后续取消时删除
+    submission.approved_provider_uuid = provider.id
+    submission.approval_status = "approved"
+    submission.reviewed_by = reviewer_id
+    submission.review_notes = review_notes
+    submission.reviewed_at = datetime.now(timezone.utc)
 
     try:
         session.commit()
@@ -159,10 +161,76 @@ def reject_submission(
     return submission
 
 
+def cancel_submission(
+    session: Session,
+    submission_id: UUID,
+    user_id: UUID,
+) -> None:
+    """用户取消自己的提交。
+    
+    根据提交状态执行不同的操作：
+    - pending: 直接删除提交记录
+    - approved: 删除对应的公共 Provider（级联删除相关数据）和提交记录
+    - rejected: 直接删除提交记录
+    
+    Args:
+        session: 数据库会话
+        submission_id: 提交记录 ID
+        user_id: 当前用户 ID（用于权限验证）
+    
+    Raises:
+        ProviderSubmissionNotFoundError: 提交记录不存在
+        ProviderSubmissionServiceError: 无权取消他人的提交
+    """
+    submission = get_submission(session, submission_id)
+    if submission is None:
+        raise ProviderSubmissionNotFoundError(f"Submission {submission_id} not found")
+    
+    # 验证权限：只能取消自己的提交
+    if submission.user_id != user_id:
+        raise ProviderSubmissionServiceError("无权取消他人的提交")
+    
+    # 根据状态执行不同的删除逻辑
+    if submission.approval_status == "approved":
+        # 已批准：需要删除对应的公共 Provider
+        if submission.approved_provider_uuid:
+            provider = session.get(Provider, submission.approved_provider_uuid)
+            if provider:
+                logger.info(
+                    "Deleting approved provider %s (id=%s) due to submission cancellation",
+                    provider.provider_id,
+                    provider.id,
+                )
+                session.delete(provider)  # 级联删除 API Keys、Models 等
+        else:
+            # 理论上不应该出现这种情况，但为了健壮性记录警告
+            logger.warning(
+                "Approved submission %s has no approved_provider_uuid",
+                submission_id,
+            )
+    
+    # 删除提交记录（pending、approved、rejected 都删除）
+    session.delete(submission)
+    
+    try:
+        session.commit()
+        logger.info(
+            "Submission %s (status=%s) cancelled by user %s",
+            submission_id,
+            submission.approval_status,
+            user_id,
+        )
+    except IntegrityError as exc:  # pragma: no cover
+        session.rollback()
+        logger.error("Failed to cancel submission: %s", exc)
+        raise ProviderSubmissionServiceError("无法取消提交") from exc
+
+
 __all__ = [
     "ProviderSubmissionServiceError",
     "ProviderSubmissionNotFoundError",
     "approve_submission",
+    "cancel_submission",
     "create_submission",
     "get_submission",
     "list_submissions",

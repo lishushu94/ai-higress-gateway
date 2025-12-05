@@ -9,9 +9,15 @@ from typing import Optional
 from fastapi import Depends, Header, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+try:
+    from redis.asyncio import Redis
+except ModuleNotFoundError:
+    Redis = object  # type: ignore[misc,assignment]
+
+from app.deps import get_db, get_redis
 from app.models import User
 from app.services.jwt_auth_service import verify_token
+from app.services.token_redis_service import TokenRedisService
 from app.services.user_service import get_user_by_id
 
 
@@ -70,14 +76,22 @@ async def require_jwt_token(
     authorization: Optional[str] = Header(None),
     x_auth_token: Optional[str] = Header(None, alias="X-Auth-Token"),
     db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
 ) -> AuthenticatedUser:
     """
     验证JWT访问令牌并返回已认证的用户
+    
+    增强的验证流程：
+    1. 验证 JWT 签名和过期时间
+    2. 检查 Redis 中的 token 状态
+    3. 检查黑名单
+    4. 验证用户状态
     
     Args:
         authorization: Authorization头部值
         x_auth_token: X-Auth-Token头部值
         db: 数据库会话
+        redis: Redis 连接
         
     Returns:
         已认证的用户信息
@@ -97,12 +111,37 @@ async def require_jwt_token(
         )
     
     user_id: str = payload.get("sub")
+    jti: Optional[str] = payload.get("jti")
+    
     if not user_id:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token payload",
         )
     
+    # 如果 token 带有 JTI，则按“有状态模式”在 Redis 中进一步校验；
+    # 否则回退为仅基于签名和过期时间的无状态校验（主要用于测试和兼容旧 token）。
+    token_service = TokenRedisService(redis)
+    
+    if jti:
+        # 检查黑名单
+        if await token_service.is_token_blacklisted(jti):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token has been revoked",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # 验证 token 记录
+        token_record = await token_service.verify_access_token(jti)
+        if not token_record:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or expired token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+    
+    # 验证用户
     user = get_user_by_id(db, user_id)
     if user is None:
         raise HTTPException(

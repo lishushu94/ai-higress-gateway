@@ -3,22 +3,35 @@
 """
 
 from datetime import datetime, timedelta
+from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, status
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+try:
+    from redis.asyncio import Redis
+except ModuleNotFoundError:
+    Redis = object  # type: ignore[misc,assignment]
+
+from app.deps import get_db, get_redis
 from app.jwt_auth import AuthenticatedUser, require_jwt_refresh_token, require_jwt_token
+from app.schemas.token import DeviceInfo
 from app.schemas.user import UserResponse
+from app.services.credit_service import get_or_create_account_for_user
 from app.services.jwt_auth_service import (
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_REFRESH_TOKEN_EXPIRE_DAYS,
     create_access_token,
+    create_access_token_with_jti,
     create_refresh_token,
+    create_refresh_token_with_jti,
+    extract_family_id_from_token,
+    extract_jti_from_token,
     verify_password,
 )
+from app.services.token_redis_service import TokenRedisService
 from app.services.role_service import RoleCodeAlreadyExistsError, RoleService
 from app.services.user_permission_service import UserPermissionService
 from app.services.user_service import (
@@ -169,6 +182,8 @@ async def register(
             display_name=request.display_name,
         )
         user = create_user(db, payload)
+        # 为新注册用户创建默认积分账户（若未开启积分系统则仅做初始化，不影响行为）
+        get_or_create_account_for_user(db, user.id)
         _assign_default_role(db, user.id)
         return _build_user_response(db, user.id)
     except UsernameAlreadyExistsError:
@@ -187,6 +202,9 @@ async def register(
 async def login(
     request: LoginRequest,
     db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+    user_agent: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None, alias="X-Forwarded-For"),
 ) -> TokenResponse:
     """
     用户登录并获取JWT令牌
@@ -194,6 +212,9 @@ async def login(
     Args:
         request: 登录请求数据
         db: 数据库会话
+        redis: Redis 连接
+        user_agent: 用户代理字符串
+        x_forwarded_for: 客户端 IP 地址
         
     Returns:
         JWT访问令牌和刷新令牌
@@ -229,12 +250,42 @@ async def login(
             detail="账户已被禁用",
         )
     
-    # 创建JWT令牌
+    # 创建设备信息
+    device_info = DeviceInfo(
+        user_agent=user_agent,
+        ip_address=x_forwarded_for.split(',')[0].strip() if x_forwarded_for else None
+    )
+    
+    # 创建带 JTI 的 JWT 令牌
     access_token_data = {"sub": str(user.id)}
     refresh_token_data = {"sub": str(user.id)}
     
-    access_token = create_access_token(access_token_data)
-    refresh_token = create_refresh_token(refresh_token_data)
+    access_token, access_jti, access_token_id = create_access_token_with_jti(access_token_data)
+    refresh_token, refresh_jti, refresh_token_id, family_id = create_refresh_token_with_jti(
+        refresh_token_data
+    )
+    
+    # 存储 token 到 Redis
+    token_service = TokenRedisService(redis)
+    
+    # 存储 access token
+    await token_service.store_access_token(
+        token_id=access_token_id,
+        user_id=str(user.id),
+        jti=access_jti,
+        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        device_info=device_info,
+    )
+    
+    # 存储 refresh token
+    await token_service.store_refresh_token(
+        token_id=refresh_token_id,
+        user_id=str(user.id),
+        jti=refresh_jti,
+        family_id=family_id,
+        expires_in=JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        device_info=device_info,
+    )
     
     return TokenResponse(
         access_token=access_token,
@@ -247,19 +298,31 @@ async def login(
 async def refresh_token(
     request: RefreshTokenRequest,
     db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+    user_agent: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None, alias="X-Forwarded-For"),
 ) -> TokenResponse:
     """
     使用刷新令牌获取新的访问令牌
     
+    实现 token 轮换机制：
+    - 验证旧的 refresh token
+    - 检测 token 重用（安全防护）
+    - 生成新的 token 对
+    - 撤销旧的 refresh token
+    
     Args:
         request: 刷新令牌请求
         db: 数据库会话
+        redis: Redis 连接
+        user_agent: 用户代理字符串
+        x_forwarded_for: 客户端 IP 地址
         
     Returns:
         新的JWT访问令牌和刷新令牌
         
     Raises:
-        HTTPException: 如果刷新令牌无效
+        HTTPException: 如果刷新令牌无效或检测到重用
     """
     try:
         # 验证刷新令牌
@@ -274,10 +337,29 @@ async def refresh_token(
             )
         
         user_id = payload.get("sub")
-        if not user_id:
+        jti = payload.get("jti")
+        family_id = payload.get("family_id")
+        
+        if not user_id or not jti or not family_id:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="无效的令牌载荷",
+            )
+        
+        # 验证 Redis 中的 token 状态
+        token_service = TokenRedisService(redis)
+        token_record = await token_service.verify_refresh_token(jti)
+        
+        if not token_record:
+            # Token 不存在或已被撤销，可能是重用攻击
+            # 撤销整个 token 家族
+            await token_service.revoke_token_family(
+                family_id,
+                reason="token_reuse_detected"
+            )
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="检测到 token 重用，已撤销所有相关会话",
             )
         
         # 获取用户信息
@@ -288,22 +370,61 @@ async def refresh_token(
                 detail="用户不存在或已被禁用",
             )
         
-        # 生成新的令牌
+        # 创建设备信息
+        device_info = DeviceInfo(
+            user_agent=user_agent,
+            ip_address=x_forwarded_for.split(',')[0].strip() if x_forwarded_for else None
+        )
+        
+        # 生成新的令牌对（使用相同的 family_id）
         access_token_data = {"sub": str(user.id)}
         refresh_token_data = {"sub": str(user.id)}
         
-        access_token = create_access_token(access_token_data)
-        refresh_token = create_refresh_token(refresh_token_data)
+        access_token, access_jti, access_token_id = create_access_token_with_jti(
+            access_token_data
+        )
+        new_refresh_token, new_refresh_jti, new_refresh_token_id, _ = create_refresh_token_with_jti(
+            refresh_token_data,
+            family_id=family_id  # 保持相同的家族
+        )
+        
+        # 撤销旧的 refresh token
+        await token_service.revoke_token(jti, reason="token_rotated")
+        
+        # 存储新的 access token
+        await token_service.store_access_token(
+            token_id=access_token_id,
+            user_id=str(user.id),
+            jti=access_jti,
+            expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            device_info=device_info,
+        )
+        
+        # 存储新的 refresh token（记录父 token）
+        await token_service.store_refresh_token(
+            token_id=new_refresh_token_id,
+            user_id=str(user.id),
+            jti=new_refresh_jti,
+            family_id=family_id,
+            expires_in=JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+            parent_jti=jti,  # 记录父 token
+            device_info=device_info,
+        )
+        
+        # 更新会话最后使用时间
+        await token_service.update_session_last_used(user_id, new_refresh_jti)
         
         return TokenResponse(
             access_token=access_token,
-            refresh_token=refresh_token,
+            refresh_token=new_refresh_token,
             expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         )
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="无效的刷新令牌",
+            detail=f"无效的刷新令牌: {str(e)}",
         )
 
 
@@ -327,21 +448,87 @@ async def get_current_user(
 @router.post("/logout")
 async def logout(
     current_user: AuthenticatedUser = Depends(require_jwt_token),
+    redis: Redis = Depends(get_redis),
+    authorization: Optional[str] = Header(None),
+    x_auth_token: Optional[str] = Header(None, alias="X-Auth-Token"),
 ) -> dict:
     """
     用户登出
     
-    注意：由于JWT是无状态的，实际的登出需要在客户端删除令牌。
-    这个端点主要用于记录登出事件或实现令牌黑名单。
+    将当前 token 加入黑名单，使其立即失效
     
     Args:
         current_user: 当前认证用户
+        redis: Redis 连接
+        authorization: Authorization 头部
+        x_auth_token: X-Auth-Token 头部
         
     Returns:
         登出结果
     """
-    # TODO: 实现令牌黑名单或记录登出事件
+    # 提取当前 token
+    token = None
+    if authorization:
+        scheme, _, token_value = authorization.partition(" ")
+        if scheme.lower() == "bearer" and token_value:
+            token = token_value
+    elif x_auth_token:
+        token = x_auth_token.strip()
+    
+    if not token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无法获取当前 token"
+        )
+    
+    # 提取 JTI
+    jti = extract_jti_from_token(token)
+    if not jti:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="无效的 token"
+        )
+    
+    # 撤销 token
+    token_service = TokenRedisService(redis)
+    success = await token_service.revoke_token(jti, reason="user_logout")
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Token 撤销失败"
+        )
+    
     return {"message": "已成功登出"}
+
+
+@router.post("/logout-all")
+async def logout_all(
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+    redis: Redis = Depends(get_redis),
+) -> dict:
+    """
+    登出所有设备
+    
+    撤销用户所有 token，使所有会话失效
+    
+    Args:
+        current_user: 当前认证用户
+        redis: Redis 连接
+        
+    Returns:
+        登出结果
+    """
+    token_service = TokenRedisService(redis)
+    count = await token_service.revoke_user_tokens(
+        current_user.id,
+        reason="user_logout_all"
+    )
+    
+    return {
+        "message": f"已成功登出所有设备",
+        "revoked_sessions": count
+    }
 
 
 __all__ = ["router"]

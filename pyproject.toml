@@ -24,6 +24,7 @@ dependencies = [
     "pydantic[email]>=2.12.5",
     "python-jose[cryptography]>=3.3.0", # For JWT handling
     "passlib[bcrypt]>=1.7.4", # For password hashing
+    "celery[redis]>=5.4.0", # Async task queue
 ]
 
 [project.scripts]

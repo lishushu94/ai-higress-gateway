@@ -15,6 +15,11 @@ from .api_key import (
     APIKeyResponse,
     APIKeyUpdateRequest,
 )
+from .credit import (
+    CreditAccountResponse,
+    CreditTopupRequest,
+    CreditTransactionResponse,
+)
 from .logical_model import LogicalModel, PhysicalModel
 from .model import Model, ModelCapability
 from .provider import (
@@ -69,6 +74,9 @@ __all__ = [
     "APIKeyExpiry",
     "APIKeyResponse",
     "APIKeyUpdateRequest",
+    "CreditAccountResponse",
+    "CreditTopupRequest",
+    "CreditTransactionResponse",
     "LogicalModel",
     "MetricsHistory",
     "Model",

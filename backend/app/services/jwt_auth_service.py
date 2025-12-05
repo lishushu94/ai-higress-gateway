@@ -3,7 +3,8 @@ JWT认证服务，用于用户登录令牌的管理和验证
 """
 
 import datetime
-from typing import Any, Dict, Optional, Union
+import uuid
+from typing import Any, Dict, Optional, Tuple, Union
 
 import bcrypt
 from jose import JWTError, jwt
@@ -72,11 +73,14 @@ def create_access_token(data: Dict[str, Any], expires_delta: Optional[datetime.t
         JWT访问令牌
     """
     to_encode = data.copy()
+
+    # 使用带时区的 UTC 时间，避免 datetime.utcnow() 的弃用警告
+    now = datetime.datetime.now(datetime.UTC)
     if expires_delta:
-        expire = datetime.datetime.utcnow() + expires_delta
+        expire = now + expires_delta
     else:
-        expire = datetime.datetime.utcnow() + datetime.timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
-    
+        expire = now + datetime.timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+
     to_encode.update({"exp": expire, "type": "access"})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
@@ -93,8 +97,10 @@ def create_refresh_token(data: Dict[str, Any]) -> str:
         JWT刷新令牌
     """
     to_encode = data.copy()
-    expire = datetime.datetime.utcnow() + datetime.timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
-    
+    # 使用带时区的 UTC 时间
+    now = datetime.datetime.now(datetime.UTC)
+    expire = now + datetime.timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
     return encoded_jwt
@@ -144,13 +150,133 @@ def verify_token(token: str, token_type: str = "access") -> Dict[str, Any]:
     return payload
 
 
+def create_access_token_with_jti(
+    data: Dict[str, Any], expires_delta: Optional[datetime.timedelta] = None
+) -> Tuple[str, str, str]:
+    """
+    创建带 JTI 的 access token
+    
+    Args:
+        data: 要编码到令牌中的数据
+        expires_delta: 自定义过期时间
+        
+    Returns:
+        (token, jti, token_id) 元组
+    """
+    to_encode = data.copy()
+    token_id = str(uuid.uuid4())
+    jti = str(uuid.uuid4())
+
+    # 使用带时区的 UTC 时间
+    now = datetime.datetime.now(datetime.UTC)
+    if expires_delta:
+        expire = now + expires_delta
+    else:
+        expire = now + datetime.timedelta(minutes=JWT_ACCESS_TOKEN_EXPIRE_MINUTES)
+
+    to_encode.update({"exp": expire, "type": "access", "jti": jti, "token_id": token_id})
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return encoded_jwt, jti, token_id
+
+
+def create_refresh_token_with_jti(
+    data: Dict[str, Any], family_id: Optional[str] = None
+) -> Tuple[str, str, str, str]:
+    """
+    创建带 JTI 的 refresh token
+    
+    Args:
+        data: 要编码到令牌中的数据
+        family_id: Token 家族 ID（用于轮换追踪）
+        
+    Returns:
+        (token, jti, token_id, family_id) 元组
+    """
+    to_encode = data.copy()
+    token_id = str(uuid.uuid4())
+    jti = str(uuid.uuid4())
+
+    if family_id is None:
+        family_id = str(uuid.uuid4())
+
+    # 使用带时区的 UTC 时间
+    now = datetime.datetime.now(datetime.UTC)
+    expire = now + datetime.timedelta(days=JWT_REFRESH_TOKEN_EXPIRE_DAYS)
+
+    to_encode.update({
+        "exp": expire,
+        "type": "refresh",
+        "jti": jti,
+        "token_id": token_id,
+        "family_id": family_id
+    })
+    encoded_jwt = jwt.encode(to_encode, JWT_SECRET_KEY, algorithm=JWT_ALGORITHM)
+    return encoded_jwt, jti, token_id, family_id
+
+
+def extract_jti_from_token(token: str) -> Optional[str]:
+    """
+    从 token 中提取 JTI
+    
+    Args:
+        token: JWT 令牌
+        
+    Returns:
+        JTI 或 None
+    """
+    try:
+        payload = decode_token(token)
+        return payload.get("jti")
+    except JWTError:
+        return None
+
+
+def extract_token_id_from_token(token: str) -> Optional[str]:
+    """
+    从 token 中提取 token_id
+    
+    Args:
+        token: JWT 令牌
+        
+    Returns:
+        token_id 或 None
+    """
+    try:
+        payload = decode_token(token)
+        return payload.get("token_id")
+    except JWTError:
+        return None
+
+
+def extract_family_id_from_token(token: str) -> Optional[str]:
+    """
+    从 refresh token 中提取 family_id
+    
+    Args:
+        token: JWT 刷新令牌
+        
+    Returns:
+        family_id 或 None
+    """
+    try:
+        payload = decode_token(token)
+        return payload.get("family_id")
+    except JWTError:
+        return None
+
+
 __all__ = [
     "hash_password",
     "verify_password",
     "create_access_token",
     "create_refresh_token",
+    "create_access_token_with_jti",
+    "create_refresh_token_with_jti",
     "decode_token",
     "verify_token",
+    "extract_jti_from_token",
+    "extract_token_id_from_token",
+    "extract_family_id_from_token",
     "JWT_ACCESS_TOKEN_EXPIRE_MINUTES",
     "JWT_REFRESH_TOKEN_EXPIRE_DAYS",
 ]

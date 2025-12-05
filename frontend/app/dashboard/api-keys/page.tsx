@@ -1,38 +1,42 @@
 "use client";
 
 import React, { useState } from "react";
-import { Button } from "@/components/ui/button";
-import { ApiKeysForm } from "@/components/dashboard/api-keys/api-keys-form";
 import { ApiKeysTable } from "@/components/dashboard/api-keys/api-keys-table";
-import { Plus, Copy } from "lucide-react";
-
-type ApiKeyStatus = "Active" | "Inactive";
-
-type ApiKey = {
-    id: number;
-    name: string;
-    key: string;
-    created: string;
-    lastUsed: string;
-    status: ApiKeyStatus;
-};
-
-const apiKeys: ApiKey[] = [
-    { id: 1, name: "Production Key", key: "sk-proj-***************", created: "2024-01-15", lastUsed: "2 hours ago", status: "Active" },
-    { id: 2, name: "Development Key", key: "sk-dev-***************", created: "2024-01-10", lastUsed: "5 min ago", status: "Active" },
-    { id: 3, name: "Testing Key", key: "sk-test-***************", created: "2024-01-05", lastUsed: "1 day ago", status: "Active" },
-    { id: 4, name: "Legacy Key", key: "sk-old-***************", created: "2023-12-01", lastUsed: "30 days ago", status: "Inactive" },
-];
+import { ApiKeyDialog } from "@/components/dashboard/api-keys/api-key-dialog";
+import { TokenDisplayDialog } from "@/components/dashboard/api-keys/token-display-dialog";
+import { useApiKeys } from "@/lib/swr/use-api-keys";
+import type { ApiKey } from "@/lib/api-types";
 
 export default function ApiKeysPage() {
-    const [open, setOpen] = useState(false);
+    const { apiKeys, loading, deleteApiKey } = useApiKeys();
+    
+    const [dialogOpen, setDialogOpen] = useState(false);
+    const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
+    const [selectedKey, setSelectedKey] = useState<ApiKey | undefined>();
+    
+    const [tokenDialogOpen, setTokenDialogOpen] = useState(false);
+    const [newToken, setNewToken] = useState<string>('');
+    const [newKeyName, setNewKeyName] = useState<string>('');
 
-    const handleCopy = (key: string) => {
-        navigator.clipboard.writeText(key);
+    const handleCreate = () => {
+        setDialogMode('create');
+        setSelectedKey(undefined);
+        setDialogOpen(true);
     };
 
-    const handleDelete = (id: number) => {
-        console.log("Delete API key", id);
+    const handleEdit = (apiKey: ApiKey) => {
+        setDialogMode('edit');
+        setSelectedKey(apiKey);
+        setDialogOpen(true);
+    };
+
+    const handleCreateSuccess = (apiKey: ApiKey) => {
+        if (apiKey.token) {
+            setNewToken(apiKey.token);
+            setNewKeyName(apiKey.name);
+            setTokenDialogOpen(true);
+        }
+        setDialogOpen(false);
     };
 
     return (
@@ -40,23 +44,33 @@ export default function ApiKeysPage() {
             <div className="flex items-center justify-between">
                 <div>
                     <h1 className="text-3xl font-bold mb-2">API Keys</h1>
-                    <p className="text-muted-foreground">Manage your API keys and access tokens</p>
+                    <p className="text-muted-foreground">
+                        管理您的 API 密钥和访问令牌
+                    </p>
                 </div>
-                <Button onClick={() => setOpen(true)}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Create API Key
-                </Button>
             </div>
 
-            <ApiKeysTable 
+            <ApiKeysTable
                 apiKeys={apiKeys}
-                onCopy={handleCopy}
-                onDelete={handleDelete}
+                loading={loading}
+                onEdit={handleEdit}
+                onDelete={deleteApiKey}
+                onCreate={handleCreate}
             />
 
-            <ApiKeysForm 
-                open={open}
-                onOpenChange={setOpen}
+            <ApiKeyDialog
+                open={dialogOpen}
+                onOpenChange={setDialogOpen}
+                mode={dialogMode}
+                apiKey={selectedKey}
+                onSuccess={handleCreateSuccess}
+            />
+
+            <TokenDisplayDialog
+                open={tokenDialogOpen}
+                onOpenChange={setTokenDialogOpen}
+                token={newToken}
+                keyName={newKeyName}
             />
         </div>
     );

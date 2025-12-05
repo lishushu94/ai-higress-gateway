@@ -1,6 +1,7 @@
 from .api_key import APIKey
 from .api_key_allowed_provider import APIKeyAllowedProvider
 from .base import Base, TimestampMixin, UUIDPrimaryKeyMixin
+from .credit import CreditAccount, CreditTransaction, ModelBillingConfig
 from .identity import Identity
 from .permission import Permission
 from .role import Role
@@ -19,7 +20,10 @@ __all__ = [
     "APIKey",
     "APIKeyAllowedProvider",
     "Base",
+    "CreditAccount",
+    "CreditTransaction",
     "Identity",
+    "ModelBillingConfig",
     "Permission",
     "Role",
     "RolePermission",

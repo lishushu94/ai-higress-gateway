@@ -91,6 +91,10 @@ def create_private_provider(
         custom_headers=payload.custom_headers,
         models_path=payload.models_path or "/v1/models",
         messages_path=payload.messages_path,
+        chat_completions_path=payload.chat_completions_path
+        or "/v1/chat/completions",
+        responses_path=payload.responses_path,
+        supported_api_styles=payload.supported_api_styles,
         static_models=payload.static_models,
         status="healthy",
         owner_id=owner_id,
@@ -188,6 +192,14 @@ def update_private_provider(
         provider.retryable_status_codes = payload.retryable_status_codes
     if payload.custom_headers is not None:
         provider.custom_headers = payload.custom_headers
+    if payload.chat_completions_path is not None:
+        provider.chat_completions_path = payload.chat_completions_path
+    if payload.responses_path is not None:
+        provider.responses_path = payload.responses_path
+    if payload.supported_api_styles is not None:
+        # When explicitly provided, supported_api_styles becomes the
+        # authoritative declaration of upstream API styles for this provider.
+        provider.supported_api_styles = payload.supported_api_styles
     if payload.models_path is not None:
         provider.models_path = payload.models_path
     if payload.messages_path is not None:

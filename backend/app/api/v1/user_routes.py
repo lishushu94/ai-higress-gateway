@@ -29,6 +29,8 @@ from app.services.user_service import (
     set_user_active,
     update_user,
 )
+from app.services.credit_service import get_or_create_account_for_user
+from app.services.token_redis_service import TokenRedisService
 
 router = APIRouter(
     tags=["users"],
@@ -123,6 +125,8 @@ def register_user_endpoint(
 
     # 为新用户分配默认角色
     _assign_default_role(db, user.id)
+    # 初始化积分账户（如已存在则直接返回）
+    get_or_create_account_for_user(db, user.id)
 
     return _build_user_response(db, user.id)
 
@@ -173,7 +177,7 @@ async def update_user_status_endpoint(
     redis=Depends(get_redis),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
 ) -> UserResponse:
-    """允许超级用户禁用/恢复用户，立即撤销其 API 密钥缓存。"""
+    """允许超级用户禁用/恢复用户，禁用时立即撤销其 API 密钥缓存及所有 JWT 会话。"""
 
     if not current_user.is_superuser:
         raise forbidden("只有超级管理员可以封禁用户")
@@ -183,7 +187,17 @@ async def update_user_status_endpoint(
         raise not_found(f"User {user_id} not found")
 
     updated, key_hashes = set_user_active(db, user, is_active=payload.is_active)
+
+    # 无论启用还是禁用，都清理已有的 API Key 缓存，避免状态漂移
     await _invalidate_user_api_keys(redis, key_hashes)
+
+    # 当用户被禁用时，撤销其在 Redis 中登记的所有 JWT token / 会话
+    if not payload.is_active:
+        token_service = TokenRedisService(redis)
+        await token_service.revoke_user_tokens(
+            str(updated.id),
+            reason="user_disabled_by_admin",
+        )
 
     return _build_user_response(db, updated.id)
 

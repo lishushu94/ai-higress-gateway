@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
-// 需要认证的路由前缀
+// 需要认证的路由前缀（仅用于文档说明，不再强制重定向）
 const protectedRoutes = [
   '/dashboard',
   '/profile',
@@ -32,25 +32,16 @@ export function middleware(request: NextRequest) {
   const accessToken = request.cookies.get('access_token')?.value;
   const refreshToken = request.cookies.get('refresh_token')?.value;
   
-  // 检查是否是受保护的路由
-  if (isProtectedRoute(pathname)) {
-    // 如果没有 token，重定向到登录页
-    if (!accessToken && !refreshToken) {
-      const loginUrl = new URL('/login', request.url);
-      loginUrl.searchParams.set('redirect', pathname);
-      return NextResponse.redirect(loginUrl);
-    }
-    
-    // 有 token，允许访问
-    return NextResponse.next();
-  }
+  // 不再在 middleware 中强制重定向到 /login
+  // 而是让页面正常加载，由客户端的响应拦截器处理认证
+  // 当 API 请求返回 401 时，会自动打开登录对话框
   
   // 如果已登录用户访问登录页，重定向到 dashboard
   if (pathname === '/login' && accessToken) {
     return NextResponse.redirect(new URL('/dashboard/overview', request.url));
   }
   
-  // 其他路由正常访问
+  // 所有路由都允许访问，认证由客户端处理
   return NextResponse.next();
 }
 

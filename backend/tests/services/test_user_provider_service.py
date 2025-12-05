@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.models import Base
-from app.schemas.provider_control import UserProviderCreateRequest
+from app.schemas.provider_control import UserProviderCreateRequest, UserProviderUpdateRequest
 from app.services.user_provider_service import create_private_provider
 from tests.utils import seed_user_and_key
 
@@ -65,6 +65,72 @@ def test_duplicate_names_generate_unique_provider_ids() -> None:
             )
 
         assert provider_a.provider_id != provider_b.provider_id
+    finally:
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def test_create_private_provider_persists_paths_and_supported_styles() -> None:
+    engine, SessionLocal = _session_factory()
+    try:
+        with SessionLocal() as session:
+            user, _ = seed_user_and_key(session, token_plain="seed")
+
+        with SessionLocal() as session:
+            payload = UserProviderCreateRequest(
+                name="Custom Provider",
+                base_url="https://upstream.example.com",
+                api_key="sk-test",
+                models_path="/custom/models",
+                messages_path="/custom/messages",
+                chat_completions_path="/custom/chat",
+                responses_path="/custom/responses",
+                supported_api_styles=["openai", "responses"],
+            )
+            provider = create_private_provider(session, user.id, payload)
+
+            assert provider.models_path == "/custom/models"
+            assert provider.messages_path == "/custom/messages"
+            assert provider.chat_completions_path == "/custom/chat"
+            assert provider.responses_path == "/custom/responses"
+            assert provider.supported_api_styles == ["openai", "responses"]
+    finally:
+        Base.metadata.drop_all(bind=engine)
+        engine.dispose()
+
+
+def test_update_private_provider_can_change_paths_and_supported_styles() -> None:
+    engine, SessionLocal = _session_factory()
+    try:
+        with SessionLocal() as session:
+            user, _ = seed_user_and_key(session, token_plain="seed")
+
+        # seed with defaults
+        with SessionLocal() as session:
+            base_payload = UserProviderCreateRequest(
+                name="Updatable Provider",
+                base_url="https://upstream.example.com",
+                api_key="sk-test",
+            )
+            provider = create_private_provider(session, user.id, base_payload)
+            provider_id = provider.provider_id
+
+        # update paths + styles
+        with SessionLocal() as session:
+            update_payload = UserProviderUpdateRequest(
+                models_path="/m",
+                messages_path="/msgs",
+                chat_completions_path="/chat-alt",
+                responses_path="/responses-alt",
+                supported_api_styles=["openai"],
+            )
+            updated = update_private_provider(session, user.id, provider_id, update_payload)
+
+            assert updated.models_path == "/m"
+            assert updated.messages_path == "/msgs"
+            assert updated.chat_completions_path == "/chat-alt"
+            assert updated.responses_path == "/responses-alt"
+            assert updated.supported_api_styles == ["openai"]
     finally:
         Base.metadata.drop_all(bind=engine)
         engine.dispose()
