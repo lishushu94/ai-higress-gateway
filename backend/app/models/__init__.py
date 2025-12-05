@@ -6,6 +6,7 @@ from .identity import Identity
 from .permission import Permission
 from .role import Role
 from .role_permission import RolePermission
+from .aggregate_metrics import AggregateRoutingMetrics
 from .provider import Provider
 from .provider_preset import ProviderPreset
 from .provider_api_key import ProviderAPIKey
@@ -33,6 +34,7 @@ __all__ = [
     "ProviderAPIKey",
     "ProviderModel",
     "ProviderSubmission",
+    "AggregateRoutingMetrics",
     "ProviderRoutingMetricsHistory",
     "RegistrationWindow",
     "RegistrationWindowStatus",
