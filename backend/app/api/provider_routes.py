@@ -2,6 +2,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, Query
+from sqlalchemy.orm import Session
 
 try:
     from redis.asyncio import Redis
@@ -9,7 +10,7 @@ except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is
     Redis = object  # type: ignore[misc,assignment]
 
 from app.auth import require_api_key
-from app.deps import get_http_client, get_redis
+from app.deps import get_db, get_http_client, get_redis
 from app.errors import not_found
 from app.logging_config import logger
 from app.schemas import ProviderConfig, RoutingMetrics
@@ -20,7 +21,8 @@ from app.schemas.provider_routes import (
 )
 from app.provider.config import get_provider_config, load_provider_configs
 from app.provider.discovery import ensure_provider_models_cached
-from app.provider.health import HealthStatus, check_provider_health
+from app.provider.health import HealthStatus
+from app.services.provider_health_service import get_health_status_with_fallback
 from app.storage.redis_service import get_routing_metrics
 
 router = APIRouter(
@@ -64,16 +66,16 @@ async def get_provider_models(
 @router.get("/providers/{provider_id}/health", response_model=HealthStatus)
 async def get_provider_health(
     provider_id: str,
-    client: httpx.AsyncClient = Depends(get_http_client),
     redis: Redis = Depends(get_redis),
+    db: Session = Depends(get_db),
 ) -> HealthStatus:
     """
     Perform a lightweight health check for the given provider.
     """
-    cfg = get_provider_config(provider_id)
-    if cfg is None:
+    status = await get_health_status_with_fallback(redis, db, provider_id)
+    if status is None:
         raise not_found(f"Provider '{provider_id}' not found")
-    return await check_provider_health(client, cfg, redis)
+    return status
 
 
 @router.get("/providers/{provider_id}/metrics", response_model=ProviderMetricsResponse)

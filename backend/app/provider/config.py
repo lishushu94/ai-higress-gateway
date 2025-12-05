@@ -236,6 +236,35 @@ def load_provider_configs(session: Session | None = None) -> list[ProviderConfig
             session.close()
 
 
+def load_providers_with_configs(
+    session: Session | None = None,
+) -> list[tuple[Provider, ProviderConfig]]:
+    """
+    Load providers and keep their ORM objects for downstream persistence needs.
+
+    This is similar to ``load_provider_configs`` but returns tuples so that
+    callers can both perform health checks (using ProviderConfig) and update
+    runtime status on the ORM instance.
+    """
+
+    owns_session = False
+    if session is None:
+        session = SessionLocal()
+        owns_session = True
+    try:
+        providers = _load_providers_from_db(session)
+        pairs: list[tuple[Provider, ProviderConfig]] = []
+        for provider in providers:
+            cfg = _build_provider_config(provider)
+            if cfg is None:
+                continue
+            pairs.append((provider, cfg))
+        return pairs
+    finally:
+        if owns_session:
+            session.close()
+
+
 def get_provider_config(provider_id: str, session: Session | None = None) -> ProviderConfig | None:
     """
     Load a single provider configuration by its slug/identifier.
@@ -262,4 +291,4 @@ def get_provider_config(provider_id: str, session: Session | None = None) -> Pro
             session.close()
 
 
-__all__ = ["get_provider_config", "load_provider_configs"]
+__all__ = ["get_provider_config", "load_provider_configs", "load_providers_with_configs"]
