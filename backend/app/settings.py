@@ -148,6 +148,42 @@ class Settings(BaseSettings):
         le=1.0,
     )
 
+    # Offline metrics recomputation
+    offline_metrics_windows: list[int] = Field(
+        default_factory=lambda: [300, 3600],
+        alias="OFFLINE_METRICS_WINDOWS",
+        description="离线重算落库的时间窗口（秒），如 300=5 分钟，3600=1 小时",
+    )
+    offline_metrics_diff_threshold: float = Field(
+        0.05,
+        alias="OFFLINE_METRICS_DIFF_THRESHOLD",
+        description="分位数/错误率相对变化超过该阈值才触发写回",
+        ge=0.0,
+    )
+    offline_metrics_lookback_hours: int = Field(
+        6,
+        alias="OFFLINE_METRICS_LOOKBACK_HOURS",
+        description="定时任务默认回溯的小时数",
+        ge=1,
+    )
+    offline_metrics_interval_seconds: int = Field(
+        900,
+        alias="OFFLINE_METRICS_INTERVAL_SECONDS",
+        description="离线重算定时任务的触发间隔（秒）",
+        ge=60,
+    )
+    offline_metrics_source_version: str = Field(
+        "offline-recalc-v1",
+        alias="OFFLINE_METRICS_SOURCE_VERSION",
+        description="aggregate_metrics 写回的版本标识",
+    )
+    offline_metrics_min_total_requests: int = Field(
+        1,
+        alias="OFFLINE_METRICS_MIN_TOTAL_REQUESTS",
+        description="参与离线聚合的最小请求数阈值",
+        ge=0,
+    )
+
     # HTTP timeouts
     upstream_timeout: float = 600.0
 
