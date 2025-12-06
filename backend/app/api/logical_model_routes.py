@@ -6,9 +6,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is missing
     Redis = object  # type: ignore[misc,assignment]
 
-from app.auth import require_api_key
 from app.deps import get_redis
 from app.errors import not_found
+from app.jwt_auth import require_jwt_token
 from app.schemas import (
     LogicalModel,
     LogicalModelUpstreamsResponse,
@@ -19,7 +19,7 @@ from app.storage.redis_service import get_logical_model, list_logical_models
 
 router = APIRouter(
     tags=["logical-models"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_jwt_token)],
 )
 
 
@@ -66,4 +66,3 @@ async def get_logical_model_upstreams_endpoint(
 
 
 __all__ = ["router"]
-

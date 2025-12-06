@@ -22,9 +22,11 @@ import {
 import { AdminSubmissionsTable } from "./admin-submissions-table";
 import { ReviewDialog } from "./review-dialog";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useErrorDisplay } from "@/lib/errors";
 
 export function AdminSubmissionsClient() {
   const { t } = useI18n();
+  const { showError } = useErrorDisplay();
   const [reviewDialogOpen, setReviewDialogOpen] = useState(false);
   const [reviewingSubmission, setReviewingSubmission] = useState<ProviderSubmission | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -73,12 +75,16 @@ export function AdminSubmissionsClient() {
   };
 
   if (error) {
+    showError(error, {
+      context: t("submissions.error_loading"),
+      onRetry: () => mutate(),
+    });
     return (
       <div className="space-y-4">
         <Alert variant="destructive">
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            {t("submissions.error_loading")}: {error.message}
+            {t("submissions.error_loading")}
           </AlertDescription>
         </Alert>
         <Button onClick={() => mutate()}>{t("submissions.retry")}</Button>

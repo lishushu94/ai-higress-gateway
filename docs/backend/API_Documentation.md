@@ -511,7 +511,45 @@
 
 ---
 
-### 5. 管理员获取用户权限列表
+### 5. 管理员获取用户列表
+
+**接口**: `GET /admin/users`
+
+**描述**: 管理员获取系统中所有用户的概要信息，用于用户管理页面。
+
+**认证**: JWT 令牌 (仅限超级用户)
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "username": "string",
+    "email": "string",
+    "display_name": "string | null",
+    "avatar": "string | null",
+    "is_active": true,
+    "is_superuser": false,
+    "role_codes": ["default_user"],
+    "permission_flags": [
+      {
+        "key": "can_create_private_provider",
+        "value": false
+      },
+      {
+        "key": "can_submit_shared_provider",
+        "value": false
+      }
+    ],
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+]
+```
+
+---
+
+### 6. 管理员获取用户权限列表
 
 **接口**: `GET /admin/users/{user_id}/permissions`
 
@@ -537,7 +575,7 @@
 
 ---
 
-### 6. 管理员授予或更新用户权限
+### 7. 管理员授予或更新用户权限
 
 **接口**: `POST /admin/users/{user_id}/permissions`
 
@@ -1238,7 +1276,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取所有已配置的提供商列表（从数据库加载）。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -1292,7 +1330,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取指定提供商的配置信息。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -1340,7 +1378,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取指定提供商支持的模型列表。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -1365,7 +1403,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 执行轻量级健康检查。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -1387,7 +1425,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取提供商的路由指标实时快照（来自 Redis，按逻辑模型聚合）。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **查询参数**:
 - `logical_model` (可选): 逻辑模型过滤器；若提供，则返回该逻辑模型与 Provider 的一条聚合记录
@@ -1422,7 +1460,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取指定 Provider + 逻辑模型在给定时间范围内的分钟级指标时间序列，可用于绘制折线图。
 
-**认证**: API 密钥
+**认证**: JWT 令牌
 
 **查询参数**:
 - `provider_id` (必填): 厂商 ID，例如 `openai`
@@ -1478,7 +1516,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取指定 Provider + 逻辑模型在给定时间范围内的汇总指标，可用于仪表卡片展示（总请求数、错误率、平均延迟等）。
 
-**认证**: API 密钥
+**认证**: JWT 令牌
 
 **查询参数**:
 - `provider_id` (必填): 厂商 ID，例如 `openai`
@@ -1518,7 +1556,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 按 `user_id` 聚合指定时间范围内的路由指标，跨 Provider 与 Logical Model，用于查看某个用户在系统中的整体使用情况。
 
-**认证**: API 密钥
+**认证**: JWT 令牌
 
 **查询参数**:
 - `user_id` (必填): 用户 ID（UUID）
@@ -1562,7 +1600,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 按 `api_key_id` 聚合指定时间范围内的路由指标，跨 Provider 与 Logical Model，用于查看某个 API Key 的整体使用情况（例如单个调用方的额度统计）。
 
-**认证**: API 密钥
+**认证**: JWT 令牌
 
 **查询参数**:
 - `api_key_id` (必填): API Key ID（UUID）
@@ -1803,6 +1841,46 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 ---
 
+### 11.0 从私有提供商一键提交共享提供商
+
+**接口**: `POST /users/{user_id}/private-providers/{provider_id}/submit-shared`
+
+**描述**: 将指定用户的私有 Provider 一键提交到共享池，进入管理员审核流程。  
+后端会自动读取该私有 Provider 的配置和上游 API 密钥进行一次连通性验证（调用 `/v1/models` 等），验证通过后创建提交记录。
+
+**认证**: JWT 令牌  
+**权限要求**: 需要具备 `submit_shared_provider` 权限，且仅允许本人或超级管理员操作。
+
+**请求体**: 无（后端从私有 Provider 记录中提取所需信息）
+
+**响应**: 同 “用户提交共享提供商” (`POST /providers/submissions`)：
+```json
+{
+  "id": "uuid",
+  "user_id": "uuid",
+  "name": "string",
+  "provider_id": "string",
+  "base_url": "url",
+  "provider_type": "native/aggregator",
+  "description": "string | null",
+  "approval_status": "pending",
+  "reviewed_by": null,
+  "review_notes": null,
+  "reviewed_at": null,
+  "created_at": "datetime",
+  "updated_at": "datetime"
+}
+```
+
+**错误响应**:
+- 403: 当前用户未被授权提交共享提供商 / 无权操作其他用户的私有提供商  
+- 404: 私有提供商不存在  
+- 400:  
+  - 当前私有提供商未配置可用的上游 API 密钥  
+  - 提供商配置验证失败（如无法访问 /models）
+
+---
+
 ### 11. 用户提交共享提供商
 
 **接口**: `POST /providers/submissions`
@@ -1849,6 +1927,40 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 **错误响应**:
 - 403: 当前用户未被授权提交共享提供商  
 - 400: 提供商配置验证失败（如无法访问 /models）
+
+---
+
+### 11.1 用户查看自己的共享提供商提交
+
+**接口**: `GET /providers/submissions/me`
+
+**描述**: 当前登录用户查看自己提交的共享提供商列表。
+
+**认证**: JWT 令牌
+
+**查询参数**:
+- `status` (可选): `pending` / `approved` / `rejected`，按审批状态过滤
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "user_id": "uuid",
+    "name": "string",
+    "provider_id": "string",
+    "base_url": "url",
+    "provider_type": "native/aggregator",
+    "description": "string | null",
+    "approval_status": "pending/approved/rejected",
+    "reviewed_by": "uuid | null",
+    "review_notes": "string | null",
+    "reviewed_at": "datetime | null",
+    "created_at": "datetime",
+    "updated_at": "datetime"
+  }
+]
+```
 
 ---
 
@@ -1924,6 +2036,27 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 ---
 
+### 13.1 用户取消自己的共享提供商提交
+
+**接口**: `DELETE /providers/submissions/{submission_id}`
+
+**描述**: 当前登录用户取消自己的共享提供商提交记录。
+
+根据提交状态执行不同的操作：
+- `pending`: 直接删除提交记录
+- `approved`: 删除对应的公共 Provider 和提交记录
+- `rejected`: 直接删除提交记录
+
+**认证**: JWT 令牌
+
+**成功响应**: 204 No Content
+
+**错误响应**:
+- 404: 提交记录不存在  
+- 403: 无权取消他人的提交
+
+---
+
 ### 14. 管理员查看 Provider 列表（含可见性/所有者）
 
 **接口**: `GET /admin/providers`
@@ -1991,7 +2124,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取所有存储在 Redis 中的逻辑模型。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -2030,7 +2163,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取指定逻辑模型的详情。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -2067,7 +2200,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取映射到逻辑模型的上游物理模型。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -2099,7 +2232,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 计算逻辑模型请求的路由决策。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **请求体**:
 ```json
@@ -2177,7 +2310,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 获取会话信息。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **响应**:
 ```json
@@ -2202,7 +2335,7 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 
 **描述**: 删除会话（取消粘性）。
 
-**认证**: API密钥
+**认证**: JWT 令牌
 
 **成功响应**: 204 No Content
 

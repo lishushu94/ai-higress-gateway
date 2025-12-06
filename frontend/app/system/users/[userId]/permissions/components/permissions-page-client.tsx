@@ -15,6 +15,7 @@ import { PermissionsTable } from "./permissions-table";
 import { GrantPermissionDialog } from "./grant-permission-dialog";
 import { EditPermissionDialog } from "./edit-permission-dialog";
 import { RevokePermissionDialog } from "./revoke-permission-dialog";
+import { useErrorDisplay } from "@/lib/errors";
 
 interface PermissionsPageClientProps {
   user: UserInfo;
@@ -23,6 +24,7 @@ interface PermissionsPageClientProps {
 
 export function PermissionsPageClient({ user, userId }: PermissionsPageClientProps) {
   const { t } = useI18n();
+  const { showError } = useErrorDisplay();
   const router = useRouter();
   const { permissions, loading, error, refresh } = useUserPermissions(userId);
 
@@ -37,13 +39,11 @@ export function PermissionsPageClient({ user, userId }: PermissionsPageClientPro
       await adminService.grantUserPermission(userId, data);
       toast.success(t("permissions.success_granted"));
       refresh();
-    } catch (error: any) {
-      console.error("Failed to grant permission:", error);
-      if (error.response?.status === 403) {
-        toast.error(t("permissions.error_grant") + ": " + t("common.permission_denied"));
-      } else {
-        toast.error(t("permissions.error_grant"));
-      }
+    } catch (error) {
+      showError(error, {
+        context: t("permissions.error_grant"),
+        onRetry: () => handleGrantPermission(data),
+      });
       throw error;
     }
   };
@@ -53,9 +53,11 @@ export function PermissionsPageClient({ user, userId }: PermissionsPageClientPro
       await adminService.grantUserPermission(userId, data);
       toast.success(t("permissions.success_updated"));
       refresh();
-    } catch (error: any) {
-      console.error("Failed to update permission:", error);
-      toast.error(t("permissions.error_update"));
+    } catch (error) {
+      showError(error, {
+        context: t("permissions.error_update"),
+        onRetry: () => handleEditPermission(data),
+      });
       throw error;
     }
   };
@@ -67,9 +69,11 @@ export function PermissionsPageClient({ user, userId }: PermissionsPageClientPro
       await adminService.revokeUserPermission(userId, selectedPermission.id);
       toast.success(t("permissions.success_revoked"));
       refresh();
-    } catch (error: any) {
-      console.error("Failed to revoke permission:", error);
-      toast.error(t("permissions.error_revoke"));
+    } catch (error) {
+      showError(error, {
+        context: t("permissions.error_revoke"),
+        onRetry: handleRevokePermission,
+      });
       throw error;
     }
   };

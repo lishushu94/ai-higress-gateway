@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useI18n } from "@/lib/i18n-context";
 import { toast } from "sonner";
+import { useErrorDisplay } from "@/lib/errors";
 import { useAdminTopup } from "@/lib/swr/use-credits";
 
 interface AdminTopupDialogProps {
@@ -31,6 +32,7 @@ export function AdminTopupDialog({
   onSuccess
 }: AdminTopupDialogProps) {
   const { t } = useI18n();
+  const { showError } = useErrorDisplay();
   const { topup, submitting, isSuperUser } = useAdminTopup();
   
   const [amount, setAmount] = useState<string>('');
@@ -81,9 +83,8 @@ export function AdminTopupDialog({
       
       // 调用成功回调
       onSuccess?.();
-    } catch (error: any) {
-      const message = error.response?.data?.detail || error.message || t("credits.topup_error");
-      toast.error(message);
+    } catch (error) {
+      showError(error, { context: t("credits.topup_error") });
     }
   };
 

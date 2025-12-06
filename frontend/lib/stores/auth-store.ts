@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { authService, type UserInfo, type LoginRequest, type RegisterRequest } from '@/http/auth';
 import { tokenManager } from '@/lib/auth/token-manager';
 import { toast } from 'sonner';
+import { ErrorHandler } from '@/lib/errors';
 
 interface AuthState {
   user: UserInfo | null;
@@ -69,9 +70,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
       
       toast.success('登录成功');
-    } catch (error: any) {
+    } catch (error) {
       set({ isLoading: false });
-      const message = error.response?.data?.detail || '登录失败';
+      // 使用标准化错误处理
+      const standardError = ErrorHandler.normalize(error);
+      const message = ErrorHandler.getUserMessage(standardError, (key) => key);
       toast.error(message);
       throw error;
     }
@@ -92,9 +95,11 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       toast.success('注册成功');
       return user;
-    } catch (error: any) {
+    } catch (error) {
       set({ isLoading: false });
-      const message = error.response?.data?.detail || '注册失败';
+      // 使用标准化错误处理
+      const standardError = ErrorHandler.normalize(error);
+      const message = ErrorHandler.getUserMessage(standardError, (key) => key);
       toast.error(message);
       throw error;
     }

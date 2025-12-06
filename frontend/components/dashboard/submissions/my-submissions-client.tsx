@@ -20,7 +20,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Plus, Search, AlertCircle } from "lucide-react";
+import { Search, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n-context";
 import {
@@ -28,13 +28,13 @@ import {
   ProviderSubmission,
   SubmissionStatus,
 } from "@/http/provider-submission";
-import { SubmissionFormDialog } from "./submission-form-dialog";
 import { SubmissionsTable } from "./submissions-table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { useErrorDisplay } from "@/lib/errors";
 
 export function MySubmissionsClient() {
   const { t } = useI18n();
-  const [formOpen, setFormOpen] = useState(false);
+  const { showError } = useErrorDisplay();
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -99,17 +99,15 @@ export function MySubmissionsClient() {
       await providerSubmissionService.cancelSubmission(cancellingId);
       toast.success(t("submissions.toast_cancel_success"));
       mutate();
-    } catch (error: any) {
-      console.error("Failed to cancel submission:", error);
-      const message =
-        error.response?.data?.detail ||
-        error.message ||
-        t("submissions.toast_cancel_error");
-      toast.error(message);
-    } finally {
-      setIsCancelling(false);
       setCancelDialogOpen(false);
       setCancellingId(null);
+    } catch (error) {
+      showError(error, {
+        context: t("submissions.toast_cancel_error"),
+        onRetry: handleCancelConfirm,
+      });
+    } finally {
+      setIsCancelling(false);
     }
   };
 
@@ -141,10 +139,6 @@ export function MySubmissionsClient() {
             {t("submissions.my_subtitle")}
           </p>
         </div>
-        <Button onClick={() => setFormOpen(true)}>
-          <Plus className="w-4 h-4 mr-2" />
-          {t("submissions.submit_new")}
-        </Button>
       </div>
 
       {/* 统计卡片 */}
@@ -225,13 +219,6 @@ export function MySubmissionsClient() {
           )}
         </CardContent>
       </Card>
-
-      {/* 提交表单对话框 */}
-      <SubmissionFormDialog
-        open={formOpen}
-        onOpenChange={setFormOpen}
-        onSuccess={() => mutate()}
-      />
 
       {/* 取消确认对话框 */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>

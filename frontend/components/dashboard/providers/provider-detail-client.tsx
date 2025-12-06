@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import React, { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -8,12 +8,17 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, CheckCircle, AlertCircle, XCircle, RefreshCw } from "lucide-react";
+import { ArrowLeft, CheckCircle, AlertCircle, XCircle, RefreshCw, Share2, Loader2 } from "lucide-react";
 import { useProviderDetail } from "@/lib/hooks/use-provider-detail";
 import type { ProviderStatus } from "@/http/provider";
+import { useI18n } from "@/lib/i18n-context";
+import { providerSubmissionService } from "@/http/provider-submission";
+import { toast } from "sonner";
+import { useErrorDisplay } from "@/lib/errors";
 
 interface ProviderDetailClientProps {
   providerId: string;
+  currentUserId?: string | null;
   translations: {
     back: string;
     refresh: string;
@@ -145,8 +150,11 @@ const LoadingSkeleton = ({ loadingText }: { loadingText: string }) => (
   </div>
 );
 
-export function ProviderDetailClient({ providerId, translations }: ProviderDetailClientProps) {
+export function ProviderDetailClient({ providerId, currentUserId, translations }: ProviderDetailClientProps) {
   const router = useRouter();
+  const { t } = useI18n();
+  const { showError } = useErrorDisplay();
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const { provider, models, health, metrics, loading, error, refresh } = useProviderDetail({
     providerId,
   });
@@ -215,6 +223,38 @@ export function ProviderDetailClient({ providerId, translations }: ProviderDetai
     );
   }
 
+  const canShareToPool =
+    !!currentUserId &&
+    provider.visibility === "private" &&
+    provider.owner_id === currentUserId;
+
+  const handleShareToPool = async () => {
+    if (!canShareToPool || !currentUserId) {
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      await providerSubmissionService.submitFromPrivateProvider(
+        currentUserId,
+        provider.provider_id,
+      );
+      toast.success(t("submissions.toast_submit_success"));
+    } catch (error: any) {
+      // 权限不足的场景给出更明确的提示
+      if (error?.response?.status === 403) {
+        toast.error(t("submissions.toast_no_permission"));
+      } else {
+        showError(error, {
+          context: t("submissions.toast_submit_error"),
+          onRetry: () => handleShareToPool(),
+        });
+      }
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-7xl animate-in fade-in duration-500">
       {/* 页头 */}
@@ -245,6 +285,26 @@ export function ProviderDetailClient({ providerId, translations }: ProviderDetai
           </div>
         </div>
         <div className="flex items-center gap-2">
+          {canShareToPool && (
+            <Button
+              variant="default"
+              size="sm"
+              onClick={handleShareToPool}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("submissions.btn_submitting")}
+                </>
+              ) : (
+                <>
+                  <Share2 className="h-4 w-4 mr-2" />
+                  {t("submissions.share_from_private_button")}
+                </>
+              )}
+            </Button>
+          )}
           <StatusBadge status={health?.status} translations={translations.status} />
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />

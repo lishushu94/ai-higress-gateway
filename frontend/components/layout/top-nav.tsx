@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Bell, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
 import { useI18n } from "@/lib/i18n-context";
@@ -13,8 +12,7 @@ export function TopNav() {
     const [mounted, setMounted] = useState(false);
     const { setTheme, theme } = useTheme();
     const { language, setLanguage, t } = useI18n();
-    const { isAuthenticated, isLoading } = useAuthStore();
-    const router = useRouter();
+    const { isAuthenticated, isLoading, openAuthDialog } = useAuthStore();
 
     useEffect(() => {
         setMounted(true);
@@ -73,12 +71,12 @@ export function TopNav() {
                         isAuthenticated ? (
                             <UserMenu />
                         ) : (
-                            <Button 
-                                variant="default" 
+                            <Button
+                                variant="default"
                                 size="sm"
-                                onClick={() => router.push('/login')}
+                                onClick={openAuthDialog}
                             >
-                                登录
+                                {t("auth.login_button")}
                             </Button>
                         )
                     )}

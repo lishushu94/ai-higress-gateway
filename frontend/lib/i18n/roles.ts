@@ -18,6 +18,9 @@ export const rolesTranslations: Record<Language, Record<string, string>> = {
     "roles.delete_confirm": "Are you sure you want to delete this role?",
     "roles.permissions_save": "Save Permissions",
     "roles.permissions_desc": "Select the permissions for this role",
+    "roles.tooltip_permissions": "Manage role permissions",
+    "roles.tooltip_edit": "Edit role",
+    "roles.tooltip_delete": "Delete role",
     // Role permissions page
     "roles.permissions_page_title": "Role Permissions",
     "roles.permissions_page_subtitle": "Manage permissions for role {role}",
@@ -47,6 +50,9 @@ export const rolesTranslations: Record<Language, Record<string, string>> = {
     "roles.delete_confirm": "确定要删除该角色吗？",
     "roles.permissions_save": "保存权限",
     "roles.permissions_desc": "为该角色选择权限",
+    "roles.tooltip_permissions": "管理角色权限",
+    "roles.tooltip_edit": "编辑角色",
+    "roles.tooltip_delete": "删除角色",
     // Role permissions page
     "roles.permissions_page_title": "角色权限配置",
     "roles.permissions_page_subtitle": "为角色 {role} 配置可访问的系统权限",

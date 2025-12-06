@@ -4,10 +4,11 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from app.deps import get_redis
-from app.schemas import LogicalModel, ModelCapability, PhysicalModel
+from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.routes import create_app
+from app.schemas import LogicalModel, ModelCapability, PhysicalModel
 from app.storage.redis_service import LOGICAL_MODEL_KEY_TEMPLATE
-from tests.utils import auth_headers, install_inmemory_db
+from tests.utils import install_inmemory_db
 
 
 class DummyRedis:
@@ -41,6 +42,19 @@ fake_redis = DummyRedis()
 
 async def override_get_redis():
     return fake_redis
+
+
+async def override_require_jwt_token() -> AuthenticatedUser:
+    # 简化依赖：测试路由行为时，不关心具体用户信息
+    return AuthenticatedUser(
+        id="00000000-0000-0000-0000-000000000000",
+        username="test",
+        email="test@example.com",
+        is_superuser=True,
+        is_active=True,
+        display_name=None,
+        avatar=None,
+    )
 
 
 def _store_logical_model(logical: LogicalModel) -> None:
@@ -86,6 +100,7 @@ def test_logical_model_routes_list_and_get():
     # logical_model_routes is already included by create_app via app.include_router
 
     app.dependency_overrides[get_redis] = override_get_redis
+    app.dependency_overrides[require_jwt_token] = override_require_jwt_token
     install_inmemory_db(app)
 
     # Seed Redis with two logical models.
@@ -93,29 +108,28 @@ def test_logical_model_routes_list_and_get():
         _store_logical_model(lm)
 
     with TestClient(app=app, base_url="http://test") as client:
-        headers = auth_headers()
-
-        resp = client.get("/logical-models", headers=headers)
+        resp = client.get("/logical-models")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2
         ids = {m["logical_id"] for m in data["models"]}
         assert ids == {"gpt-4", "gpt-4-mini"}
 
-        resp_one = client.get("/logical-models/gpt-4", headers=headers)
+        resp_one = client.get("/logical-models/gpt-4")
         assert resp_one.status_code == 200
         one = resp_one.json()
         assert one["logical_id"] == "gpt-4"
         assert one["display_name"] == "GPT-4"
 
         # Unknown logical model -> 404
-        resp_missing = client.get("/logical-models/unknown", headers=headers)
+        resp_missing = client.get("/logical-models/unknown")
         assert resp_missing.status_code == 404
 
 
 def test_logical_model_routes_upstreams():
     app = create_app()
     app.dependency_overrides[get_redis] = override_get_redis
+    app.dependency_overrides[require_jwt_token] = override_require_jwt_token
     install_inmemory_db(app)
 
     fake_redis._data.clear()
@@ -123,8 +137,7 @@ def test_logical_model_routes_upstreams():
     _store_logical_model(logical)
 
     with TestClient(app=app, base_url="http://test") as client:
-        headers = auth_headers()
-        resp = client.get("/logical-models/gpt-4/upstreams", headers=headers)
+        resp = client.get("/logical-models/gpt-4/upstreams")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data["upstreams"], list)

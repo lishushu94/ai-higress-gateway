@@ -171,11 +171,20 @@ frontend/
 所有 API 调用都通过 `frontend/http/provider-submission.ts` 进行，与后端 API 文档保持一致：
 
 **后端 API 端点：**
-- `POST /providers/submissions` - 提交共享提供商
+- `POST /providers/submissions` - 通过表单提交共享提供商
+- `POST /users/{user_id}/private-providers/{provider_id}/submit-shared` - 从私有 Provider 一键提交到共享池
 - `GET /providers/submissions/me` - 获取当前用户的提交列表
 - `GET /providers/submissions` - 管理员查看提交列表（支持 status 参数）
 - `PUT /providers/submissions/{submission_id}/review` - 管理员审核
 - `DELETE /providers/submissions/{submission_id}` - 取消提交
+
+在前端封装中：
+
+- `providerSubmissionService.createSubmission(data)` 仍用于「我的投稿」页面中的完整表单提交流程；
+- `providerSubmissionService.submitFromPrivateProvider(userId, providerId)` 用于「私有 Provider 详情页」的“一键分享”按钮：
+  - 从当前登录用户的私有 Provider 记录中读取 base_url / api_key 等信息；
+  - 不再弹出大表单，只需一次点击即可发起投稿；
+  - 失败时通过统一的错误处理（Toast + `useErrorDisplay()`）反馈给用户。
 
 ## 类型定义
 

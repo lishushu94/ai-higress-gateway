@@ -12,9 +12,11 @@ import { ProviderKeyDialog } from "@/components/dashboard/provider-keys/provider
 import { DeleteKeyDialog } from "@/components/dashboard/provider-keys/delete-key-dialog";
 import { toast } from "sonner";
 import type { ProviderKey, CreateProviderKeyRequest, UpdateProviderKeyRequest } from "@/lib/api-types";
+import { useErrorDisplay } from "@/lib/errors";
 
 export default function ProviderKeysPage() {
   const { t } = useI18n();
+  const { showError } = useErrorDisplay();
   const router = useRouter();
   const params = useParams();
   const providerId = params.providerId as string;
@@ -64,15 +66,15 @@ export default function ProviderKeysPage() {
       }
       mutate(); // 刷新列表
     } catch (error) {
-      console.error('Failed to submit:', error);
-      toast.error(
-        editingKey 
-          ? t("provider_keys.toast_update_error") 
-          : t("provider_keys.toast_create_error")
-      );
+      showError(error, {
+        context: editingKey
+          ? t("provider_keys.toast_update_error")
+          : t("provider_keys.toast_create_error"),
+        onRetry: () => handleSubmit(data),
+      });
       throw error;
     }
-  }, [editingKey, providerId, mutate, t]);
+  }, [editingKey, providerId, mutate, t, showError]);
 
   // 确认删除
   const handleConfirmDelete = useCallback(async () => {
@@ -86,12 +88,14 @@ export default function ProviderKeysPage() {
       setDeleteDialogOpen(false);
       setDeletingKey(null);
     } catch (error) {
-      console.error('Failed to delete:', error);
-      toast.error(t("provider_keys.toast_delete_error"));
+      showError(error, {
+        context: t("provider_keys.toast_delete_error"),
+        onRetry: handleConfirmDelete,
+      });
     } finally {
       setIsDeleting(false);
     }
-  }, [deletingKey, providerId, mutate, t]);
+  }, [deletingKey, providerId, mutate, t, showError]);
 
   // 切换状态
   const handleToggleStatus = useCallback(async (keyId: string, newStatus: 'active' | 'inactive') => {
@@ -106,11 +110,13 @@ export default function ProviderKeysPage() {
       toast.success(t("provider_keys.toast_status_success"));
       mutate(); // 重新验证
     } catch (error) {
-      console.error('Failed to toggle status:', error);
-      toast.error(t("provider_keys.toast_status_error"));
+      showError(error, {
+        context: t("provider_keys.toast_status_error"),
+        onRetry: () => handleToggleStatus(keyId, newStatus),
+      });
       mutate(); // 回滚
     }
-  }, [keys, providerId, mutate, t]);
+  }, [keys, providerId, mutate, t, showError]);
 
   const handleSuccess = useCallback(() => {
     // 对话框关闭后的回调

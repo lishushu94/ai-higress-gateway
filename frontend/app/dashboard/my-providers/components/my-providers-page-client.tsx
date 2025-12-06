@@ -1,6 +1,7 @@
 "use client";
 
-import React, { useState, useMemo, useCallback } from "react";
+import { useState, useMemo, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Plus, Search, RefreshCw } from "lucide-react";
@@ -9,6 +10,7 @@ import { ProvidersTableEnhanced } from "@/components/dashboard/providers/provide
 import { ProviderFormEnhanced } from "@/components/dashboard/providers/provider-form";
 import { Provider, providerService } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
+import { useErrorDisplay } from "@/lib/errors";
 import { usePrivateProviderQuota } from "@/lib/swr/use-private-providers";
 import { QuotaCard } from "./quota-card";
 import { HealthStats } from "./health-stats";
@@ -20,6 +22,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { ProviderModelsDialog } from "@/components/dashboard/providers/provider-models-dialog";
 
 interface MyProvidersPageClientProps {
   initialProviders: Provider[];
@@ -31,15 +34,20 @@ export function MyProvidersPageClient({
   userId,
 }: MyProvidersPageClientProps) {
   const { t } = useI18n();
+  const router = useRouter();
+  const { showError } = useErrorDisplay();
 
   // 状态管理
   const [providers, setProviders] = useState<Provider[]>(initialProviders);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [editingProvider, setEditingProvider] = useState<Provider | null>(null);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingProviderId, setDeletingProviderId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
+  const [viewingModelsProviderId, setViewingModelsProviderId] = useState<string | null>(null);
 
   // 私有 Provider 配额信息
   const {
@@ -55,12 +63,11 @@ export function MyProvidersPageClient({
       const data = await providerService.getUserPrivateProviders(userId);
       setProviders(data);
     } catch (error) {
-      console.error("Failed to refresh providers:", error);
-      toast.error(t("providers.error_loading"));
+      showError(error, { context: t("providers.error_loading") });
     } finally {
       setIsRefreshing(false);
     }
-  }, [userId, t]);
+  }, [userId, t, showError]);
 
   // 本地搜索过滤
   const filteredProviders = useMemo(() => {
@@ -97,10 +104,9 @@ export function MyProvidersPageClient({
 
   // 编辑提供商
   const handleEdit = useCallback((provider: Provider) => {
-    // TODO: 实现编辑功能
-    console.log("Edit provider", provider);
-    toast.info(t("providers.toast_edit_pending"));
-  }, [t]);
+    setEditingProvider(provider);
+    setFormOpen(true);
+  }, []);
 
   // 打开删除确认
   const handleDeleteClick = useCallback((providerId: string) => {
@@ -117,42 +123,28 @@ export function MyProvidersPageClient({
       await providerService.deletePrivateProvider(userId, deletingProviderId);
       toast.success(t("providers.toast_delete_success"));
       await refresh();
-    } catch (error: unknown) {
-      console.error(t("providers.toast_delete_error"), error);
-
-      let message = t("providers.toast_delete_error");
-      if (typeof error === "object" && error !== null) {
-        const maybeAxiosError = error as {
-          response?: { data?: { detail?: string } };
-          message?: string;
-        };
-
-        message =
-          maybeAxiosError.response?.data?.detail ||
-          maybeAxiosError.message ||
-          message;
-      }
-
-      toast.error(message);
+    } catch (error) {
+      showError(error, {
+        context: t("providers.toast_delete_error"),
+        onRetry: () => handleDeleteConfirm()
+      });
     } finally {
       setIsDeleting(false);
       setDeleteConfirmOpen(false);
       setDeletingProviderId(null);
     }
-  }, [deletingProviderId, userId, refresh, t]);
+  }, [deletingProviderId, userId, refresh, t, showError]);
 
   // 查看详情
   const handleViewDetails = useCallback((providerId: string) => {
-    // TODO: 导航到详情页面
-    console.log("View details", providerId);
-    toast.info(t("providers.toast_details_pending"));
-  }, [t]);
+    // 使用Next.js原生导航
+    router.push(`/dashboard/providers/${providerId}`);
+  }, [router]);
 
   // 查看模型
   const handleViewModels = useCallback((providerId: string) => {
-    // TODO: 实现模型查看功能
-    console.log("View models", providerId);
-    toast.info("模型查看功能开发中");
+    setViewingModelsProviderId(providerId);
+    setModelsDialogOpen(true);
   }, []);
 
   return (
@@ -238,11 +230,20 @@ export function MyProvidersPageClient({
         />
       )}
 
-      {/* 创建表单对话框 */}
+      {/* 创建/编辑表单对话框 */}
       <ProviderFormEnhanced
         open={formOpen}
-        onOpenChange={setFormOpen}
-        onSuccess={handleFormSuccess}
+        onOpenChange={(open) => {
+          setFormOpen(open);
+          if (!open) {
+            setEditingProvider(null);
+          }
+        }}
+        onSuccess={() => {
+          handleFormSuccess();
+          setEditingProvider(null);
+        }}
+        editingProvider={editingProvider}
       />
 
       {/* 删除确认对话框 */}
@@ -278,6 +279,23 @@ export function MyProvidersPageClient({
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* 模型查看对话框 */}
+      <ProviderModelsDialog
+        open={modelsDialogOpen}
+        onOpenChange={setModelsDialogOpen}
+        providerId={viewingModelsProviderId}
+        modelsPathByProvider={{}}
+        providerModels={{}}
+        selectedModelByProvider={{}}
+        newModelNameByProvider={{}}
+        onModelsPathChange={() => {}}
+        onAddModel={() => {}}
+        onRemoveModel={() => {}}
+        onSelectModel={() => {}}
+        onModelNameChange={() => {}}
+        onSave={() => setModelsDialogOpen(false)}
+      />
     </div>
   );
 }

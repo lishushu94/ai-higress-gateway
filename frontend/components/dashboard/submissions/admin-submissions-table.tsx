@@ -14,6 +14,11 @@ import { Eye, CheckCircle } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { ProviderSubmission, SubmissionStatus } from "@/http/provider-submission";
 import { formatRelativeTime } from "@/lib/date-utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface AdminSubmissionsTableProps {
   submissions: ProviderSubmission[];
@@ -83,23 +88,32 @@ export function AdminSubmissionsTable({
                 {submission.reviewed_at ? formatDate(submission.reviewed_at) : "-"}
               </TableCell>
               <TableCell className="text-right">
-                <Button
-                  variant={submission.approval_status === "pending" ? "default" : "ghost"}
-                  size="sm"
-                  onClick={() => onReview(submission)}
-                >
-                  {submission.approval_status === "pending" ? (
-                    <>
-                      <CheckCircle className="w-4 h-4 mr-1" />
-                      {t("submissions.action_review")}
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="w-4 h-4 mr-1" />
-                      {t("submissions.action_view")}
-                    </>
-                  )}
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant={submission.approval_status === "pending" ? "default" : "ghost"}
+                      size="sm"
+                      onClick={() => onReview(submission)}
+                    >
+                      {submission.approval_status === "pending" ? (
+                        <>
+                          <CheckCircle className="w-4 h-4 mr-1" />
+                          {t("submissions.action_review")}
+                        </>
+                      ) : (
+                        <>
+                          <Eye className="w-4 h-4 mr-1" />
+                          {t("submissions.action_view")}
+                        </>
+                      )}
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {submission.approval_status === "pending"
+                      ? t("submissions.action_review")
+                      : t("submissions.action_view")}
+                  </TooltipContent>
+                </Tooltip>
               </TableCell>
             </TableRow>
           ))}

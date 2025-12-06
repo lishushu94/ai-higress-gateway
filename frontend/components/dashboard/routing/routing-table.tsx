@@ -18,6 +18,12 @@ import {
     TableRow,
 } from "@/components/ui/table";
 import { Network, Edit } from "lucide-react";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useI18n } from "@/lib/i18n-context";
 
 type RoutingStatus = "Active" | "Inactive";
 
@@ -36,22 +42,33 @@ interface RoutingTableProps {
 }
 
 export function RoutingTable({ routingRules, onEdit }: RoutingTableProps) {
+    const { t } = useI18n();
+
+    const getStatusLabel = (status: RoutingStatus) =>
+        status === "Active"
+            ? t("routing.rules_status_active")
+            : t("routing.rules_status_inactive");
+
     return (
         <Card>
             <CardHeader>
-                <CardTitle>Active Routing Rules</CardTitle>
-                <CardDescription>Rules are evaluated in order from top to bottom</CardDescription>
+                <CardTitle>{t("routing.rules_table_title")}</CardTitle>
+                <CardDescription>
+                    {t("routing.rules_table_description")}
+                </CardDescription>
             </CardHeader>
             <CardContent>
                 <Table>
                     <TableHeader>
                         <TableRow>
-                            <TableHead>Name</TableHead>
-                            <TableHead>Strategy</TableHead>
-                            <TableHead>Models</TableHead>
-                            <TableHead>Weight/Config</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
+                            <TableHead>{t("routing.rules_table_name")}</TableHead>
+                            <TableHead>{t("routing.rules_table_strategy")}</TableHead>
+                            <TableHead>{t("routing.rules_table_models")}</TableHead>
+                            <TableHead>{t("routing.rules_table_weight")}</TableHead>
+                            <TableHead>{t("routing.rules_table_status")}</TableHead>
+                            <TableHead className="text-right">
+                                {t("routing.rules_table_actions")}
+                            </TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -76,13 +93,24 @@ export function RoutingTable({ routingRules, onEdit }: RoutingTableProps) {
                                                 : "bg-gray-100 text-gray-700"
                                         }`}
                                     >
-                                        {rule.status}
+                                        {getStatusLabel(rule.status)}
                                     </span>
                                 </TableCell>
                                 <TableCell className="text-right">
-                                    <Button variant="ghost" size="sm" onClick={() => onEdit(rule.id)}>
-                                        <Edit className="w-4 h-4" />
-                                    </Button>
+                                    <Tooltip>
+                                        <TooltipTrigger asChild>
+                                            <Button
+                                                variant="ghost"
+                                                size="sm"
+                                                onClick={() => onEdit(rule.id)}
+                                            >
+                                                <Edit className="w-4 h-4" />
+                                            </Button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                            {t("routing.rules_action_edit")}
+                                        </TooltipContent>
+                                    </Tooltip>
                                 </TableCell>
                             </TableRow>
                         ))}

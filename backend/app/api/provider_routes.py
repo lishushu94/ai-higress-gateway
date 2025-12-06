@@ -9,9 +9,9 @@ try:
 except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is missing
     Redis = object  # type: ignore[misc,assignment]
 
-from app.auth import require_api_key
 from app.deps import get_db, get_http_client, get_redis
 from app.errors import not_found
+from app.jwt_auth import require_jwt_token
 from app.logging_config import logger
 from app.schemas import ProviderConfig, RoutingMetrics
 from app.schemas.provider_routes import (
@@ -27,7 +27,7 @@ from app.storage.redis_service import get_routing_metrics
 
 router = APIRouter(
     tags=["providers"],
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_jwt_token)],
 )
 
 @router.get("/providers", response_model=ProvidersResponse)

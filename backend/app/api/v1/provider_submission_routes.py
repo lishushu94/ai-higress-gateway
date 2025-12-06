@@ -21,6 +21,7 @@ from app.services.provider_submission_service import (
     create_submission,
     get_submission,
     list_submissions,
+    list_user_submissions,
     reject_submission,
 )
 from app.services.provider_validation_service import ProviderValidationService
@@ -89,6 +90,25 @@ def list_provider_submissions_endpoint(
         raise forbidden("需要管理员权限")
 
     submissions = list_submissions(db, status_filter)
+    return [ProviderSubmissionResponse.model_validate(s) for s in submissions]
+
+
+@router.get(
+    "/providers/submissions/me",
+    response_model=list[ProviderSubmissionResponse],
+)
+def list_my_provider_submissions_endpoint(
+    status_filter: str | None = Query(
+        default=None,
+        alias="status",
+        description="按审批状态过滤：pending/approved/rejected",
+    ),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> list[ProviderSubmissionResponse]:
+    """当前用户查看自己的共享提供商提交记录。"""
+
+    submissions = list_user_submissions(db, UUID(current_user.id), status_filter)
     return [ProviderSubmissionResponse.model_validate(s) for s in submissions]
 
 
@@ -164,4 +184,3 @@ def cancel_submission_endpoint(
 
 
 __all__ = ["router"]
-

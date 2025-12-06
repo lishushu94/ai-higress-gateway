@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/select";
 import { ProviderSelector } from "./provider-selector";
 import { useApiKeys } from "@/lib/swr/use-api-keys";
+import { useErrorDisplay } from "@/lib/errors";
 import type { ApiKey, CreateApiKeyRequest, UpdateApiKeyRequest } from "@/lib/api-types";
 import { toast } from "sonner";
 
@@ -46,6 +47,7 @@ export function ApiKeyDialog({
     onSuccess,
 }: ApiKeyDialogProps) {
     const { createApiKey, updateApiKey, creating, updating } = useApiKeys();
+    const { showError } = useErrorDisplay();
     
     const [name, setName] = useState('');
     const [expiry, setExpiry] = useState<'week' | 'month' | 'year' | 'never'>('never');
@@ -107,9 +109,10 @@ export function ApiKeyDialog({
                 toast.success('API Key 更新成功');
                 onOpenChange(false);
             }
-        } catch (error: any) {
-            const message = error.response?.data?.detail || error.message || '操作失败';
-            toast.error(message);
+        } catch (error) {
+            showError(error, {
+                context: mode === 'create' ? '创建 API Key' : '更新 API Key'
+            });
         }
     };
 

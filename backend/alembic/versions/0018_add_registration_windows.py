@@ -15,19 +15,47 @@ def upgrade() -> None:
         "closed",
         name="registrationwindowstatus",
     )
-    status_enum.create(op.get_bind(), checkfirst=True)
 
+    # NOTE: we do not call status_enum.create() explicitly here.
+    # Alembic/SQLAlchemy will create the underlying PostgreSQL enum
+    # automatically when the table is created, and will use a
+    # "check first" pattern to avoid duplicate CREATE TYPE calls.
     op.create_table(
         "registration_windows",
         sa.Column("id", postgresql.UUID(as_uuid=True), nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("updated_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
+        sa.Column(
+            "updated_at",
+            sa.DateTime(timezone=True),
+            server_default=sa.func.now(),
+            nullable=False,
+        ),
         sa.Column("start_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("end_time", sa.DateTime(timezone=True), nullable=False),
         sa.Column("max_registrations", sa.Integer(), nullable=False),
-        sa.Column("registered_count", sa.Integer(), nullable=False, server_default="0"),
-        sa.Column("auto_activate", sa.Boolean(), nullable=False, server_default=sa.text("true")),
-        sa.Column("status", status_enum, nullable=False, server_default="scheduled"),
+        sa.Column(
+            "registered_count",
+            sa.Integer(),
+            nullable=False,
+            server_default="0",
+        ),
+        sa.Column(
+            "auto_activate",
+            sa.Boolean(),
+            nullable=False,
+            server_default=sa.text("true"),
+        ),
+        sa.Column(
+            "status",
+            status_enum,
+            nullable=False,
+            server_default="scheduled",
+        ),
         sa.PrimaryKeyConstraint("id"),
     )
     op.create_index(

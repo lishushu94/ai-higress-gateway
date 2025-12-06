@@ -14,6 +14,9 @@ import { usersTranslations } from "./users";
 import { submissionsTranslations } from "./submissions";
 import { sessionsTranslations } from "./sessions";
 import { permissionsTranslations } from "./permissions";
+import { errorsTranslations } from "./errors";
+import { apiKeysTranslations } from "./api-keys";
+import { providerPresetsTranslations } from "./provider-presets";
 
 // Function to merge translation objects
 const mergeTranslations = (
@@ -49,7 +52,10 @@ export const allTranslations = mergeTranslations(
   usersTranslations,
   submissionsTranslations,
   sessionsTranslations,
-  permissionsTranslations
+  permissionsTranslations,
+  errorsTranslations,
+  apiKeysTranslations,
+  providerPresetsTranslations
 );
 
 // Export individual translation modules for dynamic loading
@@ -69,4 +75,7 @@ export {
   submissionsTranslations,
   sessionsTranslations,
   permissionsTranslations,
+  errorsTranslations,
+  apiKeysTranslations,
+  providerPresetsTranslations,
 };

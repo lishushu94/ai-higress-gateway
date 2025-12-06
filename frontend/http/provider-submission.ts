@@ -51,6 +51,22 @@ export const providerSubmissionService = {
   },
 
   /**
+   * 从用户私有提供商一键提交到共享池
+   *
+   * 后端会自动读取该私有 Provider 的配置和上游密钥并进行验证，
+   * 前端无需再提交表单字段。
+   */
+  submitFromPrivateProvider: async (
+    userId: string,
+    providerId: string,
+  ): Promise<ProviderSubmission> => {
+    const response = await httpClient.post(
+      `/users/${userId}/private-providers/${providerId}/submit-shared`,
+    );
+    return response.data;
+  },
+
+  /**
    * 获取当前用户的提交列表
    */
   getMySubmissions: async (): Promise<ProviderSubmission[]> => {

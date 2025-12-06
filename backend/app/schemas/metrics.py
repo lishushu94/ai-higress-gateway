@@ -116,11 +116,120 @@ class APIKeyMetricsSummary(BaseModel):
     )
 
 
+class OverviewMetricsSummary(BaseModel):
+    """
+    仪表盘概览使用的全局汇总指标。
+
+    - total_requests / success_requests / error_requests：当前时间范围内的总请求、成功数与失败数；
+    - *_prev 字段：上一对比周期的同类指标（若无法计算则为 null）；
+    - success_rate / success_rate_prev：成功率，范围 [0,1]。
+    """
+
+    time_range: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+
+    total_requests: int
+    success_requests: int
+    error_requests: int
+    success_rate: float
+
+    total_requests_prev: int | None = Field(
+        None,
+        description="上一对比周期的总请求数，若不可用则为 null",
+    )
+    success_requests_prev: int | None = Field(
+        None,
+        description="上一对比周期的成功请求数，若不可用则为 null",
+    )
+    error_requests_prev: int | None = Field(
+        None,
+        description="上一对比周期的失败请求数，若不可用则为 null",
+    )
+    success_rate_prev: float | None = Field(
+        None,
+        description="上一对比周期的成功率 [0,1]，若不可用则为 null",
+    )
+
+    active_providers: int = Field(
+        ...,
+        description="当前时间范围内有流量的 Provider 数量",
+    )
+    active_providers_prev: int | None = Field(
+        None,
+        description="上一对比周期有流量的 Provider 数量，若不可用则为 null",
+    )
+
+
+class ActiveProviderMetrics(BaseModel):
+    """
+    单个 Provider 在给定时间范围内的聚合指标。
+    """
+
+    provider_id: str = Field(..., description="Provider ID，例如 openai")
+    total_requests: int = Field(..., description="总请求数")
+    success_requests: int = Field(..., description="成功请求数")
+    error_requests: int = Field(..., description="失败请求数")
+    success_rate: float = Field(..., description="成功率 [0,1]")
+    latency_p95_ms: float | None = Field(
+        None,
+        description="P95 延迟（毫秒），无请求时为 null",
+    )
+
+
+class OverviewActiveProviders(BaseModel):
+    """
+    仪表盘概览页“活跃提供商”卡片使用的数据结构。
+    """
+
+    time_range: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+    items: list[ActiveProviderMetrics] = Field(
+        default_factory=list,
+        description="按请求量排序的活跃 Provider 列表",
+    )
+
+
+class OverviewMetricsTimeSeries(BaseModel):
+    """
+    仪表盘概览页“近期活动”使用的全局时间序列。
+    """
+
+    time_range: str
+    bucket: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+    points: list[MetricsDataPoint] = Field(default_factory=list)
+
+
 __all__ = [
     "APIKeyMetricsSummary",
+    "ActiveProviderMetrics",
     "MetricsBucket",
     "MetricsDataPoint",
     "MetricsTimeRange",
+    "OverviewActiveProviders",
+    "OverviewMetricsSummary",
+    "OverviewMetricsTimeSeries",
     "ProviderMetricsSummary",
     "ProviderMetricsTimeSeries",
     "UserMetricsSummary",

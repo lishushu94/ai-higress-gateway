@@ -20,6 +20,7 @@ from sqlalchemy.orm import Session
 
 from app.auth import AuthenticatedAPIKey, require_api_key
 from app.deps import get_db, get_redis
+from app.jwt_auth import require_jwt_token
 from app.services.chat_routing_service import HealthResponse, ModelsResponse, _get_or_fetch_models
 
 router = APIRouter(tags=["gateway"])
@@ -63,7 +64,7 @@ async def list_models_v1(
 
 @router.get(
     "/context/{session_id}",
-    dependencies=[Depends(require_api_key)],
+    dependencies=[Depends(require_jwt_token)],
 )
 async def get_context(
     session_id: str,

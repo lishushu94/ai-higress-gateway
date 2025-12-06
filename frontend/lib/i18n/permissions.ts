@@ -16,6 +16,8 @@ export const permissionsTranslations: Record<Language, Record<string, string>> =
     "permissions.table_notes": "Notes",
     "permissions.table_status": "Status",
     "permissions.table_actions": "Actions",
+    "permissions.action_edit": "Edit permission",
+    "permissions.action_delete": "Delete permission",
     
     // Status
     "permissions.status_active": "Active",
@@ -94,6 +96,8 @@ export const permissionsTranslations: Record<Language, Record<string, string>> =
     "permissions.table_notes": "备注",
     "permissions.table_status": "状态",
     "permissions.table_actions": "操作",
+    "permissions.action_edit": "编辑权限",
+    "permissions.action_delete": "删除权限",
     
     // Status
     "permissions.status_active": "有效",

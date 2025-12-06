@@ -1,12 +1,14 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { UserCircle, Plus, Edit, Trash2, Shield, Key } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { adminService, Role } from "@/http/admin";
@@ -15,6 +17,7 @@ import { UserInfo } from "@/http/auth";
 import { toast } from "sonner";
 
 export default function UsersPage() {
+    const router = useRouter();
     const { t } = useI18n();
     const [users, setUsers] = useState<UserInfo[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
@@ -174,28 +177,58 @@ export default function UsersPage() {
                                     <TableCell>{getStatusBadge(user.is_active)}</TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end space-x-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    window.location.href = `/system/users/${user.id}/roles`;
-                                                }}
-                                            >
-                                                <Shield className="w-4 h-4" />
-                                            </Button>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => window.location.href = `/system/users/${user.id}/permissions`}
-                                            >
-                                                <Key className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm">
-                                                <Edit className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm">
-                                                <Trash2 className="w-4 h-4 text-destructive" />
-                                            </Button>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            router.push(`/system/users/${user.id}/roles`);
+                                                        }}
+                                                    >
+                                                        <Shield className="w-4 h-4" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("users.tooltip_roles")}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            router.push(`/system/users/${user.id}/permissions`);
+                                                        }}
+                                                    >
+                                                        <Key className="w-4 h-4" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("users.tooltip_permissions")}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button variant="ghost" size="sm">
+                                                        <Edit className="w-4 h-4" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("users.tooltip_edit")}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button variant="ghost" size="sm">
+                                                        <Trash2 className="w-4 h-4 text-destructive" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("users.tooltip_delete")}
+                                                </TooltipContent>
+                                            </Tooltip>
                                         </div>
                                     </TableCell>
                                 </TableRow>

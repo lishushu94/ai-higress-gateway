@@ -9,17 +9,26 @@ from app.deps import get_db
 from app.errors import bad_request, forbidden, not_found
 from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.schemas import (
+    ProviderSubmissionRequest,
+    ProviderSubmissionResponse,
     UserProviderCreateRequest,
     UserProviderResponse,
     UserProviderUpdateRequest,
     UserQuotaResponse,
 )
+from app.services.encryption import decrypt_secret
+from app.services.provider_submission_service import (
+    ProviderSubmissionServiceError,
+    create_submission,
+)
+from app.services.provider_validation_service import ProviderValidationService
 from app.services.user_permission_service import UserPermissionService
 from app.services.user_provider_service import (
     UserProviderNotFoundError,
     UserProviderServiceError,
     count_user_private_providers,
     create_private_provider,
+    get_private_provider_by_id,
     list_private_providers,
     update_private_provider,
 )
@@ -149,6 +158,84 @@ def update_private_provider_endpoint(
         raise bad_request(str(exc))
 
     return UserProviderResponse.model_validate(provider)
+
+
+@router.post(
+    "/users/{user_id}/private-providers/{provider_id}/submit-shared",
+    response_model=ProviderSubmissionResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def submit_private_provider_to_shared_pool_endpoint(
+    user_id: UUID,
+    provider_id: str,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> ProviderSubmissionResponse:
+    """
+    将用户的私有 Provider 一键提交到共享池，进入管理员审核流程。
+
+    - 仅允许本人或超级管理员操作；
+    - 需要具备 `submit_shared_provider` 权限；
+    - 会从对应私有 Provider 上选择一条启用中的上游 API 密钥进行验证；
+    - 验证通过后创建一条 ProviderSubmission 记录，状态为 pending。
+    """
+
+    # 只能操作自己的私有 Provider
+    _ensure_can_manage_user(current_user, user_id)
+
+    perm = UserPermissionService(db)
+    if not perm.has_permission(user_id, "submit_shared_provider"):
+        raise forbidden("当前用户未被授予提交共享提供商的权限")
+
+    # 查找对应的私有 Provider（确保 owner_id/visibility 匹配）
+    provider = get_private_provider_by_id(db, user_id, provider_id)
+    if provider is None:
+        raise not_found(f"私有提供商 '{provider_id}' 不存在")
+
+    # 从 Provider 的上游密钥中挑选一条启用中的密钥
+    active_key = next(
+        (k for k in provider.api_keys if getattr(k, "status", "") == "active"),
+        None,
+    )
+    if active_key is None:
+        raise bad_request("当前私有提供商未配置可用的上游 API 密钥")
+
+    # 解密上游 API Key
+    try:
+        api_key_plain = decrypt_secret(active_key.encrypted_key)
+    except ValueError:
+        raise bad_request("无法解密上游 API 密钥，请联系管理员")
+
+    # 复用 ProviderValidationService 做连通性验证
+    validator = ProviderValidationService()
+    validation = await validator.validate_provider_config(
+        provider.base_url,
+        api_key_plain,
+        provider.provider_type,
+    )
+    if not validation.is_valid:
+        raise bad_request(f"提供商配置验证失败: {validation.error_message or '未知错误'}")
+
+    # 构造提交请求 payload，并创建提交记录
+    payload = ProviderSubmissionRequest(
+        name=provider.name,
+        provider_id=provider.provider_id,
+        base_url=provider.base_url,
+        provider_type=provider.provider_type or "native",
+        api_key=api_key_plain,
+    )
+
+    try:
+        submission = create_submission(
+            db,
+            user_id,
+            payload,
+            metadata=validation.metadata,
+        )
+    except ProviderSubmissionServiceError as exc:
+        raise bad_request(str(exc))
+
+    return ProviderSubmissionResponse.model_validate(submission)
 
 
 __all__ = ["router"]

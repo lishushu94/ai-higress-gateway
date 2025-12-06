@@ -15,6 +15,10 @@ export const usersTranslations: Record<Language, Record<string, string>> = {
     "users.roles_dialog_title": "Manage User Roles",
     "users.roles_dialog_desc": "Assign roles to this user",
     "users.select_roles": "Select roles for this user",
+    "users.tooltip_roles": "Manage user roles",
+    "users.tooltip_permissions": "Manage permissions",
+    "users.tooltip_edit": "Edit user",
+    "users.tooltip_delete": "Delete user",
     // User roles page
     "users.roles_search_placeholder": "Search roles...",
     "users.assigned_roles": "Assigned Roles",
@@ -37,6 +41,10 @@ export const usersTranslations: Record<Language, Record<string, string>> = {
     "users.roles_dialog_title": "管理用户角色",
     "users.roles_dialog_desc": "为该用户分配角色",
     "users.select_roles": "为该用户选择角色",
+    "users.tooltip_roles": "管理用户角色",
+    "users.tooltip_permissions": "管理权限",
+    "users.tooltip_edit": "编辑用户",
+    "users.tooltip_delete": "删除用户",
     // User roles page
     "users.roles_search_placeholder": "搜索角色名称或编码...",
     "users.assigned_roles": "已分配角色",

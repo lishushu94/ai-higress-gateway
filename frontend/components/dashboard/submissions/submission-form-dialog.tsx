@@ -27,6 +27,7 @@ import {
   providerSubmissionService,
   CreateSubmissionRequest,
 } from "@/http/provider-submission";
+import { useErrorDisplay } from "@/lib/errors";
 
 interface SubmissionFormDialogProps {
   open: boolean;
@@ -40,6 +41,7 @@ export function SubmissionFormDialog({
   onSuccess,
 }: SubmissionFormDialogProps) {
   const { t } = useI18n();
+  const { showError } = useErrorDisplay();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const {
@@ -65,19 +67,11 @@ export function SubmissionFormDialog({
       reset();
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
-      console.error("Failed to submit provider:", error);
-      const message =
-        error.response?.data?.detail ||
-        error.message ||
-        t("submissions.toast_submit_error");
-      
-      // 检查是否是权限错误
-      if (error.response?.status === 403) {
-        toast.error(t("submissions.toast_no_permission"));
-      } else {
-        toast.error(message);
-      }
+    } catch (error) {
+      showError(error, {
+        context: t("submissions.toast_submit_error"),
+        onRetry: () => onSubmit(data),
+      });
     } finally {
       setIsSubmitting(false);
     }

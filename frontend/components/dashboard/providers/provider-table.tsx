@@ -26,6 +26,11 @@ import {
 import Link from "next/link";
 import { Server, Settings, Plus, Minus, Pencil, Trash2, Brain, Eye } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type ProviderStatus = "Active" | "Inactive";
 
@@ -118,16 +123,23 @@ export function ProviderTable({
                                 </TableCell>
                                 <TableCell className="text-right">
                                     <DropdownMenu>
-                                        <DropdownMenuTrigger asChild>
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                aria-label={t("providers.table_column_actions")}
-                                            >
-                                                <Settings className="w-4 h-4" />
-                                            </Button>
-                                        </DropdownMenuTrigger>
-                                        <DropdownMenuContent align="end">
+                                        <Tooltip>
+                                            <TooltipTrigger asChild>
+                                                <DropdownMenuTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        aria-label={t("providers.table_column_actions")}
+                                                    >
+                                                        <Settings className="w-4 h-4" />
+                                                    </Button>
+                                                </DropdownMenuTrigger>
+                                            </TooltipTrigger>
+                                            <TooltipContent>
+                                                {t("providers.action_settings")}
+                                            </TooltipContent>
+                                        </Tooltip>
+                                            <DropdownMenuContent align="end">
                                             <DropdownMenuItem asChild>
                                                 <Link href={`/dashboard/providers/${provider.id}`} className="cursor-pointer">
                                                     <Eye className="mr-2 h-4 w-4" />

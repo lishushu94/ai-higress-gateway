@@ -9,6 +9,11 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Edit, Trash2 } from "lucide-react";
 import { UserPermission } from "@/lib/api-types";
 import { useI18n } from "@/lib/i18n-context";
@@ -83,20 +88,34 @@ export function PermissionsTable({
             </TableCell>
             <TableCell className="text-right">
               <div className="flex items-center justify-end space-x-2">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onEdit(permission)}
-                >
-                  <Edit className="w-4 h-4" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => onDelete(permission)}
-                >
-                  <Trash2 className="w-4 h-4 text-destructive" />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onEdit(permission)}
+                    >
+                      <Edit className="w-4 h-4" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t("permissions.action_edit")}
+                  </TooltipContent>
+                </Tooltip>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => onDelete(permission)}
+                    >
+                      <Trash2 className="w-4 h-4 text-destructive" />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    {t("permissions.action_delete")}
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </TableCell>
           </TableRow>

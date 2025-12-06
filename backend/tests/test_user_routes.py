@@ -274,3 +274,57 @@ def test_non_superuser_cannot_ban_user(client_with_db):
     )
 
     assert resp_ban.status_code == 403
+
+
+def test_admin_can_list_all_users(client_with_db):
+    client, session_factory, admin_id, _redis = client_with_db
+
+    # 先通过 /users 创建一个普通用户，确保列表中有多条记录
+    payload = {
+        "username": "list-user",
+        "email": "list-user@example.com",
+        "password": "Secret123!",
+    }
+    resp = client.post("/users", json=payload, headers=_jwt_auth_headers(admin_id))
+    assert resp.status_code == 201
+    created_user_id = resp.json()["id"]
+
+    # 使用管理员身份获取用户列表
+    resp_list = client.get("/admin/users", headers=_jwt_auth_headers(admin_id))
+    assert resp_list.status_code == 200
+
+    data = resp_list.json()
+    assert isinstance(data, list)
+    ids = {item["id"] for item in data}
+
+    # 列表中应包含管理员和新创建的普通用户
+    assert admin_id in ids
+    assert created_user_id in ids
+
+    # 校验返回结构中包含角色与权限标记字段，便于前端展示
+    sample = next(item for item in data if item["id"] == created_user_id)
+    assert "role_codes" in sample
+    assert isinstance(sample["role_codes"], list)
+    assert "permission_flags" in sample
+    assert isinstance(sample["permission_flags"], list)
+
+
+def test_non_superuser_cannot_list_users(client_with_db):
+    client, session_factory, admin_id, _redis = client_with_db
+
+    # 新建一个非超级用户
+    with session_factory() as session:
+        worker_user, _ = seed_user_and_key(
+            session,
+            token_plain="worker-list",
+            username="worker-list",
+            email="worker-list@example.com",
+            is_superuser=False,
+        )
+
+    worker_headers = _jwt_auth_headers(str(worker_user.id))
+    resp = client.get("/admin/users", headers=worker_headers)
+
+    assert resp.status_code == 403
+    body = resp.json()
+    assert body["detail"]["message"] == "需要管理员权限"

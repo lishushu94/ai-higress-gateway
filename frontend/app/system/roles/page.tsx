@@ -1,12 +1,18 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { Shield, Plus, Edit, Trash2, Lock } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { adminService, Role, Permission } from "@/http/admin";
@@ -14,6 +20,7 @@ import { toast } from "sonner";
 
 export default function RolesPage() {
     const { t } = useI18n();
+    const router = useRouter();
     const [roles, setRoles] = useState<Role[]>([]);
     const [permissions, setPermissions] = useState<Permission[]>([]);
     const [loading, setLoading] = useState(true);
@@ -165,25 +172,58 @@ export default function RolesPage() {
                                     <TableCell className="text-muted-foreground">{role.description}</TableCell>
                                     <TableCell className="text-right">
                                         <div className="flex items-center justify-end space-x-2">
-                                            <Button
-                                                variant="ghost"
-                                                size="sm"
-                                                onClick={() => {
-                                                    window.location.href = `/system/roles/${role.id}/permissions`;
-                                                }}
-                                            >
-                                                <Lock className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" onClick={() => {
-                                                setCurrentRole(role);
-                                                setFormData({ code: role.code, name: role.name, description: role.description || "" });
-                                                setEditOpen(true);
-                                            }}>
-                                                <Edit className="w-4 h-4" />
-                                            </Button>
-                                            <Button variant="ghost" size="sm" onClick={() => handleDelete(role.id)}>
-                                                <Trash2 className="w-4 h-4 text-destructive" />
-                                            </Button>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            router.push(`/system/roles/${role.id}/permissions`);
+                                                        }}
+                                                    >
+                                                        <Lock className="w-4 h-4" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("roles.tooltip_permissions")}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => {
+                                                            setCurrentRole(role);
+                                                            setFormData({
+                                                                code: role.code,
+                                                                name: role.name,
+                                                                description: role.description || "",
+                                                            });
+                                                            setEditOpen(true);
+                                                        }}
+                                                    >
+                                                        <Edit className="w-4 h-4" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("roles.tooltip_edit")}
+                                                </TooltipContent>
+                                            </Tooltip>
+                                            <Tooltip>
+                                                <TooltipTrigger asChild>
+                                                    <Button
+                                                        variant="ghost"
+                                                        size="sm"
+                                                        onClick={() => handleDelete(role.id)}
+                                                    >
+                                                        <Trash2 className="w-4 h-4 text-destructive" />
+                                                    </Button>
+                                                </TooltipTrigger>
+                                                <TooltipContent>
+                                                    {t("roles.tooltip_delete")}
+                                                </TooltipContent>
+                                            </Tooltip>
                                         </div>
                                     </TableCell>
                                 </TableRow>

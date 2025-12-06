@@ -30,8 +30,15 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Key, Copy, Trash2, Edit, Plus, Shield } from "lucide-react";
 import { toast } from "sonner";
+import { useErrorDisplay } from "@/lib/errors";
 import { formatRelativeTime } from "@/lib/date-utils";
 import type { ApiKey } from "@/lib/api-types";
+import {
+    Tooltip,
+    TooltipContent,
+    TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { useI18n } from "@/lib/i18n-context";
 
 interface ApiKeysTableProps {
     apiKeys: ApiKey[];
@@ -48,6 +55,8 @@ export function ApiKeysTable({
     onDelete,
     onCreate,
 }: ApiKeysTableProps) {
+    const { showError } = useErrorDisplay();
+    const { t } = useI18n();
     const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
     const [keyToDelete, setKeyToDelete] = useState<ApiKey | null>(null);
     const [deleting, setDeleting] = useState(false);
@@ -57,7 +66,7 @@ export function ApiKeysTable({
             await navigator.clipboard.writeText(keyPrefix);
             toast.success("Key Prefix 已复制到剪贴板");
         } catch (error) {
-            toast.error("复制失败");
+            showError(error, { context: "复制 Key Prefix" });
         }
     };
 
@@ -75,9 +84,11 @@ export function ApiKeysTable({
             toast.success("API Key 已删除");
             setDeleteDialogOpen(false);
             setKeyToDelete(null);
-        } catch (error: any) {
-            const message = error.response?.data?.detail || error.message || '删除失败';
-            toast.error(message);
+        } catch (error) {
+            showError(error, {
+                context: "删除 API Key",
+                onRetry: () => handleDeleteConfirm()
+            });
         } finally {
             setDeleting(false);
         }
@@ -189,14 +200,23 @@ export function ApiKeysTable({
                                         <TableCell className="font-mono text-sm">
                                             <div className="flex items-center gap-2">
                                                 <span>{apiKey.key_prefix}...</span>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    className="h-6 w-6 p-0"
-                                                    onClick={() => handleCopy(apiKey.key_prefix)}
-                                                >
-                                                    <Copy className="w-3 h-3" />
-                                                </Button>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            className="h-6 w-6 p-0"
+                                                            onClick={() =>
+                                                                handleCopy(apiKey.key_prefix)
+                                                            }
+                                                        >
+                                                            <Copy className="w-3 h-3" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        {t("api_keys.tooltip_copy_prefix")}
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             </div>
                                         </TableCell>
                                         <TableCell className="text-muted-foreground">
@@ -219,20 +239,36 @@ export function ApiKeysTable({
                                         </TableCell>
                                         <TableCell className="text-right">
                                             <div className="flex items-center justify-end space-x-2">
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => onEdit(apiKey)}
-                                                >
-                                                    <Edit className="w-4 h-4" />
-                                                </Button>
-                                                <Button
-                                                    variant="ghost"
-                                                    size="sm"
-                                                    onClick={() => handleDeleteClick(apiKey)}
-                                                >
-                                                    <Trash2 className="w-4 h-4 text-destructive" />
-                                                </Button>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => onEdit(apiKey)}
+                                                        >
+                                                            <Edit className="w-4 h-4" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        {t("api_keys.tooltip_edit")}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() =>
+                                                                handleDeleteClick(apiKey)
+                                                            }
+                                                        >
+                                                            <Trash2 className="w-4 h-4 text-destructive" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        {t("api_keys.tooltip_delete")}
+                                                    </TooltipContent>
+                                                </Tooltip>
                                             </div>
                                         </TableCell>
                                     </TableRow>

@@ -15,6 +15,11 @@ import { Eye, X } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { ProviderSubmission, SubmissionStatus } from "@/http/provider-submission";
 import { formatRelativeTime } from "@/lib/date-utils";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface SubmissionsTableProps {
   submissions: ProviderSubmission[];
@@ -87,24 +92,38 @@ export function SubmissionsTable({
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
                     {onView && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onView(submission)}
-                      >
-                        <Eye className="w-4 h-4 mr-1" />
-                        {t("submissions.action_view")}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onView(submission)}
+                          >
+                            <Eye className="w-4 h-4 mr-1" />
+                            {t("submissions.action_view")}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t("submissions.action_view")}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                     {onCancel && submission.approval_status === "pending" && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => onCancel(submission.id)}
-                      >
-                        <X className="w-4 h-4 mr-1" />
-                        {t("submissions.action_cancel")}
-                      </Button>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => onCancel(submission.id)}
+                          >
+                            <X className="w-4 h-4 mr-1" />
+                            {t("submissions.action_cancel")}
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {t("submissions.action_cancel")}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </div>
                 </TableCell>

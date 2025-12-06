@@ -70,10 +70,29 @@ def create_submission(
     return submission
 
 
-def list_submissions(session: Session, status: Optional[str] = None) -> List[ProviderSubmission]:
+def list_submissions(
+    session: Session,
+    status: Optional[str] = None,
+) -> List[ProviderSubmission]:
     """按可选状态过滤列出提交记录。"""
     stmt: Select[tuple[ProviderSubmission]] = select(ProviderSubmission).order_by(
         ProviderSubmission.created_at.desc()
+    )
+    if status:
+        stmt = stmt.where(ProviderSubmission.approval_status == status)
+    return list(session.execute(stmt).scalars().all())
+
+
+def list_user_submissions(
+    session: Session,
+    user_id: UUID,
+    status: Optional[str] = None,
+) -> List[ProviderSubmission]:
+    """按用户和可选状态过滤列出提交记录。"""
+    stmt: Select[tuple[ProviderSubmission]] = (
+        select(ProviderSubmission)
+        .where(ProviderSubmission.user_id == user_id)
+        .order_by(ProviderSubmission.created_at.desc())
     )
     if status:
         stmt = stmt.where(ProviderSubmission.approval_status == status)
@@ -234,6 +253,6 @@ __all__ = [
     "create_submission",
     "get_submission",
     "list_submissions",
+    "list_user_submissions",
     "reject_submission",
 ]
-

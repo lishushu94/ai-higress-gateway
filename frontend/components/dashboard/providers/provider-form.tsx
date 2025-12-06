@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Form } from "@/components/ui/form";
 import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
+import { useErrorDisplay } from "@/lib/errors";
 import { ProviderPreset } from "@/http/provider-preset";
 import { CreatePrivateProviderRequest, privateProviderService, ApiStyle, SdkVendor } from "@/http/private-provider";
 import { PresetSelector } from "./preset-selector";
@@ -187,13 +188,16 @@ interface ProviderFormEnhancedProps {
     open: boolean;
     onOpenChange: (open: boolean) => void;
     onSuccess?: () => void;
+    editingProvider?: any;
 }
 
 export function ProviderFormEnhanced({
     open,
     onOpenChange,
     onSuccess,
+    editingProvider,
 }: ProviderFormEnhancedProps) {
+    const { showError } = useErrorDisplay();
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(null);
     const [overriddenFields, setOverriddenFields] = useState<Set<string>>(new Set());
@@ -209,9 +213,39 @@ export function ProviderFormEnhanced({
     const transport = form.watch("transport");
     const isSdkTransport = transport === "sdk";
 
+    // 当编辑提供商时，填充表单
+    useEffect(() => {
+        if (editingProvider) {
+            form.reset({
+                presetId: "",
+                name: editingProvider.name || "",
+                providerType: editingProvider.provider_type || "native",
+                transport: editingProvider.transport || "http",
+                sdkVendor: editingProvider.sdk_vendor || "",
+                baseUrl: editingProvider.base_url || "",
+                modelsPath: editingProvider.models_path || "/v1/models",
+                messagesPath: editingProvider.messages_path || "",
+                chatCompletionsPath: editingProvider.chat_completions_path || "/v1/chat/completions",
+                responsesPath: editingProvider.responses_path || "",
+                weight: String(editingProvider.weight || "1"),
+                maxQps: String(editingProvider.max_qps || ""),
+                region: editingProvider.region || "",
+                costInput: String(editingProvider.cost_input || ""),
+                costOutput: String(editingProvider.cost_output || ""),
+                retryableStatusCodes: editingProvider.retryable_status_codes || [],
+                customHeaders: editingProvider.custom_headers || {},
+                staticModels: editingProvider.static_models || [],
+                supportedApiStyles: editingProvider.supported_api_styles || [],
+                apiKey: editingProvider.api_keys?.[0]?.key || "",
+            });
+        } else if (open) {
+            form.reset(providerFormDefaults);
+        }
+    }, [editingProvider, form, open]);
+
     // 当选择预设时，填充表单
     useEffect(() => {
-        if (selectedPreset) {
+        if (selectedPreset && !editingProvider) {
             const presetValues: Partial<ProviderFormValues> = {
                 presetId: selectedPreset.preset_id,
                 providerType: selectedPreset.provider_type,
@@ -240,7 +274,7 @@ export function ProviderFormEnhanced({
                 form.setValue("name", selectedPreset.display_name);
             }
         }
-    }, [selectedPreset, form, overriddenFields]);
+    }, [selectedPreset, form, overriddenFields, editingProvider]);
 
     // 标记字段为已覆盖
     const markFieldAsOverridden = (fieldName: string) => {
@@ -264,56 +298,85 @@ export function ProviderFormEnhanced({
                 throw new Error("用户未登录");
             }
 
-            const payload: CreatePrivateProviderRequest = {
-                preset_id: values.presetId || undefined,
-                name: values.name.trim(),
-                provider_type: values.providerType,
-                transport: values.transport,
-                weight: Number(values.weight),
-            };
-
-            // Base URL（所有模式下都需要）
-            if (values.baseUrl?.trim()) {
-                payload.base_url = values.baseUrl.trim();
-            }
-
-            // SDK 模式下显式传递 sdk_vendor
-            if (values.transport === "sdk" && values.sdkVendor) {
-                payload.sdk_vendor = values.sdkVendor as SdkVendor;
-            }
-
-            // API 路径
-            if (values.modelsPath?.trim()) payload.models_path = values.modelsPath.trim();
-            if (values.messagesPath?.trim()) payload.messages_path = values.messagesPath.trim();
-            if (values.chatCompletionsPath?.trim()) payload.chat_completions_path = values.chatCompletionsPath.trim();
-            if (values.responsesPath?.trim()) payload.responses_path = values.responsesPath.trim();
-
-            // 可选字段
-            if (values.region?.trim()) payload.region = values.region.trim();
-            if (values.maxQps?.trim()) payload.max_qps = Number(values.maxQps);
-            if (values.costInput?.trim()) payload.cost_input = Number(values.costInput);
-            if (values.costOutput?.trim()) payload.cost_output = Number(values.costOutput);
-            if (values.apiKey?.trim()) payload.api_key = values.apiKey.trim();
-
-            // 高级配置
-            if (values.retryableStatusCodes.length > 0) {
-                payload.retryable_status_codes = values.retryableStatusCodes;
-            }
-            if (Object.keys(values.customHeaders).length > 0) {
-                payload.custom_headers = values.customHeaders as Record<string, string>;
-            }
-            if (values.staticModels.length > 0) {
-                payload.static_models = values.staticModels;
-            }
-            if (values.supportedApiStyles.length > 0) {
-                payload.supported_api_styles = values.supportedApiStyles as ApiStyle[];
-            }
-
             // 使用用户级别的 API
             const { providerService } = await import("@/http/provider");
-            await providerService.createPrivateProvider(userId, payload);
             
-            toast.success("Provider 创建成功");
+            if (editingProvider) {
+                // 更新模式
+                const updatePayload = {
+                    name: values.name.trim(),
+                    provider_type: values.providerType,
+                    transport: values.transport,
+                    sdk_vendor: values.transport === "sdk" && values.sdkVendor ? values.sdkVendor as SdkVendor : undefined,
+                    base_url: values.baseUrl?.trim(),
+                    models_path: values.modelsPath?.trim(),
+                    messages_path: values.messagesPath?.trim(),
+                    chat_completions_path: values.chatCompletionsPath?.trim(),
+                    responses_path: values.responsesPath?.trim(),
+                    region: values.region?.trim(),
+                    max_qps: values.maxQps?.trim() ? Number(values.maxQps) : undefined,
+                    cost_input: values.costInput?.trim() ? Number(values.costInput) : undefined,
+                    cost_output: values.costOutput?.trim() ? Number(values.costOutput) : undefined,
+                    weight: Number(values.weight),
+                    retryable_status_codes: values.retryableStatusCodes.length > 0 ? values.retryableStatusCodes : undefined,
+                    custom_headers: Object.keys(values.customHeaders).length > 0 ? values.customHeaders : undefined,
+                    static_models: values.staticModels.length > 0 ? values.staticModels : undefined,
+                    supported_api_styles: values.supportedApiStyles.length > 0 ? values.supportedApiStyles as ApiStyle[] : undefined,
+                };
+
+                await providerService.updatePrivateProvider(userId, editingProvider.provider_id, updatePayload);
+                toast.success("Provider 更新成功");
+            } else {
+                // 创建模式
+                const createPayload: CreatePrivateProviderRequest = {
+                    preset_id: values.presetId || undefined,
+                    name: values.name.trim(),
+                    provider_type: values.providerType,
+                    transport: values.transport,
+                    weight: Number(values.weight),
+                };
+
+                // Base URL（所有模式下都需要）
+                if (values.baseUrl?.trim()) {
+                    createPayload.base_url = values.baseUrl.trim();
+                }
+
+                // SDK 模式下显式传递 sdk_vendor
+                if (values.transport === "sdk" && values.sdkVendor) {
+                    createPayload.sdk_vendor = values.sdkVendor as SdkVendor;
+                }
+
+                // API 路径
+                if (values.modelsPath?.trim()) createPayload.models_path = values.modelsPath.trim();
+                if (values.messagesPath?.trim()) createPayload.messages_path = values.messagesPath.trim();
+                if (values.chatCompletionsPath?.trim()) createPayload.chat_completions_path = values.chatCompletionsPath.trim();
+                if (values.responsesPath?.trim()) createPayload.responses_path = values.responsesPath.trim();
+
+                // 可选字段
+                if (values.region?.trim()) createPayload.region = values.region.trim();
+                if (values.maxQps?.trim()) createPayload.max_qps = Number(values.maxQps);
+                if (values.costInput?.trim()) createPayload.cost_input = Number(values.costInput);
+                if (values.costOutput?.trim()) createPayload.cost_output = Number(values.costOutput);
+                if (values.apiKey?.trim()) createPayload.api_key = values.apiKey.trim();
+
+                // 高级配置
+                if (values.retryableStatusCodes.length > 0) {
+                    createPayload.retryable_status_codes = values.retryableStatusCodes;
+                }
+                if (Object.keys(values.customHeaders).length > 0) {
+                    createPayload.custom_headers = values.customHeaders as Record<string, string>;
+                }
+                if (values.staticModels.length > 0) {
+                    createPayload.static_models = values.staticModels;
+                }
+                if (values.supportedApiStyles.length > 0) {
+                    createPayload.supported_api_styles = values.supportedApiStyles as ApiStyle[];
+                }
+
+                await providerService.createPrivateProvider(userId, createPayload);
+                toast.success("Provider 创建成功");
+            }
+            
             form.reset(providerFormDefaults);
             setSelectedPreset(null);
             setOverriddenFields(new Set());
@@ -323,10 +386,10 @@ export function ProviderFormEnhanced({
             if (onSuccess) {
                 onSuccess();
             }
-        } catch (error: any) {
-            console.error("创建 Provider 失败:", error);
-            const message = error.response?.data?.detail || error.message || "创建失败";
-            toast.error(message);
+        } catch (error) {
+            showError(error, {
+                context: editingProvider ? "更新 Provider" : "创建 Provider"
+            });
         } finally {
             setIsSubmitting(false);
         }
@@ -346,10 +409,12 @@ export function ProviderFormEnhanced({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-primary" />
-                        创建 Private Provider
+                        {editingProvider ? "编辑 Private Provider" : "创建 Private Provider"}
                     </DialogTitle>
                     <DialogDescription>
-                        选择预设快速创建，或完全自定义配置。支持基于预设的字段覆盖。
+                        {editingProvider 
+                            ? "修改提供商配置信息" 
+                            : "选择预设快速创建，或完全自定义配置。支持基于预设的字段覆盖。"}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -389,7 +454,7 @@ export function ProviderFormEnhanced({
                                 取消
                             </Button>
                             <Button type="submit" disabled={isSubmitting}>
-                                {isSubmitting ? "创建中..." : "创建 Provider"}
+                                {isSubmitting ? (editingProvider ? "更新中..." : "创建中...") : (editingProvider ? "更新 Provider" : "创建 Provider")}
                             </Button>
                         </DialogFooter>
                     </form>

@@ -152,3 +152,68 @@ export interface GrantPermissionRequest {
   expires_at?: string;
   notes?: string;
 }
+
+// ============= 指标 / Metrics =============
+
+export interface MetricsDataPoint {
+  window_start: string;
+  total_requests: number;
+  success_requests: number;
+  error_requests: number;
+  latency_avg_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+  error_rate: number;
+}
+
+export interface OverviewMetricsSummary {
+  /**
+   * 时间范围：today / 7d / 30d / all
+   */
+  time_range: string;
+  /**
+   * 传输模式过滤：http / sdk / all
+   */
+  transport: string;
+  /**
+   * 流式过滤：true / false / all
+   */
+  is_stream: string;
+
+  total_requests: number;
+  success_requests: number;
+  error_requests: number;
+  success_rate: number;
+
+  total_requests_prev: number | null;
+  success_requests_prev: number | null;
+  error_requests_prev: number | null;
+  success_rate_prev: number | null;
+
+  active_providers: number;
+  active_providers_prev: number | null;
+}
+
+export interface ActiveProviderMetrics {
+  provider_id: string;
+  total_requests: number;
+  success_requests: number;
+  error_requests: number;
+  success_rate: number;
+  latency_p95_ms: number | null;
+}
+
+export interface OverviewActiveProviders {
+  time_range: string;
+  transport: string;
+  is_stream: string;
+  items: ActiveProviderMetrics[];
+}
+
+export interface OverviewMetricsTimeSeries {
+  time_range: string;
+  bucket: string;
+  transport: string;
+  is_stream: string;
+  points: MetricsDataPoint[];
+}

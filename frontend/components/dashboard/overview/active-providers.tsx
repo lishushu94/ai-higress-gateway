@@ -1,38 +1,79 @@
 "use client";
 
-import React from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React, { useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { ProviderStatusCard } from "../common";
 import { useI18n } from "@/lib/i18n-context";
+import { useActiveProvidersOverview } from "@/lib/swr/use-overview-metrics";
 
-const providers = [
-    { name: "OpenAI", statusKey: "overview.status_healthy", latency: "245ms", success: "99.9%" },
-    { name: "Anthropic", statusKey: "overview.status_healthy", latency: "180ms", success: "99.8%" },
-    { name: "Google Gemini", statusKey: "overview.status_healthy", latency: "210ms", success: "99.9%" },
-    { name: "Azure OpenAI", statusKey: "overview.status_degraded", latency: "850ms", success: "95.2%" },
-];
+function formatLatency(latencyMs: number | null): string {
+  if (latencyMs == null) {
+    return "--";
+  }
+  return `${Math.round(latencyMs)}ms`;
+}
+
+function formatSuccessRate(rate: number): string {
+  return `${(rate * 100).toFixed(1)}%`;
+}
+
+function getStatusKey(successRate: number, latencyP95Ms: number | null): string {
+  const latency = latencyP95Ms ?? 0;
+  // 简单规则：高成功率且延迟较低视为“健康”，否则视为“性能下降”
+  if (successRate >= 0.98 && latency <= 800) {
+    return "overview.status_healthy";
+  }
+  return "overview.status_degraded";
+}
 
 export function ActiveProviders() {
-    const { t } = useI18n();
+  const { t } = useI18n();
+  const { data, loading } = useActiveProvidersOverview();
 
-    return (
-        <div>
-            <div className="flex items-center justify-between mb-4">
-                <h2 className="text-xl font-bold">{t("dashboard.active_providers")}</h2>
-                <Button size="sm" variant="outline">{t("overview.view_all")}</Button>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                {providers.map((provider, index) => (
-                    <ProviderStatusCard 
-                        key={index}
-                        name={provider.name}
-                        statusKey={provider.statusKey}
-                        latency={provider.latency}
-                        success={provider.success}
-                    />
-                ))}
-            </div>
-        </div>
-    );
+  const providers = useMemo(() => {
+    if (!data) {
+      return [];
+    }
+    return data.items.map((item) => ({
+      name: item.provider_id,
+      statusKey: getStatusKey(item.success_rate, item.latency_p95_ms),
+      latency: formatLatency(item.latency_p95_ms),
+      success: formatSuccessRate(item.success_rate),
+    }));
+  }, [data]);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold">{t("dashboard.active_providers")}</h2>
+        <Button size="sm" variant="outline">
+          {t("overview.view_all")}
+        </Button>
+      </div>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {loading && providers.length === 0 ? (
+          // 初次加载时的简单占位
+          <>
+            <ProviderStatusCard
+              name="..."
+              statusKey="overview.status_healthy"
+              latency="--"
+              success="--"
+            />
+          </>
+        ) : (
+          providers.map((provider, index) => (
+            <ProviderStatusCard
+              key={index}
+              name={provider.name}
+              statusKey={provider.statusKey}
+              latency={provider.latency}
+              success={provider.success}
+            />
+          ))
+        )}
+      </div>
+    </div>
+  );
 }
+

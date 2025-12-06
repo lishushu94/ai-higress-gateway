@@ -45,6 +45,9 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
     "submissions.action_review": "Review",
     "submissions.action_cancel": "Cancel",
     "submissions.action_delete": "Delete",
+
+    // Quick share from private provider
+    "submissions.share_from_private_button": "Share to shared pool",
     
     // Submit dialog
     "submissions.submit_dialog_title": "Submit Shared Provider",
@@ -85,7 +88,7 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
     
     // Messages
     "submissions.empty_my": "No submissions yet",
-    "submissions.empty_my_description": "Click 'Submit New Provider' to share a provider with the community",
+    "submissions.empty_my_description": "You can share a provider from the My Providers page by using the \"Share to shared pool\" action in provider details.",
     "submissions.empty_admin": "No submissions found",
     "submissions.empty_admin_description": "No provider submissions match the current filter",
     "submissions.loading": "Loading...",
@@ -145,6 +148,9 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
     "submissions.action_review": "审核",
     "submissions.action_cancel": "取消",
     "submissions.action_delete": "删除",
+
+    // Quick share from private provider
+    "submissions.share_from_private_button": "分享到共享池",
     
     // Submit dialog
     "submissions.submit_dialog_title": "提交共享提供商",
@@ -185,7 +191,7 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
     
     // Messages
     "submissions.empty_my": "还没有投稿",
-    "submissions.empty_my_description": "点击\"提交新提供商\"按钮与社区分享提供商",
+    "submissions.empty_my_description": "先在「我的提供商」中创建私有提供商，然后在详情页点击「分享到共享池」即可发起投稿。",
     "submissions.empty_admin": "未找到投稿",
     "submissions.empty_admin_description": "没有符合当前筛选条件的提供商投稿",
     "submissions.loading": "加载中...",

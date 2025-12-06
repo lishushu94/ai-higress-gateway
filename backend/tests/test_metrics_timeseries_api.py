@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import datetime as dt
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,10 +12,11 @@ from sqlalchemy.pool import StaticPool
 
 from app.db import get_db_session
 from app.deps import get_db, get_redis
+from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.models import Base, ProviderRoutingMetricsHistory
 from app.routes import create_app
 from app.services.api_key_cache import CachedAPIKey
-from tests.utils import InMemoryRedis, auth_headers, seed_user_and_key
+from tests.utils import InMemoryRedis, seed_user_and_key
 
 
 def _insert_sample_metrics(db: Session, *, provider_id: str, logical_model: str) -> None:
@@ -145,6 +146,20 @@ def client_with_db():
 
     app.dependency_overrides[get_redis] = override_get_redis
 
+    async def override_require_jwt_token() -> AuthenticatedUser:
+        # 指标接口仅验证“已登录用户”，这里返回固定的测试用户即可
+        return AuthenticatedUser(
+            id="00000000-0000-0000-0000-000000000000",
+            username="test",
+            email="test@example.com",
+            is_superuser=True,
+            is_active=True,
+            display_name=None,
+            avatar=None,
+        )
+
+    app.dependency_overrides[require_jwt_token] = override_require_jwt_token
+
     with TestingSessionLocal() as session:
         seed_user_and_key(session, token_plain="timeline")
 
@@ -186,7 +201,6 @@ async def test_metrics_timeseries_api(mock_get_cached_api_key, client_with_db):
             "logical_model": logical_model,
             "time_range": "all",
         },
-        headers=auth_headers("timeline"),
     )
 
     assert resp.status_code == 200
@@ -230,7 +244,6 @@ async def test_metrics_summary_api(mock_get_cached_api_key, client_with_db):
             "logical_model": logical_model,
             "time_range": "all",
         },
-        headers=auth_headers("timeline"),
     )
 
     assert resp.status_code == 200
@@ -279,7 +292,6 @@ async def test_user_metrics_summary_api(mock_get_cached_api_key, client_with_db)
             "user_id": str(user_id),  # Convert to string for API call
             "time_range": "all",
         },
-        headers=auth_headers("timeline"),
     )
 
     assert resp.status_code == 200
@@ -327,7 +339,6 @@ async def test_api_key_metrics_summary_api(mock_get_cached_api_key, client_with_
             "api_key_id": str(api_key_id),  # Convert to string for API call
             "time_range": "all",
         },
-        headers=auth_headers("timeline"),
     )
 
     assert resp.status_code == 200
@@ -336,3 +347,144 @@ async def test_api_key_metrics_summary_api(mock_get_cached_api_key, client_with_
     assert data["time_range"] == "all"
     # 样本中 total_requests_1m = 10,11,12 -> 总和 33
     assert data["total_requests"] == 33
+
+
+@patch("app.auth.get_cached_api_key")
+@pytest.mark.asyncio
+async def test_metrics_overview_summary_api(mock_get_cached_api_key, client_with_db):
+    """
+    仪表盘概览接口应能聚合多个 Provider 的全局指标，并返回总请求数与活跃 Provider 数。
+    """
+    client, session_factory = client_with_db
+
+    test_user_id = uuid4()
+    mock_get_cached_api_key.return_value = CachedAPIKey(
+        id=str(uuid4()),
+        user_id=str(test_user_id),
+        user_username="test_user",
+        user_is_active=True,
+        user_is_superuser=False,
+        name="test_key",
+        expires_at=None,
+        has_provider_restrictions=False,
+        allowed_provider_ids=[],
+    )
+
+    with session_factory() as session:
+        # 插入两个 Provider 的样本数据：每个 Provider 3 个时间桶，每桶 10,11,12 请求
+        _insert_sample_metrics(session, provider_id="openai-overview", logical_model="gpt-4")
+        _insert_sample_metrics(session, provider_id="anthropic-overview", logical_model="claude-3")
+
+    resp = client.get(
+        "/metrics/overview/summary",
+        params={
+            "time_range": "all",
+            "transport": "all",
+            "is_stream": "all",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # 两个 Provider，总请求数应为 2 * (10+11+12) = 66
+    assert data["total_requests"] == 66
+    # 活跃 Provider 数为 2
+    assert data["active_providers"] == 2
+
+
+@patch("app.auth.get_cached_api_key")
+@pytest.mark.asyncio
+async def test_metrics_overview_active_providers_api(mock_get_cached_api_key, client_with_db):
+    """
+    活跃 Provider 概览接口应返回按请求量排序的 Provider 列表。
+    """
+    client, session_factory = client_with_db
+
+    test_user_id = uuid4()
+    mock_get_cached_api_key.return_value = CachedAPIKey(
+        id=str(uuid4()),
+        user_id=str(test_user_id),
+        user_username="test_user",
+        user_is_active=True,
+        user_is_superuser=False,
+        name="test_key",
+        expires_at=None,
+        has_provider_restrictions=False,
+        allowed_provider_ids=[],
+    )
+
+    with session_factory() as session:
+        _insert_sample_metrics(session, provider_id="openai-active", logical_model="gpt-4")
+        _insert_sample_metrics(session, provider_id="anthropic-active", logical_model="claude-3")
+
+    resp = client.get(
+        "/metrics/overview/providers",
+        params={
+            "time_range": "all",
+            "transport": "all",
+            "is_stream": "all",
+            "limit": 4,
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["time_range"] == "all"
+    items = data["items"]
+    assert len(items) == 2
+    provider_ids = {item["provider_id"] for item in items}
+    assert provider_ids == {"openai-active", "anthropic-active"}
+    # 每个 Provider 总请求数应为 33（10+11+12），成功数应为 30（9+10+11）
+    for item in items:
+        assert item["total_requests"] == 33
+        assert item["success_requests"] == 30
+        assert item["error_requests"] == 3
+        assert abs(item["success_rate"] - (30 / 33)) < 1e-6
+
+
+@patch("app.auth.get_cached_api_key")
+@pytest.mark.asyncio
+async def test_metrics_overview_timeseries_api(mock_get_cached_api_key, client_with_db):
+    """
+    近期活动时间序列接口应返回按时间排序的全局指标。
+    """
+    client, session_factory = client_with_db
+
+    test_user_id = uuid4()
+    mock_get_cached_api_key.return_value = CachedAPIKey(
+        id=str(uuid4()),
+        user_id=str(test_user_id),
+        user_username="test_user",
+        user_is_active=True,
+        user_is_superuser=False,
+        name="test_key",
+        expires_at=None,
+        has_provider_restrictions=False,
+        allowed_provider_ids=[],
+    )
+
+    with session_factory() as session:
+        _insert_sample_metrics(session, provider_id="openai-activity", logical_model="gpt-4")
+        _insert_sample_metrics(session, provider_id="anthropic-activity", logical_model="claude-3")
+
+    resp = client.get(
+        "/metrics/overview/timeseries",
+        params={
+            "time_range": "all",
+            "bucket": "minute",
+            "transport": "all",
+            "is_stream": "all",
+        },
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["bucket"] == "minute"
+    assert data["time_range"] == "all"
+    points = data["points"]
+    # 至少有 3 个时间桶
+    assert len(points) >= 3
+    # 全局总请求应为两个 Provider 之和：2 * 33 = 66
+    total_requests = sum(p["total_requests"] for p in points)
+    assert total_requests == 66

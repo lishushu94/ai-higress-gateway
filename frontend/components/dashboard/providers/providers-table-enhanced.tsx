@@ -24,6 +24,11 @@ import { Edit, Trash2, Settings, Lock, Globe, Eye, Database, Key } from "lucide-
 import { formatRelativeTime } from "@/lib/date-utils";
 import { useI18n } from "@/lib/i18n-context";
 import { useRouter } from "next/navigation";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface ProvidersTableEnhancedProps {
   privateProviders: Provider[];
@@ -128,46 +133,71 @@ export function ProvidersTableEnhanced({
       <TableCell className="px-4 py-3 text-sm">
         <div className="flex items-center justify-end gap-2">
           {onViewDetails && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onViewDetails(provider.provider_id)}
-              className="h-8 w-8 p-0"
-              title={t("providers.action_view_details")}
-            >
-              <Eye className="w-4 h-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onViewDetails(provider.provider_id)}
+                  className="h-8 w-8 p-0"
+                >
+                  <Eye className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("providers.action_view_details")}
+              </TooltipContent>
+            </Tooltip>
           )}
           {onViewModels && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => onViewModels(provider.provider_id)}
-              className="h-8 w-8 p-0"
-              title={t("providers.action_view_models")}
-            >
-              <Database className="w-4 h-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => onViewModels(provider.provider_id)}
+                  className="h-8 w-8 p-0"
+                >
+                  <Database className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("providers.action_view_models")}
+              </TooltipContent>
+            </Tooltip>
           )}
           {/* 管理密钥按钮 - 仅私有提供商的所有者可见 */}
           {canManageKeys(provider) && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => router.push(`/dashboard/providers/${provider.id}/keys`)}
-              className="h-8 w-8 p-0"
-              title={t("providers.action_manage_keys")}
-            >
-              <Key className="w-4 h-4" />
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => router.push(`/dashboard/providers/${provider.id}/keys`)}
+                  className="h-8 w-8 p-0"
+                >
+                  <Key className="w-4 h-4" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {t("providers.action_manage_keys")}
+              </TooltipContent>
+            </Tooltip>
           )}
           {canModify(provider) && (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                  <Settings className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                      <Settings className="w-4 h-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {t("providers.action_settings")}
+                </TooltipContent>
+              </Tooltip>
               <DropdownMenuContent align="end">
                 {onEdit && (
                   <DropdownMenuItem onClick={() => onEdit(provider)}>

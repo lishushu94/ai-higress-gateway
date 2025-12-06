@@ -22,6 +22,7 @@ import {
   ReviewSubmissionRequest,
 } from "@/http/provider-submission";
 import { formatRelativeTime } from "@/lib/date-utils";
+import { useErrorDisplay } from "@/lib/errors";
 
 interface ReviewDialogProps {
   submission: ProviderSubmission | null;
@@ -37,6 +38,7 @@ export function ReviewDialog({
   onSuccess,
 }: ReviewDialogProps) {
   const { t, language } = useI18n();
+  const { showError } = useErrorDisplay();
   const [isReviewing, setIsReviewing] = useState(false);
 
   const {
@@ -63,13 +65,11 @@ export function ReviewDialog({
       reset();
       onOpenChange(false);
       onSuccess();
-    } catch (error: any) {
-      console.error("Failed to review submission:", error);
-      const message =
-        error.response?.data?.detail ||
-        error.message ||
-        t("submissions.toast_review_error");
-      toast.error(message);
+    } catch (error) {
+      showError(error, {
+        context: t("submissions.toast_review_error"),
+        onRetry: () => handleReview(approved),
+      });
     } finally {
       setIsReviewing(false);
     }

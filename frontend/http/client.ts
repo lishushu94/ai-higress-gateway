@@ -1,16 +1,6 @@
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { tokenManager } from '@/lib/auth/token-manager';
-
-// 错误提示函数
-const showError = (msg: string) => {
-  if (typeof window !== 'undefined') {
-    import('sonner').then(({ toast }) => {
-      toast.error(msg);
-    }).catch(() => {
-      console.error(msg);
-    });
-  }
-};
+import { ErrorHandler } from '@/lib/errors';
 
 // 认证状态变更回调
 let authErrorCallback: (() => void) | null = null;
@@ -117,104 +107,78 @@ const createHttpClient = (): AxiosInstance => {
     async (error: AxiosError) => {
       const originalRequest = error.config as InternalAxiosRequestConfig & { _retry?: boolean };
 
-      // 统一错误处理
-      if (error.response) {
-        const status = error.response.status;
-        const errorData = error.response.data as { detail?: string };
-
-        // 401 错误处理
-        if (status === 401) {
-          // 检查是否是刷新token的请求
-          const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
-          
-          // 如果是刷新token请求失败，触发认证错误回调
-          if (isRefreshRequest) {
-            tokenManager.clearAll();
-            if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-              authErrorCallback?.();
-            }
-            showError('登录已过期，请重新登录');
-            return Promise.reject(error);
+      // 401 错误的 token 刷新逻辑
+      if (error.response?.status === 401) {
+        const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
+        
+        // 如果是刷新token请求失败，触发认证错误回调
+        if (isRefreshRequest) {
+          tokenManager.clearAll();
+          if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+            authErrorCallback?.();
           }
-          
-          // 如果不是刷新token请求，且不是已重试的请求，尝试刷新token
-          if (!originalRequest._retry) {
-            // 如果正在刷新，等待刷新完成后使用新 token 重试
-            if (isRefreshing && refreshTokenPromise) {
-              return refreshTokenPromise.then(token => {
-                if (originalRequest.headers) {
-                  originalRequest.headers.Authorization = `Bearer ${token}`;
-                }
-                return instance(originalRequest);
-              }).catch(err => {
-                return Promise.reject(err);
-              });
-            }
-
-            originalRequest._retry = true;
-            isRefreshing = true;
-
-            // 创建共享的刷新 Promise
-            refreshTokenPromise = refreshAccessToken()
-              .then(newToken => {
-                processQueue(null, newToken);
-                return newToken;
-              })
-              .catch(refreshError => {
-                processQueue(refreshError, null);
-                
-                // 刷新失败，清除所有token并触发认证错误回调
-                tokenManager.clearAll();
-                if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-                  authErrorCallback?.();
-                }
-                showError('会话已过期，请重新登录');
-                throw refreshError;
-              })
-              .finally(() => {
-                isRefreshing = false;
-                refreshTokenPromise = null;
-              });
-
-            // 等待刷新完成后重试原请求
-            return refreshTokenPromise.then(newToken => {
+          // 标准化错误后抛出，让业务层决定如何展示
+          const standardError = ErrorHandler.normalize(error);
+          return Promise.reject(standardError);
+        }
+        
+        // 如果不是刷新token请求，且不是已重试的请求，尝试刷新token
+        if (!originalRequest._retry) {
+          // 如果正在刷新，等待刷新完成后使用新 token 重试
+          if (isRefreshing && refreshTokenPromise) {
+            return refreshTokenPromise.then(token => {
               if (originalRequest.headers) {
-                originalRequest.headers.Authorization = `Bearer ${newToken}`;
+                originalRequest.headers.Authorization = `Bearer ${token}`;
               }
               return instance(originalRequest);
+            }).catch(err => {
+              return Promise.reject(err);
             });
           }
-        }
 
-        // 其他错误处理
-        switch (status) {
-          case 403:
-            showError('无权限访问该资源');
-            break;
-          case 404:
-            showError('请求的资源不存在');
-            break;
-          case 429:
-            showError('请求过于频繁，请稍后再试');
-            break;
-          case 500:
-            showError('服务器内部错误');
-            break;
-          case 503:
-            showError('服务暂时不可用');
-            break;
-          default:
-            if (status !== 401) {
-              showError(errorData?.detail || '请求失败');
+          originalRequest._retry = true;
+          isRefreshing = true;
+
+          // 创建共享的刷新 Promise
+          refreshTokenPromise = refreshAccessToken()
+            .then(newToken => {
+              processQueue(null, newToken);
+              return newToken;
+            })
+            .catch(refreshError => {
+              processQueue(refreshError, null);
+              
+              // 刷新失败，清除所有token并触发认证错误回调
+              tokenManager.clearAll();
+              if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+                authErrorCallback?.();
+              }
+              throw refreshError;
+            })
+            .finally(() => {
+              isRefreshing = false;
+              refreshTokenPromise = null;
+            });
+
+          // 等待刷新完成后重试原请求
+          return refreshTokenPromise.then(newToken => {
+            if (originalRequest.headers) {
+              originalRequest.headers.Authorization = `Bearer ${newToken}`;
             }
+            return instance(originalRequest);
+          });
         }
-      } else if (error.request) {
-        showError('网络连接失败，请检查网络设置');
-      } else {
-        showError('请求配置错误');
       }
 
-      return Promise.reject(error);
+      // 将错误标准化后抛出，让业务层使用 useErrorDisplay 决定如何展示
+      const standardError = ErrorHandler.normalize(error);
+      
+      // 开发环境打印详细错误
+      if (process.env.NODE_ENV === 'development') {
+        console.error('[HTTP Error]', standardError);
+      }
+
+      return Promise.reject(standardError);
     }
   );
 
