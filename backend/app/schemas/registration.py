@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from uuid import UUID
 
 from pydantic import BaseModel, Field, field_validator, model_validator, ConfigDict
 
@@ -27,7 +28,7 @@ class RegistrationWindowCreateRequest(BaseModel):
 
 
 class RegistrationWindowResponse(BaseModel):
-    id: str
+    id: UUID
     start_time: datetime
     end_time: datetime
     max_registrations: int
@@ -37,7 +38,7 @@ class RegistrationWindowResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
-    model_config = ConfigDict(use_enum_values=True)
+    model_config = ConfigDict(use_enum_values=True, from_attributes=True)
 
 
 __all__ = [

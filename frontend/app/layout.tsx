@@ -6,10 +6,19 @@ import { AuthProvider } from "@/components/providers/auth-provider";
 import { AuthDialog } from "@/components/auth/auth-dialog";
 import { SWRProvider } from "@/lib/swr";
 import { Toaster } from "@/components/ui/sonner";
+import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 
 export const metadata: Metadata = {
   title: "AI Higress Frontend",
   description: "Frontend for AI Higress API Gateway",
+  manifest: "/manifest.json",
+  themeColor: "#0066cc",
+  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "AI HIGRESS GATEWAY",
+  },
 };
 
 export default function RootLayout({
@@ -19,6 +28,14 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
+      <head>
+        <meta name="apple-mobile-web-app-title" content="AI HIGRESS GATEWAY" />
+        <link rel="icon" href="/favicon.ico" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon.png" />
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#0066cc" />
+      </head>
       <body className="antialiased">
         <ThemeProvider
           attribute="class"
@@ -32,6 +49,8 @@ export default function RootLayout({
                 {children}
                 {/* 全局登录对话框 - 由 Zustand 状态控制显示 */}
                 <AuthDialog />
+                {/* PWA 安装提示 */}
+                <PWAInstallPrompt />
               </AuthProvider>
             </SWRProvider>
           </I18nProvider>

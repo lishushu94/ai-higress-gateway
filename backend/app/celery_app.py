@@ -17,8 +17,10 @@ CELERY_BROKER_URL / CELERY_RESULT_BACKEND 进行配置。
 """
 
 from celery import Celery
+from celery.signals import worker_process_init, beat_init
 
 from app.settings import settings
+from app.logging_config import setup_logging
 
 
 celery_app = Celery(
@@ -34,10 +36,39 @@ celery_app.conf.update(
     task_serializer="json",
     result_serializer="json",
     accept_content=["json"],
+    # 显式导入子模块里的任务，避免 worker 只加载 app.tasks/__init__.py 而漏掉 registration.* 等任务。
+    imports=(
+        "app.tasks",
+        "app.tasks.registration",
+        "app.tasks.provider_health",
+        "app.tasks.api_key_health",
+        "app.tasks.session_maintenance",
+        "app.tasks.credit_auto_topup",
+    ),
 )
 
 # 自动发现 app 包下的 tasks 模块（即 app.tasks）。
 celery_app.autodiscover_tasks(["app"])
+
+
+@worker_process_init.connect
+def init_worker_logging(**kwargs):
+    """
+    在 Celery worker 进程初始化时配置应用日志。
+    
+    这确保任务执行时的 logger.info/debug/error 等调用能正确输出到控制台和日志文件。
+    """
+    setup_logging()
+
+
+@beat_init.connect
+def init_beat_logging(**kwargs):
+    """
+    在 Celery beat 进程初始化时配置应用日志。
+    
+    这确保定时任务调度器的日志能正确输出。
+    """
+    setup_logging()
 
 
 __all__ = ["celery_app"]

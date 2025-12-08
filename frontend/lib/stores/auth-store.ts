@@ -86,13 +86,24 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       
       // 调用注册 API
       const user = await authService.register(data);
-      
-      // 注册成功后自动登录
+
+      if (!user.is_active) {
+        // 人工审核模式下，账号创建成功但未激活，直接提示并结束，不自动登录
+        toast.success('注册成功，账号待人工审核，请耐心等待');
+        set({
+          user: null,
+          isAuthenticated: false,
+          isLoading: false,
+          isAuthDialogOpen: false,
+        });
+        return user;
+      }
+
+      // 注册成功且自动激活，自动登录
       await get().login({
         email: data.email,
         password: data.password,
       });
-      
       toast.success('注册成功');
       return user;
     } catch (error) {

@@ -96,6 +96,7 @@ export default function RolesPage() {
 
     const openPermissionsDialog = async (role: Role) => {
         setCurrentRole(role);
+        setSelectedPerms([]);
         try {
             const data = await adminService.getRolePermissions(role.id);
             setSelectedPerms(data.permission_codes);
@@ -154,7 +155,7 @@ export default function RolesPage() {
                                 <TableHead>{t("roles.table_column_name")}</TableHead>
                                 <TableHead>{t("roles.table_column_code")}</TableHead>
                                 <TableHead>{t("roles.table_column_description")}</TableHead>
-                                <TableHead className="text-right">{t("providers.table_column_actions")}</TableHead>
+                                <TableHead className="text-right">{t("roles.table_column_actions")}</TableHead>
                             </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -177,9 +178,7 @@ export default function RolesPage() {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => {
-                                                            router.push(`/system/roles/${role.id}/permissions`);
-                                                        }}
+                                                        onClick={() => openPermissionsDialog(role)}
                                                     >
                                                         <Lock className="w-4 h-4" />
                                                     </Button>
@@ -271,8 +270,8 @@ export default function RolesPage() {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("providers.btn_cancel")}</Button>
-                        <Button onClick={handleCreate}>{t("providers.btn_create")}</Button>
+                        <Button variant="outline" onClick={() => setCreateOpen(false)}>{t("common.cancel")}</Button>
+                        <Button onClick={handleCreate}>{t("roles.btn_create")}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -308,8 +307,8 @@ export default function RolesPage() {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setEditOpen(false)}>{t("providers.btn_cancel")}</Button>
-                        <Button onClick={handleUpdate}>{t("providers.btn_save")}</Button>
+                        <Button variant="outline" onClick={() => setEditOpen(false)}>{t("common.cancel")}</Button>
+                        <Button onClick={handleUpdate}>{t("common.save")}</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
@@ -319,7 +318,9 @@ export default function RolesPage() {
                 <DialogContent className="max-w-2xl">
                     <DialogHeader>
                         <DialogTitle>{t("roles.permissions_dialog_title")}</DialogTitle>
-                        <DialogDescription>{t("roles.permissions_desc")}</DialogDescription>
+                        <DialogDescription>
+                            {currentRole ? `${t("roles.permissions_desc")} (${currentRole.name})` : t("roles.permissions_desc")}
+                        </DialogDescription>
                     </DialogHeader>
                     <div className="py-4 max-h-[60vh] overflow-y-auto">
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -346,7 +347,7 @@ export default function RolesPage() {
                         </div>
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setPermOpen(false)}>{t("providers.btn_cancel")}</Button>
+                        <Button variant="outline" onClick={() => setPermOpen(false)}>{t("common.cancel")}</Button>
                         <Button onClick={savePermissions}>{t("roles.permissions_save")}</Button>
                     </DialogFooter>
                 </DialogContent>

@@ -9,7 +9,13 @@ from sqlalchemy.orm import Session
 
 from app.models import User
 from app.schemas.user import UserCreateRequest, UserUpdateRequest
+from app.services.credit_service import get_or_create_account_for_user
 from app.services.jwt_auth_service import hash_password, verify_password
+from app.services.registration_window_service import (
+    claim_registration_slot,
+    rollback_registration_slot,
+)
+from app.services.role_service import RoleCodeAlreadyExistsError, RoleService
 
 
 class UserServiceError(Exception):
@@ -22,6 +28,35 @@ class UsernameAlreadyExistsError(UserServiceError):
 
 class EmailAlreadyExistsError(UserServiceError):
     """Raised when the email already belongs to another user."""
+
+
+DEFAULT_USER_ROLE_CODE = "default_user"
+
+
+def assign_default_role(
+    session: Session,
+    user_id: UUID,
+    *,
+    role_code: str = DEFAULT_USER_ROLE_CODE,
+) -> None:
+    """为新用户分配默认角色（若不存在则自动创建）。"""
+
+    service = RoleService(session)
+    role = service.get_role_by_code(role_code)
+    if role is None:
+        try:
+            role = service.create_role(
+                code=role_code,
+                name="默认用户",
+                description="系统默认普通用户角色",
+            )
+        except RoleCodeAlreadyExistsError:
+            # 并发场景下如果已经被其他进程创建，则重新查询
+            role = service.get_role_by_code(role_code)
+    if role is None:
+        return
+
+    service.set_user_roles(user_id, [role.id])
 
 
 def _record_exists(
@@ -114,6 +149,35 @@ def create_user(
     return user
 
 
+def register_user_with_window(
+    session: Session, payload: UserCreateRequest
+) -> tuple[User, bool]:
+    """
+    通过注册窗口创建用户，初始化积分账户和默认角色。
+
+    返回 (user, requires_manual_activation)。
+    """
+
+    window = claim_registration_slot(session)
+
+    try:
+        user = create_user(
+            session,
+            payload,
+            is_active=window.auto_activate,
+        )
+        get_or_create_account_for_user(session, user.id)
+        assign_default_role(session, user.id)
+    except (UsernameAlreadyExistsError, EmailAlreadyExistsError):
+        rollback_registration_slot(session, window.id)
+        raise
+    except Exception:
+        rollback_registration_slot(session, window.id)
+        raise
+
+    return user, not window.auto_activate
+
+
 def update_user(session: Session, user: User, payload: UserUpdateRequest) -> User:
     """Update mutable profile fields and password for a user."""
 
@@ -163,8 +227,11 @@ def has_any_user(session: Session) -> bool:
 
 
 __all__ = [
+    "DEFAULT_USER_ROLE_CODE",
     "EmailAlreadyExistsError",
+    "assign_default_role",
     "has_any_user",
+    "register_user_with_window",
     "UserServiceError",
     "UsernameAlreadyExistsError",
     "create_user",

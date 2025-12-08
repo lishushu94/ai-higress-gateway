@@ -59,6 +59,8 @@ class UserResponse(BaseModel):
     avatar: str | None = None
     is_active: bool
     is_superuser: bool
+    # 是否需要人工审核后才能启用（用于注册接口返回提示）
+    requires_manual_activation: bool = False
     # 当前用户拥有的角色编码列表（例如 ["default_user", "system_admin"]）
     role_codes: list[str] = Field(default_factory=list)
     # 能力标记列表，用于前端控制界面权限（后端仍做强校验）

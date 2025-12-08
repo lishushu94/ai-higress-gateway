@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,14 +19,16 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { UserCircle, Plus, Edit, Trash2, Shield, Key, Ban, RotateCcw } from "lucide-react";
+import { UserCircle, Plus, Edit, Trash2, Shield, Key, Ban, RotateCcw, Zap } from "lucide-react";
 import { AdminTopupDialog } from "@/components/dashboard/credits/admin-topup-dialog";
 import { AutoTopupBatchDialog } from "@/components/dashboard/credits/auto-topup-batch-dialog";
+import { AutoTopupDialog } from "@/components/dashboard/credits/auto-topup-dialog";
 import { useI18n } from "@/lib/i18n-context";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { adminService, Role } from "@/http/admin";
+import { adminService, Role, Permission } from "@/http/admin";
 import { userService } from "@/http/user";
 import { UserInfo } from "@/http/auth";
+import type { UserPermission } from "@/lib/api-types";
 import { toast } from "sonner";
 import {
     useActiveRegistrationWindow,
@@ -36,26 +37,32 @@ import {
 } from "@/lib/swr/use-registration-windows";
 
 export default function UsersPage() {
-    const router = useRouter();
     const { t } = useI18n();
     const currentAuthUser = useAuthStore(state => state.user);
     const isSuperUser = currentAuthUser?.is_superuser === true;
 
     const [users, setUsers] = useState<UserInfo[]>([]);
     const [roles, setRoles] = useState<Role[]>([]);
+    const [permissions, setPermissions] = useState<Permission[]>([]);
     const [loading, setLoading] = useState(true);
 
     // Dialog states
     const [createOpen, setCreateOpen] = useState(false);
     const [rolesOpen, setRolesOpen] = useState(false);
+    const [permissionsOpen, setPermissionsOpen] = useState(false);
     const [topupOpen, setTopupOpen] = useState(false);
     const [autoTopupOpen, setAutoTopupOpen] = useState(false);
+    const [autoTopupSingleOpen, setAutoTopupSingleOpen] = useState(false);
 
     // Current user being edited
     const [currentUser, setCurrentUser] = useState<UserInfo | null>(null);
     const [topupUser, setTopupUser] = useState<UserInfo | null>(null);
+    const [autoTopupUser, setAutoTopupUser] = useState<UserInfo | null>(null);
     const [selectedRoleIds, setSelectedRoleIds] = useState<string[]>([]);
+    const [selectedPermCodes, setSelectedPermCodes] = useState<string[]>([]);
+    const [currentUserPermissions, setCurrentUserPermissions] = useState<UserPermission[]>([]);
     const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+    const [savingPermissions, setSavingPermissions] = useState(false);
 
     // Form data
     const [formData, setFormData] = useState({
@@ -108,6 +115,7 @@ export default function UsersPage() {
         closeWindow,
         closing: closingWindow,
     } = useCloseRegistrationWindow();
+    const [refreshing, setRefreshing] = useState(false);
 
     useEffect(() => {
         fetchData();
@@ -116,12 +124,14 @@ export default function UsersPage() {
     const fetchData = async () => {
         try {
             setLoading(true);
-            const [usersData, rolesData] = await Promise.all([
+            const [usersData, rolesData, permissionsData] = await Promise.all([
                 adminService.getAllUsers(),
-                adminService.getRoles()
+                adminService.getRoles(),
+                adminService.getPermissions(),
             ]);
             setUsers(usersData);
             setRoles(rolesData);
+            setPermissions(permissionsData);
         } catch (error) {
             console.error("Failed to fetch data:", error);
             toast.error("Failed to load users and roles");
@@ -163,6 +173,53 @@ export default function UsersPage() {
         } catch (error) {
             toast.error("Failed to update user roles");
         }
+    };
+
+    const openPermissionsDialog = async (user: UserInfo) => {
+        setCurrentUser(user);
+        try {
+            const userPerms = await adminService.getUserPermissions(user.id);
+            setCurrentUserPermissions(userPerms);
+            setSelectedPermCodes(userPerms.map((perm) => perm.permission_type));
+            setPermissionsOpen(true);
+        } catch (error) {
+            toast.error(t("users.permissions_load_error"));
+        }
+    };
+
+    const saveUserPermissions = async () => {
+        if (!currentUser) return;
+        setSavingPermissions(true);
+        try {
+            const desired = new Set(selectedPermCodes);
+            const existing = new Map(currentUserPermissions.map((perm) => [perm.permission_type, perm]));
+
+            const toAdd = Array.from(desired).filter((code) => !existing.has(code));
+            const toRemove = currentUserPermissions.filter((perm) => !desired.has(perm.permission_type));
+
+            await Promise.all([
+                ...toAdd.map((code) =>
+                    adminService.grantUserPermission(currentUser.id, { permission_type: code })
+                ),
+                ...toRemove.map((perm) =>
+                    adminService.revokeUserPermission(currentUser.id, perm.id)
+                ),
+            ]);
+
+            toast.success(t("users.permissions_save_success"));
+            setPermissionsOpen(false);
+            fetchData();
+        } catch (error) {
+            toast.error(t("users.permissions_save_error"));
+        } finally {
+            setSavingPermissions(false);
+        }
+    };
+
+    const togglePermission = (code: string) => {
+        setSelectedPermCodes((prev) =>
+            prev.includes(code) ? prev.filter((c) => c !== code) : [...prev, code]
+        );
     };
 
     const toggleRole = (roleId: string) => {
@@ -282,6 +339,15 @@ export default function UsersPage() {
         }
     };
 
+    const handleRefreshAll = async () => {
+        setRefreshing(true);
+        try {
+            await Promise.all([fetchData(), refreshRegistrationWindow()]);
+        } finally {
+            setRefreshing(false);
+        }
+    };
+
     return (
         <div className="space-y-6 max-w-7xl">
             <div className="flex items-center justify-between">
@@ -290,6 +356,14 @@ export default function UsersPage() {
                     <p className="text-muted-foreground">{t("users.subtitle")}</p>
                 </div>
                 <div className="flex items-center gap-2">
+                    <Button
+                        variant="outline"
+                        onClick={handleRefreshAll}
+                        disabled={loading || refreshing || registrationLoading}
+                    >
+                        <RotateCcw className="w-4 h-4 mr-2" />
+                        {t("users.refresh")}
+                    </Button>
                     {isSuperUser && (
                         <Button
                             variant="outline"
@@ -566,14 +640,31 @@ export default function UsersPage() {
                                                     </TooltipContent>
                                                 </Tooltip>
                                             )}
+                                            {isSuperUser && (
+                                                <Tooltip>
+                                                    <TooltipTrigger asChild>
+                                                        <Button
+                                                            variant="ghost"
+                                                            size="sm"
+                                                            onClick={() => {
+                                                                setAutoTopupUser(user);
+                                                                setAutoTopupSingleOpen(true);
+                                                            }}
+                                                        >
+                                                            <Zap className="w-4 h-4 text-amber-500" />
+                                                        </Button>
+                                                    </TooltipTrigger>
+                                                    <TooltipContent>
+                                                        {t("credits.auto_topup_manage")}
+                                                    </TooltipContent>
+                                                </Tooltip>
+                                            )}
                                             <Tooltip>
                                                 <TooltipTrigger asChild>
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => {
-                                                            router.push(`/system/users/${user.id}/roles`);
-                                                        }}
+                                                        onClick={() => openRolesDialog(user)}
                                                     >
                                                         <Shield className="w-4 h-4" />
                                                     </Button>
@@ -587,9 +678,7 @@ export default function UsersPage() {
                                                     <Button
                                                         variant="ghost"
                                                         size="sm"
-                                                        onClick={() => {
-                                                            router.push(`/system/users/${user.id}/permissions`);
-                                                        }}
+                                                        onClick={() => openPermissionsDialog(user)}
                                                     >
                                                         <Key className="w-4 h-4" />
                                                     </Button>
@@ -624,7 +713,7 @@ export default function UsersPage() {
                             ))}
                             {!loading && users.length === 0 && (
                                 <TableRow>
-                                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                                    <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
                                         No users found
                                     </TableCell>
                                 </TableRow>
@@ -841,6 +930,51 @@ export default function UsersPage() {
                 </DialogContent>
             </Dialog>
 
+            {/* User Permissions Dialog */}
+            <Dialog open={permissionsOpen} onOpenChange={setPermissionsOpen}>
+                <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                        <DialogTitle>{t("users.permissions_dialog_title")}</DialogTitle>
+                        <DialogDescription>{t("users.permissions_dialog_desc")}</DialogDescription>
+                    </DialogHeader>
+                    <div className="py-4 max-h-[60vh] overflow-y-auto">
+                        <p className="text-sm text-muted-foreground mb-4">
+                            {t("users.select_permissions")}
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {permissions.map((perm) => (
+                                <div key={perm.id} className="flex items-start space-x-3 p-3 border rounded hover:bg-muted/50">
+                                    <Checkbox
+                                        id={perm.code}
+                                        checked={selectedPermCodes.includes(perm.code)}
+                                        onCheckedChange={() => togglePermission(perm.code)}
+                                    />
+                                    <div className="grid gap-1.5 leading-none">
+                                        <label
+                                            htmlFor={perm.code}
+                                            className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70 cursor-pointer"
+                                        >
+                                            {perm.code}
+                                        </label>
+                                        <p className="text-xs text-muted-foreground">
+                                            {perm.description}
+                                        </p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                    <DialogFooter>
+                        <Button variant="outline" onClick={() => setPermissionsOpen(false)}>
+                            {t("providers.btn_cancel")}
+                        </Button>
+                        <Button onClick={saveUserPermissions} disabled={savingPermissions}>
+                            {savingPermissions ? t("common.saving") : t("providers.btn_save")}
+                        </Button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
             {/* Admin credit top-up dialog */}
             {isSuperUser && topupUser && (
                 <AdminTopupDialog
@@ -852,6 +986,22 @@ export default function UsersPage() {
                         }
                     }}
                     userId={topupUser.id}
+                    onSuccess={fetchData}
+                />
+            )}
+
+            {/* 单个用户自动充值配置对话框 */}
+            {isSuperUser && autoTopupUser && (
+                <AutoTopupDialog
+                    open={autoTopupSingleOpen}
+                    onOpenChange={(open) => {
+                        setAutoTopupSingleOpen(open);
+                        if (!open) {
+                            setAutoTopupUser(null);
+                        }
+                    }}
+                    userId={autoTopupUser.id}
+                    userLabel={autoTopupUser.display_name || autoTopupUser.email}
                     onSuccess={fetchData}
                 />
             )}

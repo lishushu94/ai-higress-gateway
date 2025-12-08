@@ -5,19 +5,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Server, Database, Shield, Zap } from "lucide-react";
+import { Database } from "lucide-react";
 import type { GatewayConfig } from "@/lib/api-types";
 import { useGatewayConfig } from "@/lib/swr";
 import { systemService, type CacheSegment } from "@/http";
 import { useI18n } from "@/lib/i18n-context";
 import { toast } from "sonner";
-
-const systemStats = [
-  { titleKey: "system.stats.uptime", value: "99.98%", icon: Server },
-  { titleKey: "system.stats.db_size", value: "2.4 GB", icon: Database },
-  { titleKey: "system.stats.security_score", value: "A+", icon: Shield },
-  { titleKey: "system.stats.cache_size", value: "512 MB", icon: Zap },
-];
 
 export default function SystemAdminPage() {
   const { t } = useI18n();
@@ -108,27 +101,6 @@ export default function SystemAdminPage() {
       <div>
         <h1 className="text-3xl font-bold mb-2">{t("system.admin.title")}</h1>
         <p className="text-muted-foreground">{t("system.admin.subtitle")}</p>
-      </div>
-
-      {/* System Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        {systemStats.map((stat, index) => (
-          <Card key={index}>
-            <CardContent className="pt-6">
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-sm font-medium text-muted-foreground uppercase tracking-wide">
-                    {t(stat.titleKey)}
-                  </p>
-                  <h3 className="text-2xl font-bold mt-2">{stat.value}</h3>
-                </div>
-                <div className="p-2 bg-muted rounded">
-                  <stat.icon className="w-5 h-5" />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
       </div>
 
       {/* Configuration */}

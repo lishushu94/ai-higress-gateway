@@ -52,6 +52,7 @@
   "display_name": "string | null",
   "avatar": "string | null",
   "is_active": true,
+  "requires_manual_activation": false,
   "is_superuser": false,
   "role_codes": ["default_user"],
   "permission_flags": [
@@ -73,6 +74,10 @@
 - 400: 用户名已存在
 - 400: 邮箱已被使用
 - 403: 当前未开放注册、注册时间已结束或名额耗尽
+
+**说明**:
+- 当当前窗口为人工审核模式时，成功响应会携带 `is_active=false` 且 `requires_manual_activation=true`，表示账号创建成功但需管理员审核后才能登录，前端不应自动登录，应提示“待人工审核”。
+- `role_codes` 默认包含 `default_user`，权限能力标记根据角色与用户权限计算。
 
 ---
 

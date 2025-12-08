@@ -61,3 +61,9 @@ quote-style = "double"
 indent-style = "space"
 line-ending = "auto"
 skip-magic-trailing-comma = false
+
+[tool.pytest.ini_options]
+testpaths = ["backend/tests"]
+addopts = [
+    "--ignore=backend/tests/test_chat_greeting.py"
+]

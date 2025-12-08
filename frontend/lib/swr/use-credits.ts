@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useMemo } from 'react';
-import { useApiGet, useApiPost } from './hooks';
+import { useApiDelete, useApiGet, useApiPost, useApiPut } from './hooks';
 import { creditService } from '@/http/credit';
 import { useAuthStore } from '@/lib/stores/auth-store';
 import { useI18n } from '@/lib/i18n-context';
@@ -12,6 +12,8 @@ import type {
   TransactionQueryParams,
   CreditAutoTopupBatchRequest,
   CreditAutoTopupBatchResponse,
+  CreditAutoTopupConfig,
+  CreditAutoTopupConfigInput,
 } from '@/lib/api-types';
 
 /**
@@ -128,6 +130,74 @@ export const useAdminAutoTopupBatch = () => {
     submitting,
     error,
     data,
+    isSuperUser,
+  };
+};
+
+/**
+ * 单用户自动充值配置（查询 / 保存 / 停用）
+ */
+export const useAdminUserAutoTopup = (userId?: string | null) => {
+  const user = useAuthStore((state) => state.user);
+  const isSuperUser = user?.is_superuser === true;
+  const { t } = useI18n();
+
+  const url = userId && isSuperUser ? `/v1/credits/admin/users/${userId}/auto-topup` : null;
+
+  const {
+    data,
+    error,
+    loading,
+    refresh,
+  } = useApiGet<CreditAutoTopupConfig | null>(url, {
+    strategy: 'frequent',
+    revalidateOnFocus: false,
+  });
+
+  const { trigger: saveTrigger, submitting: saving } = useApiPut<
+    CreditAutoTopupConfig,
+    CreditAutoTopupConfigInput
+  >(url || '', { revalidate: false });
+
+  const { trigger: disableTrigger, submitting: disabling } = useApiDelete<void>(url || '', {
+    revalidate: false,
+  });
+
+  const save = useCallback(
+    async (payload: CreditAutoTopupConfigInput) => {
+      if (!isSuperUser) {
+        throw new Error(t('common.error_superuser_required'));
+      }
+      if (!url) {
+        throw new Error(t('credits.auto_topup_load_error'));
+      }
+      const result = await saveTrigger(payload);
+      await refresh();
+      return result;
+    },
+    [isSuperUser, refresh, saveTrigger, t, url]
+  );
+
+  const disable = useCallback(async () => {
+    if (!isSuperUser) {
+      throw new Error(t('common.error_superuser_required'));
+    }
+    if (!url) {
+      throw new Error(t('credits.auto_topup_load_error'));
+    }
+    await disableTrigger();
+    await refresh();
+  }, [disableTrigger, isSuperUser, refresh, t, url]);
+
+  return {
+    config: data ?? null,
+    loading,
+    error,
+    refresh,
+    save,
+    disable,
+    saving,
+    disabling,
     isSuperUser,
   };
 };

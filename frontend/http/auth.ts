@@ -31,6 +31,7 @@ export interface UserInfo {
   avatar: string | null;
   is_active: boolean;
   is_superuser: boolean;
+  requires_manual_activation?: boolean;
   role_codes?: string[];
   created_at: string;
   updated_at: string;

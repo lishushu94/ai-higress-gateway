@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import fnmatch
 from typing import Callable
 
 from sqlalchemy import create_engine
@@ -123,8 +124,21 @@ class InMemoryRedis:
     async def set(self, key: str, value: str, ex: int | None = None):
         self._data[key] = value
 
-    async def delete(self, key: str):
-        self._data.pop(key, None)
+    async def exists(self, *keys: str) -> int:
+        """返回存在的 key 数量，模拟 Redis exists 行为。"""
+        return sum(1 for key in keys if key in self._data)
+
+    async def keys(self, pattern: str):
+        """使用 fnmatch 实现简单模式匹配。"""
+        return [k for k in self._data.keys() if fnmatch.fnmatch(k, pattern)]
+
+    async def delete(self, *keys: str) -> int:
+        removed = 0
+        for key in keys:
+            if key in self._data:
+                removed += 1
+                self._data.pop(key, None)
+        return removed
 
 
 __all__ = ["InMemoryRedis", "auth_headers", "jwt_auth_headers", "install_inmemory_db", "seed_user_and_key"]

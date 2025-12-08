@@ -84,7 +84,10 @@ export function AuthDialog() {
       if (searchParams.get('redirect')) {
         router.push(redirectTo);
       } else {
+        // 使用 router.refresh() 刷新服务端组件，然后重新导航到当前页面以确保客户端组件也更新
         router.refresh();
+        // 通过重新导航到当前路径来触发完整的客户端更新
+        router.push(window.location.pathname);
       }
     } catch (error) {
       console.error('Login error:', error);
@@ -101,7 +104,10 @@ export function AuthDialog() {
       if (searchParams.get('redirect')) {
         router.push(redirectTo);
       } else {
+        // 使用 router.refresh() 刷新服务端组件，然后重新导航到当前页面以确保客户端组件也更新
         router.refresh();
+        // 通过重新导航到当前路径来触发完整的客户端更新
+        router.push(window.location.pathname);
       }
     } catch (error) {
       console.error('Register error:', error);

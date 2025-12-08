@@ -24,9 +24,8 @@ from app.schemas.auth import (
     RegisterRequest,
     TokenResponse,
 )
-from app.schemas.user import UserResponse
+from app.schemas.user import UserCreateRequest, UserResponse
 from app.services.avatar_service import build_avatar_url
-from app.services.credit_service import get_or_create_account_for_user
 from app.services.jwt_auth_service import (
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_REFRESH_TOKEN_EXPIRE_DAYS,
@@ -39,50 +38,26 @@ from app.services.jwt_auth_service import (
     verify_password,
 )
 from app.services.token_redis_service import TokenRedisService
-from app.services.role_service import RoleCodeAlreadyExistsError, RoleService
+from app.services.role_service import RoleService
 from app.services.user_permission_service import UserPermissionService
 from app.services.user_service import (
     EmailAlreadyExistsError,
     UsernameAlreadyExistsError,
-    create_user,
     get_user_by_id,
-    update_user,
+    register_user_with_window,
 )
 from app.services.registration_window_service import (
     RegistrationQuotaExceededError,
     RegistrationWindowClosedError,
     RegistrationWindowNotFoundError,
-    claim_registration_slot,
-    rollback_registration_slot,
 )
 
 router = APIRouter(tags=["authentication"], prefix="/auth")
 
 
-DEFAULT_USER_ROLE_CODE = "default_user"
-
-
-def _assign_default_role(db: Session, user_id: UUID) -> None:
-    """为新注册用户分配默认角色。"""
-
-    service = RoleService(db)
-    role = service.get_role_by_code(DEFAULT_USER_ROLE_CODE)
-    if role is None:
-        try:
-            role = service.create_role(
-                code=DEFAULT_USER_ROLE_CODE,
-                name="默认用户",
-                description="系统默认普通用户角色",
-            )
-        except RoleCodeAlreadyExistsError:
-            role = service.get_role_by_code(DEFAULT_USER_ROLE_CODE)
-    if role is None:
-        return
-
-    service.set_user_roles(user_id, [role.id])
-
-
-def _build_user_response(db: Session, user_id: UUID) -> UserResponse:
+def _build_user_response(
+    db: Session, user_id: UUID, *, requires_manual_activation: bool = False
+) -> UserResponse:
     """聚合用户基础信息 + 角色 + 能力标记列表，构造 UserResponse。"""
 
     user = get_user_by_id(db, user_id)
@@ -122,6 +97,7 @@ def _build_user_response(db: Session, user_id: UUID) -> UserResponse:
         avatar=build_avatar_url(user.avatar),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
+        requires_manual_activation=requires_manual_activation,
         role_codes=role_codes,
         permission_flags=permission_flags,
         created_at=user.created_at,
@@ -147,58 +123,34 @@ async def register(
     Raises:
         HTTPException: 如果用户名或邮箱已存在
     """
-    try:
-        window = claim_registration_slot(db)
-    except RegistrationWindowNotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
-    except (RegistrationWindowClosedError, RegistrationQuotaExceededError) as exc:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
 
     try:
-        # 将 RegisterRequest 映射到 UserCreateRequest 所需字段
-        from app.schemas.user import UserCreateRequest
-
-        # 生成基于邮箱的用户名
-        username_prefix = request.email.split("@")[0]
-        # 确保用户名唯一性
-        from app.models import User
-        from sqlalchemy import select
-        existing_user = db.execute(select(User).where(User.username == username_prefix)).scalar_one_or_none()
-
-        # 如果存在，添加数字后缀
-        counter = 1
-        username = username_prefix
-        while existing_user is not None:
-            username = f"{username_prefix}{counter}"
-            existing_user = db.execute(select(User).where(User.username == username)).scalar_one_or_none()
-            counter += 1
-
         payload = UserCreateRequest(
-            username=username,
+            username=None,
             email=request.email,
             password=request.password,
             display_name=request.display_name,
         )
-        user = create_user(db, payload, is_active=window.auto_activate)
-        # 为新注册用户创建默认积分账户（若未开启积分系统则仅做初始化，不影响行为）
-        get_or_create_account_for_user(db, user.id)
-        _assign_default_role(db, user.id)
-        return _build_user_response(db, user.id)
+        user, requires_manual_activation = register_user_with_window(db, payload)
+        return _build_user_response(
+            db,
+            user.id,
+            requires_manual_activation=requires_manual_activation,
+        )
+    except RegistrationWindowNotFoundError as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
+    except (RegistrationWindowClosedError, RegistrationQuotaExceededError) as exc:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
     except UsernameAlreadyExistsError:
-        rollback_registration_slot(db, window.id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱已被使用",
         )
     except EmailAlreadyExistsError:
-        rollback_registration_slot(db, window.id)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="邮箱已被使用",
         )
-    except Exception:
-        rollback_registration_slot(db, window.id)
-        raise
 
 
 @router.post("/login", response_model=TokenResponse)

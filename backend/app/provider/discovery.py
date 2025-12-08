@@ -144,6 +144,20 @@ async def fetch_models_from_provider(
     """
     Call a provider's models endpoint and normalise the response.
     """
+    if provider.static_models:
+        logger.info(
+            "Provider %s: 使用配置的 static_models，跳过远端模型发现",
+            provider.id,
+        )
+        static_models: list[Model] = []
+        for raw in provider.static_models:
+            if not isinstance(raw, dict):
+                continue
+            model = _normalise_single_model(provider, raw)
+            if model is not None:
+                static_models.append(model)
+        return static_models
+
     payload: Any
     key_selection = None
 
@@ -186,8 +200,8 @@ async def fetch_models_from_provider(
                 if key_selection:
                     record_key_success(key_selection, redis=redis)
     else:
-        # HTTP transport：始终优先尝试调用上游 /models，即使配置了 static_models。
-        # static_models 仅在失败时作为兜底使用。
+        # HTTP transport：优先调用上游 /models，入口处已对非空 static_models 做了直接返回。
+        # 若上游失败，则回退到 static_models。
         try:
             key_selection = await acquire_provider_key(provider, redis)
         except NoAvailableProviderKey as exc:

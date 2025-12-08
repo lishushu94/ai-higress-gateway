@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useI18n } from "@/lib/i18n-context";
+import { useAuthStore } from "@/lib/stores/auth-store";
 import {
     LayoutDashboard,
     Server,
@@ -101,6 +102,12 @@ const adminItems = [
 export function SidebarNav() {
     const pathname = usePathname();
     const { t } = useI18n();
+    const currentUser = useAuthStore(state => state.user);
+    const roleCodes = currentUser?.role_codes ?? [];
+    const isAdmin =
+        currentUser?.is_superuser === true ||
+        roleCodes.includes("system_admin") ||
+        roleCodes.includes("admin");
 
     return (
         <div className="w-64 border-r bg-sidebar h-screen flex flex-col">
@@ -126,27 +133,31 @@ export function SidebarNav() {
                         </Link>
                     ))}
 
-                    <div className="pt-6 pb-2">
-                        <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                            {t("nav.admin")}
-                        </p>
-                    </div>
+                    {isAdmin && (
+                        <>
+                            <div className="pt-6 pb-2">
+                                <p className="px-3 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+                                    {t("nav.admin")}
+                                </p>
+                            </div>
 
-                    {adminItems.map((item) => (
-                        <Link
-                            key={item.href}
-                            href={item.href}
-                            className={cn(
-                                "flex items-center space-x-3 px-3 py-2.5 rounded transition-colors text-sm",
-                                pathname === item.href
-                                    ? "bg-primary text-primary-foreground"
-                                    : "text-sidebar-foreground hover:bg-sidebar-accent"
-                            )}
-                        >
-                            <item.icon className="w-5 h-5 flex-shrink-0" />
-                            <span>{t(item.titleKey)}</span>
-                        </Link>
-                    ))}
+                            {adminItems.map((item) => (
+                                <Link
+                                    key={item.href}
+                                    href={item.href}
+                                    className={cn(
+                                        "flex items-center space-x-3 px-3 py-2.5 rounded transition-colors text-sm",
+                                        pathname === item.href
+                                            ? "bg-primary text-primary-foreground"
+                                            : "text-sidebar-foreground hover:bg-sidebar-accent"
+                                    )}
+                                >
+                                    <item.icon className="w-5 h-5 flex-shrink-0" />
+                                    <span>{t(item.titleKey)}</span>
+                                </Link>
+                            ))}
+                        </>
+                    )}
                 </nav>
             </div>
 

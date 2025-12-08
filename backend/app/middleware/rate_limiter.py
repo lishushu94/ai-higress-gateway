@@ -159,7 +159,7 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
         self,
         app: ASGIApp,
         redis_client: Redis | None = None,
-        default_max_requests: int = 100,
+        default_max_requests: int | None = None,
         default_window_seconds: int = 60,
         path_limits: dict[str, tuple[int, int]] | None = None,
         get_client_ip: Callable[[Request], str] | None = None,
@@ -220,12 +220,13 @@ class RateLimitMiddleware(BaseHTTPMiddleware):
 
         # 确定限流参数
         path = request.url.path
-        # 默认限流阈值：优先从 settings.gateway_max_concurrent_requests 读取，
-        # 以便通过 /system/gateway-config 在运行时动态调整。
-        max_requests = (
-            getattr(settings, "gateway_max_concurrent_requests", None)
-            or self.default_max_requests
-        )
+        # 默认限流阈值：显式传入的 default_max_requests 优先，
+        # 未提供时才回退到 settings.gateway_max_concurrent_requests。
+        max_requests = self.default_max_requests
+        if max_requests is None:
+            max_requests = getattr(settings, "gateway_max_concurrent_requests", None)
+        if max_requests is None:
+            max_requests = 1000
         window_seconds = self.default_window_seconds
 
         # 检查是否有特定路径的限流配置
