@@ -1,4 +1,3 @@
-import React from "react";
 import { SidebarNav } from "@/components/layout/sidebar-nav";
 import { TopNav } from "@/components/layout/top-nav";
 

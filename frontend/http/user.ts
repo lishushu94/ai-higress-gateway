@@ -20,6 +20,13 @@ export interface UpdateUserStatusRequest {
   is_active: boolean;
 }
 
+export interface UserLookup {
+  id: string;
+  username: string;
+  email: string;
+  display_name: string | null;
+}
+
 // 用户API服务
 export const userService = {
   // 创建用户
@@ -59,6 +66,25 @@ export const userService = {
     data: UpdateUserStatusRequest
   ): Promise<UserInfo> => {
     const response = await httpClient.put(`/users/${userId}/status`, data);
+    return response.data;
+  },
+
+  // 搜索用户（用于私有分享等场景）
+  searchUsers: async (params: { q?: string; ids?: string[]; limit?: number } = {}): Promise<UserLookup[]> => {
+    const searchParams = new URLSearchParams();
+    if (params.q) {
+      searchParams.set('q', params.q);
+    }
+    if (params.ids) {
+      params.ids.filter(Boolean).forEach((id) => searchParams.append('ids', id));
+    }
+    if (params.limit) {
+      searchParams.set('limit', String(params.limit));
+    }
+    if (!searchParams.has('q') && !searchParams.has('ids')) {
+      throw new Error('searchUsers requires at least a keyword or user IDs');
+    }
+    const response = await httpClient.get('/users/search', { params: searchParams });
     return response.data;
   },
 };

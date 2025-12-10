@@ -5,7 +5,7 @@ from typing import Any
 import httpx
 
 API_BASE_URL = "http://127.0.0.1:8000"
-API_KEY = "dGltZWxpbmU="  # base64("timeline")
+API_KEY = "timeline"
 
 
 async def call_chat_completion(
@@ -71,4 +71,3 @@ async def main() -> None:
 
 if __name__ == "__main__":
     asyncio.run(main())
-

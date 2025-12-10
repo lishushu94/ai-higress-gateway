@@ -1,4 +1,3 @@
-import base64
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from uuid import UUID
@@ -30,22 +29,6 @@ class AuthenticatedAPIKey:
     allowed_provider_ids: list[str]
 
 
-def _decode_token(token: str) -> str:
-    """
-    Decode base64 token; raise if invalid or unexpected.
-    """
-    try:
-        decoded_bytes = base64.b64decode(token, validate=True)
-        decoded = decoded_bytes.decode("utf-8")
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid API token",
-        )
-
-    return decoded
-
-
 async def require_api_key(
     authorization: str | None = Header(default=None),
     x_api_key: str | None = Header(default=None, alias="X-API-Key"),
@@ -55,8 +38,8 @@ async def require_api_key(
     """
     Validate client API keys stored in the数据库。
 
-    Preferred：Authorization: Bearer <base64(token)>；兼容 X-API-Key: <base64(token)>。
-    Base64 解码后与数据库中的哈希值比对，支持多用户多密钥。
+    Preferred：`Authorization: Bearer <token>`；兼容 `X-API-Key: <token>`。
+    传入的 token 即创建 API Key 时返回的明文字符串。
     """
     token_value: str | None = None
 
@@ -67,7 +50,7 @@ async def require_api_key(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid Authorization header, expected 'Bearer <token>'",
             )
-        token_value = token
+        token_value = token.strip() or None
     elif x_api_key:
         token_value = x_api_key.strip() or None
 
@@ -77,8 +60,7 @@ async def require_api_key(
             detail="Missing Authorization or X-API-Key header",
         )
 
-    decoded = _decode_token(token_value)
-    key_hash = derive_api_key_hash(decoded)
+    key_hash = derive_api_key_hash(token_value)
     cached = await get_cached_api_key(redis, key_hash)
     if cached is not None:
         if cached.expires_at is not None and cached.expires_at <= datetime.now(UTC):

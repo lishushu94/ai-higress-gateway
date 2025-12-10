@@ -25,7 +25,6 @@ export interface InitAdminResponse {
   username: string;
   email: string;
   password: string;
-  api_key: string;
 }
 
 export interface ValidateKeyRequest {

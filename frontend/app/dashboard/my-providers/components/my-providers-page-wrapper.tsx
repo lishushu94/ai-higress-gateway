@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { MyProvidersPageClient } from "./my-providers-page-client";
 import { Provider, providerService } from "@/http/provider";
 import { useAuthStore } from "@/lib/stores/auth-store";

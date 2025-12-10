@@ -71,10 +71,22 @@ class UserResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class UserLookupResponse(BaseModel):
+    """用于前端搜索/选择用户时的精简信息。"""
+
+    id: UUID
+    username: str
+    email: EmailStr
+    display_name: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 __all__ = [
     "UserCreateRequest",
     "UserPermissionFlag",
     "UserResponse",
     "UserStatusUpdateRequest",
     "UserUpdateRequest",
+    "UserLookupResponse",
 ]

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Plus, ArrowLeft } from "lucide-react";
@@ -97,27 +97,6 @@ export default function ProviderKeysPage() {
     }
   }, [deletingKey, providerId, mutate, t, showError]);
 
-  // 切换状态
-  const handleToggleStatus = useCallback(async (keyId: string, newStatus: 'active' | 'inactive') => {
-    // 乐观更新
-    mutate(
-      keys.map(k => k.id === keyId ? { ...k, status: newStatus } : k),
-      false
-    );
-
-    try {
-      await providerKeyService.updateKey(providerId, keyId, { status: newStatus });
-      toast.success(t("provider_keys.toast_status_success"));
-      mutate(); // 重新验证
-    } catch (error) {
-      showError(error, {
-        context: t("provider_keys.toast_status_error"),
-        onRetry: () => handleToggleStatus(keyId, newStatus),
-      });
-      mutate(); // 回滚
-    }
-  }, [keys, providerId, mutate, t, showError]);
-
   const handleSuccess = useCallback(() => {
     // 对话框关闭后的回调
   }, []);
@@ -155,7 +134,6 @@ export default function ProviderKeysPage() {
         loading={isLoading}
         onEdit={handleEdit}
         onDelete={handleDelete}
-        onToggleStatus={handleToggleStatus}
       />
 
       {/* 创建/编辑对话框 */}
@@ -163,7 +141,6 @@ export default function ProviderKeysPage() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         editingKey={editingKey}
-        providerId={providerId}
         onSuccess={handleSuccess}
         onSubmit={handleSubmit}
       />

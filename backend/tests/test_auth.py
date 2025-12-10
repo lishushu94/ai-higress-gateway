@@ -1,5 +1,3 @@
-import base64
-
 import pytest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
@@ -25,8 +23,7 @@ async def test_require_api_key_queries_database() -> None:
     with SessionLocal() as session:
         user, _ = seed_user_and_key(session, token_plain="custom-secret")
 
-    encoded = base64.b64encode(b"custom-secret").decode("ascii")
-    authorization = f"Bearer {encoded}"
+    authorization = "Bearer custom-secret"
 
     fake_redis = InMemoryRedis()
     with SessionLocal() as session:
@@ -54,8 +51,7 @@ async def test_require_api_key_reads_from_cache(monkeypatch) -> None:
     with SessionLocal() as session:
         seed_user_and_key(session, token_plain="cached-secret")
 
-    encoded = base64.b64encode(b"cached-secret").decode("ascii")
-    authorization = f"Bearer {encoded}"
+    authorization = "Bearer cached-secret"
     fake_redis = InMemoryRedis()
 
     with SessionLocal() as session:
@@ -97,8 +93,7 @@ async def test_disabled_api_key_is_rejected() -> None:
         session.add(key)
         session.commit()
 
-    encoded = base64.b64encode(b"inactive").decode("ascii")
-    authorization = f"Bearer {encoded}"
+    authorization = "Bearer inactive"
     fake_redis = InMemoryRedis()
 
     with SessionLocal() as session:

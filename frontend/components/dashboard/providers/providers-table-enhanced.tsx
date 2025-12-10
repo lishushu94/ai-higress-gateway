@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { Provider } from "@/http/provider";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";

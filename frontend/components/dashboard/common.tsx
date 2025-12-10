@@ -1,9 +1,8 @@
 "use client";
 
-import React from "react";
+import type { ElementType } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Activity, Server, Database, ArrowUpRight, ArrowDownRight } from "lucide-react";
+import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 
 interface StatCardProps {
@@ -11,7 +10,7 @@ interface StatCardProps {
   value: string;
   change: string;
   trend: "up" | "down";
-  icon: React.ElementType;
+  icon: ElementType;
 }
 
 export function StatCard({ titleKey, value, change, trend, icon: Icon }: StatCardProps) {

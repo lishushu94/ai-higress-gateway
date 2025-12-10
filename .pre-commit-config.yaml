@@ -25,6 +25,21 @@ repos:
         language: system
         files: ^frontend/.*\.(ts|tsx|js|jsx)$
         pass_filenames: false
+      
+      - id: frontend-type-check
+        name: Frontend TypeScript Type Check
+        entry: bash -c 'cd frontend && bun run type-check'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+      
+      - id: frontend-quality-check
+        name: Frontend Code Quality Check
+        entry: bash -c 'cd frontend && bash scripts/check-code-quality.sh'
+        language: system
+        files: ^frontend/.*\.(ts|tsx)$
+        pass_filenames: false
+        stages: [manual]
 
   # 通用检查
   - repo: https://github.com/pre-commit/pre-commit-hooks

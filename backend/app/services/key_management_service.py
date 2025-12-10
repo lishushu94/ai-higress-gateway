@@ -175,7 +175,7 @@ def initialize_system_admin(
         display_name: 管理员显示名称
         
     Returns:
-        包含管理员凭证和API密钥的字典
+        包含管理员凭证的字典
         
     Raises:
         KeyManagementServiceError: 如果初始化失败
@@ -190,24 +190,25 @@ def initialize_system_admin(
         if has_any_user(session):
             raise KeyManagementServiceError("System already has users")
         
-        # 创建管理员用户和API密钥
-        user, password, api_token = create_user_with_api_key(
-            session=session,
+        password = generate_secure_random_password()
+        user_payload = UserCreateRequest(
             username=username,
             email=email,
+            password=password,
             display_name=display_name,
-            is_superuser=True,
-            api_key_name="admin-default",
         )
-        
+        try:
+            user = create_user(session, user_payload, is_superuser=True)
+        except Exception as exc:
+            raise UserCreationError(f"Failed to create user: {exc}") from exc
+
         result = {
             "user": user,
             "username": user.username,
             "email": user.email,
             "password": password,
-            "api_key": api_token,
         }
-        
+
         logger.warning(
             "System admin initialized - please save credentials securely: username=%s email=%s",
             username,

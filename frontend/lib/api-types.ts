@@ -309,6 +309,8 @@ export interface LogicalModelUpstream {
   base_weight: number;
   region: string | null;
   max_qps: number | null;
+  cost_input?: number | null;
+  cost_output?: number | null;
   meta_hash: string | null;
   updated_at: number;
   api_style: ApiStyle;

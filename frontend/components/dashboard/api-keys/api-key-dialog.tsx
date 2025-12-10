@@ -105,7 +105,7 @@ export function ApiKeyDialog({
                     expiry,
                     allowed_provider_ids: allowedProviderIds,
                 };
-                const result = await updateApiKey(apiKey.id, data);
+                await updateApiKey(apiKey.id, data);
                 toast.success('API Key 更新成功');
                 onOpenChange(false);
             }

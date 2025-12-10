@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 import fnmatch
 from typing import Callable
 
@@ -104,8 +103,7 @@ def seed_user_and_key(
 
 def auth_headers(token_plain: str = "timeline") -> dict[str, str]:
     """生成 API Key 格式的认证头（用于模型访问路由）"""
-    encoded = base64.b64encode(token_plain.encode("utf-8")).decode("ascii")
-    return {"Authorization": f"Bearer {encoded}"}
+    return {"Authorization": f"Bearer {token_plain}"}
 
 
 def jwt_auth_headers(user_id: str) -> dict[str, str]:

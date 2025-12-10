@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import { useState } from "react";
 import { ProviderPreset } from "@/http/provider-preset";
 import { useProviderPresets } from "@/lib/hooks/use-provider-presets";
 import { Label } from "@/components/ui/label";

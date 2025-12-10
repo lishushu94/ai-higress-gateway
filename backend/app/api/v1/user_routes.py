@@ -6,7 +6,8 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, UploadFile, status
+from fastapi import APIRouter, Depends, File, Query, UploadFile, status
+from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
 from app.deps import get_db, get_redis
@@ -14,10 +15,12 @@ from app.errors import bad_request, forbidden, not_found
 from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.schemas import (
     UserCreateRequest,
+    UserLookupResponse,
     UserResponse,
     UserStatusUpdateRequest,
     UserUpdateRequest,
 )
+from app.models import User
 from app.services.api_key_cache import invalidate_cached_api_key
 from app.services.role_service import RoleCodeAlreadyExistsError, RoleService
 from app.services.user_permission_service import UserPermissionService
@@ -211,6 +214,54 @@ async def upload_my_avatar_endpoint(
     db.refresh(user)
 
     return _build_user_response(db, user.id)
+
+
+@router.get("/users/search", response_model=list[UserLookupResponse])
+def search_users_endpoint(
+    q: str | None = Query(
+        default=None,
+        min_length=1,
+        description="支持邮箱、用户名或昵称的模糊匹配，至少输入 1 个字符",
+    ),
+    ids: list[UUID] | None = Query(
+        default=None,
+        description="可选：直接按照用户 ID 查询，适合前端以 ID 拉取详细信息",
+    ),
+    limit: int = Query(default=10, ge=1, le=50, description="返回的最大结果数"),
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> list[UserLookupResponse]:
+    """供前端分享/指派等场景使用的轻量级用户搜索接口。"""
+
+    if (q is None or not q.strip()) and not ids:
+        raise bad_request("请输入关键字或提供用户 ID")
+
+    stmt: Select[tuple[User]] = select(User)
+
+    if ids:
+        stmt = stmt.where(User.id.in_(ids))
+
+    if q:
+        keyword = f"%{q.strip()}%"
+        stmt = stmt.where(
+            or_(
+                User.email.ilike(keyword),
+                User.username.ilike(keyword),
+                User.display_name.ilike(keyword),
+            )
+        ).limit(limit)
+
+    stmt = stmt.order_by(User.created_at.asc())
+    users = list(db.execute(stmt).scalars().all())
+    return [
+        UserLookupResponse(
+            id=user.id,
+            username=user.username,
+            email=user.email,
+            display_name=user.display_name,
+        )
+        for user in users
+    ]
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)

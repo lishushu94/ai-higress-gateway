@@ -7,19 +7,27 @@ import { AuthDialog } from "@/components/auth/auth-dialog";
 import { SWRProvider } from "@/lib/swr";
 import { Toaster } from "@/components/ui/sonner";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
+import { PerformanceMonitor } from "@/components/performance-monitor";
+
 
 export const metadata: Metadata = {
   title: "AI Higress Frontend",
   description: "Frontend for AI Higress API Gateway",
   manifest: "/manifest.json",
-  themeColor: "#0066cc",
-  viewport: "width=device-width, initial-scale=1, maximum-scale=1",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "AI HIGRESS GATEWAY",
   },
 };
+
+export function generateThemeColor() {
+  return "#0066cc";
+}
+
+export function generateViewport() {
+  return "width=device-width, initial-scale=1, maximum-scale=1";
+}
 
 export default function RootLayout({
   children,
@@ -51,6 +59,8 @@ export default function RootLayout({
                 <AuthDialog />
                 {/* PWA 安装提示 */}
                 <PWAInstallPrompt />
+                {/* 性能监控 */}
+                <PerformanceMonitor />
               </AuthProvider>
             </SWRProvider>
           </I18nProvider>

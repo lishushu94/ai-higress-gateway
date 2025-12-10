@@ -1,7 +1,6 @@
 "use client";
 
-import React, { useEffect } from "react";
-import { AuthDialog } from "@/components/auth/auth-dialog";
+import { useEffect } from "react";
 import { useAuthStore } from "@/lib/stores/auth-store";
 
 export default function LoginPage() {

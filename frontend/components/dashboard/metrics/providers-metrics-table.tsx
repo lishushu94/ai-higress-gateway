@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import type { ActiveProviderMetrics } from "@/lib/api-types";
 import {
   Table,

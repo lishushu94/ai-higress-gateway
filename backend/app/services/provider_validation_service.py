@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from datetime import datetime, timezone
+
 import httpx
 
 from app.logging_config import logger
@@ -152,7 +154,6 @@ class ProviderValidationService:
                 try:
                     response = await client.post(url, json=payload, headers=headers)
                     latency_ms = int(response.elapsed.total_seconds() * 1000)
-                    from datetime import datetime, timezone
                     timestamp = datetime.now(timezone.utc)
                     if response.status_code < 300:
                         results.append(
@@ -176,13 +177,14 @@ class ProviderValidationService:
                         )
                 except Exception as exc:  # pragma: no cover - 网络/超时异常
                     logger.warning("Model validation failed for %s: %s", model_id, exc)
+                    timestamp = datetime.now(timezone.utc)
                     results.append(
                         ProviderModelValidationResult(
                             model_id=model_id,
                             success=False,
                             latency_ms=latency_ms,
                             error_message=str(exc),
-                            timestamp=None,
+                            timestamp=timestamp,
                         )
                     )
         return results

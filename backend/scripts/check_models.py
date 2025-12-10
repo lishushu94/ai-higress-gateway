@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import base64
 import json
 from typing import Any
 
@@ -27,8 +26,10 @@ from app.settings import settings
 
 
 def _build_auth_header(token_plain: str) -> str:
-    encoded = base64.b64encode(token_plain.encode("utf-8")).decode("ascii")
-    return f"Bearer {encoded}"
+    token = token_plain.strip()
+    if not token:
+        raise ValueError("token 不能为空")
+    return f"Bearer {token}"
 
 
 async def inspect_redis_models(redis_url: str) -> list[str]:
@@ -124,7 +125,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--auth-token",
         required=True,
-        help="用户 API 密钥明文，脚本会自动 base64 编码 Authorization 头。",
+        help="用户 API 密钥（明文），直接写入 Authorization 头。",
     )
     parser.add_argument(
         "--skip-chat",

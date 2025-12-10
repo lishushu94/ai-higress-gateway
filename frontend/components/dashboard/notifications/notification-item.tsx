@@ -28,7 +28,7 @@ const levelColors = {
 };
 
 export function NotificationItem({ notification, compact = false }: NotificationItemProps) {
-  const { t, language } = useI18n();
+  const { language } = useI18n();
   const { markAsRead, submitting } = useMarkNotificationsRead();
   const [marking, setMarking] = useState(false);
 

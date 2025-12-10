@@ -1,33 +1,30 @@
-"use client";
+import { PageHeader } from "./components/page-header";
+import { OverviewClient } from "./components/overview-client";
 
-import React from "react";
-import { StatsGrid } from "@/components/dashboard/overview/stats-grid";
-import { ActiveProviders } from "@/components/dashboard/overview/active-providers";
-import { RecentActivity } from "@/components/dashboard/overview/recent-activity";
-import { GatewayConfigCard } from "@/components/dashboard/overview/gateway-config-card";
-import { useI18n } from "@/lib/i18n-context";
-
+/**
+ * Dashboard Overview 页面（服务端组件）
+ * 
+ * 职责：
+ * - 定义页面布局结构
+ * - 将交互逻辑委托给客户端组件
+ * 
+ * 优化：
+ * - 使用服务端组件架构
+ * - 页面结构在服务端渲染
+ * - 交互逻辑和数据获取封装在客户端组件中
+ * 
+ * 架构：
+ * - PageHeader: 客户端组件，处理 i18n 标题
+ * - OverviewClient: 客户端组件，处理所有数据获取和交互
+ */
 export default function OverviewPage() {
-    const { t } = useI18n();
+  return (
+    <div className="space-y-8 max-w-7xl">
+      {/* 页面头部 - 客户端组件（用于 i18n） */}
+      <PageHeader />
 
-    return (
-        <div className="space-y-8 max-w-7xl">
-            <div>
-                <h1 className="text-3xl font-bold mb-2">{t("overview.title")}</h1>
-                <p className="text-muted-foreground">{t("overview.subtitle")}</p>
-            </div>
-
-            {/* Stats Grid */}
-            <StatsGrid />
-
-            {/* Gateway configuration (visible to all logged-in users) */}
-            <GatewayConfigCard />
-
-            {/* Active Providers */}
-            <ActiveProviders />
-
-            {/* Recent Activity */}
-            <RecentActivity />
-        </div>
-    );
+      {/* 动态内容 - 客户端组件 */}
+      <OverviewClient />
+    </div>
+  );
 }

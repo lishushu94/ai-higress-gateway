@@ -124,6 +124,7 @@ from .system import (
 from .session import Session
 from .user import (
     UserCreateRequest,
+    UserLookupResponse,
     UserResponse,
     UserStatusUpdateRequest,
     UserUpdateRequest,
@@ -242,6 +243,7 @@ __all__ = [
     "UserResponse",
     "UserStatusUpdateRequest",
     "UserUpdateRequest",
+    "UserLookupResponse",
     "NotificationCreateRequest",
     "NotificationAdminResponse",
     "NotificationMarkReadRequest",

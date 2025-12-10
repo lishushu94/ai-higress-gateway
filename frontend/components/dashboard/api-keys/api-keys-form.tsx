@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import {
     Dialog,
     DialogContent,
@@ -11,7 +10,6 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useI18n } from "@/lib/i18n-context";
 
 interface ApiKeysFormProps {
     open: boolean;
@@ -19,8 +17,6 @@ interface ApiKeysFormProps {
 }
 
 export function ApiKeysForm({ open, onOpenChange }: ApiKeysFormProps) {
-    const { t } = useI18n();
-
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
             <DialogContent>

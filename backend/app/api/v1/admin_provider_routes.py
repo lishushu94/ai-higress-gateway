@@ -520,7 +520,7 @@ def admin_offline_provider_endpoint(
 
 
 @router.get(
-    "/admin/providers/{provider_id}/models/{model_id}/pricing",
+    "/admin/providers/{provider_id}/models/{model_id:path}/pricing",
     response_model=ProviderModelPricingResponse,
 )
 def get_provider_model_pricing_endpoint(
@@ -567,7 +567,7 @@ def get_provider_model_pricing_endpoint(
 
 
 @router.put(
-    "/admin/providers/{provider_id}/models/{model_id}/pricing",
+    "/admin/providers/{provider_id}/models/{model_id:path}/pricing",
     response_model=ProviderModelPricingResponse,
 )
 def update_provider_model_pricing_endpoint(

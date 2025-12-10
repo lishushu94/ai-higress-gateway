@@ -109,6 +109,13 @@ const createHttpClient = (): AxiosInstance => {
 
       // 401 错误的 token 刷新逻辑
       if (error.response?.status === 401) {
+        console.log('[Auth Debug] 401 error detected:', {
+          url: originalRequest.url,
+          isRefreshRequest: originalRequest.url?.includes('/auth/refresh'),
+          hasRetried: originalRequest._retry,
+          isRefreshing,
+          hasRefreshToken: !!tokenManager.getRefreshToken()
+        });
         const isRefreshRequest = originalRequest.url?.includes('/auth/refresh');
         
         // 如果是刷新token请求失败，触发认证错误回调
@@ -140,12 +147,15 @@ const createHttpClient = (): AxiosInstance => {
           isRefreshing = true;
 
           // 创建共享的刷新 Promise
+          console.log('[Auth Debug] Starting token refresh...');
           refreshTokenPromise = refreshAccessToken()
             .then(newToken => {
+              console.log('[Auth Debug] Token refresh successful');
               processQueue(null, newToken);
               return newToken;
             })
             .catch(refreshError => {
+              console.log('[Auth Debug] Token refresh failed:', refreshError);
               processQueue(refreshError, null);
               
               // 刷新失败，清除所有token并触发认证错误回调

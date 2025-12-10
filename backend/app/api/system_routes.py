@@ -173,7 +173,6 @@ def init_system_admin(
             username=admin_credentials["username"],
             email=admin_credentials["email"],
             password=admin_credentials["password"],
-            api_key=admin_credentials["api_key"],
         )
     except KeyManagementServiceError as exc:
         raise HTTPException(

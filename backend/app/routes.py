@@ -1,7 +1,9 @@
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse
 
 from app.provider.config import get_provider_config, load_provider_configs
 
@@ -42,6 +44,28 @@ from .logging_config import logger
 from .services.bootstrap_admin import ensure_initial_admin
 
 
+async def handle_unexpected_error(request: Request, exc: Exception):
+    """
+    全局异常处理器，统一返回结构化错误响应并打印日志。
+    """
+
+    error_id = uuid.uuid4().hex
+    logger.exception(
+        "Unhandled error %s %s (error_id=%s)",
+        request.method,
+        request.url.path,
+        error_id,
+    )
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error_code": "internal_error",
+            "message": "服务器内部错误，请稍后再试",
+            "error_id": error_id,
+        },
+    )
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
@@ -74,6 +98,7 @@ def create_app() -> FastAPI:
 
     # 使用 lifespan 替代 on_event("startup")
     app = FastAPI(title="AI Gateway", version="0.1.0", lifespan=lifespan)
+    app.add_exception_handler(Exception, handle_unexpected_error)
 
     # 安全相关中间件：仅在生产环境启用
     if settings.enable_security_middleware:
@@ -124,7 +149,7 @@ def create_app() -> FastAPI:
         allow_origins=[
             "http://localhost:3000",
             "http://localhost:3001",
-            "http://localhost:61351"
+            "http://192.168.31.145:3000",
         ],
         allow_credentials=True,
         allow_methods=["*"],

@@ -34,7 +34,6 @@ interface ProviderKeyDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   editingKey: ProviderKey | null;
-  providerId: string;
   onSuccess: () => void;
   onSubmit: (data: ProviderKeyFormData) => Promise<void>;
 }
@@ -43,7 +42,6 @@ export function ProviderKeyDialog({
   open,
   onOpenChange,
   editingKey,
-  providerId,
   onSuccess,
   onSubmit,
 }: ProviderKeyDialogProps) {

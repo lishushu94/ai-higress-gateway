@@ -21,7 +21,6 @@ class SystemAdminInitResponse(BaseModel):
     username: str
     email: str
     password: str
-    api_key: str
 
 
 class KeyValidationRequest(BaseModel):

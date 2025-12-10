@@ -727,7 +727,7 @@ def test_models_v1_alias(monkeypatch):
 
     with TestClient(app=app, base_url="http://test") as client:
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
         resp = client.get("/v1/models", headers=headers)
         assert resp.status_code == 200
@@ -830,8 +830,7 @@ def test_chat_greeting_returns_reply(monkeypatch):
             "stream": False,
         }
         headers = {
-            # base64("timeline") -> dGltZWxpbmU=
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
@@ -861,7 +860,7 @@ def test_chat_greeting_accepts_x_api_key_header(monkeypatch):
             "stream": False,
         }
         headers = {
-            "X-API-Key": "dGltZWxpbmU=",
+            "X-API-Key": "timeline",
         }
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
@@ -894,7 +893,7 @@ def test_responses_endpoint_adapts_payload(monkeypatch):
             "stream": False,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/responses", json=payload, headers=headers)
@@ -944,7 +943,7 @@ def test_messages_endpoint_overrides_upstream_path(monkeypatch):
             ],
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/messages", json=payload, headers=headers)
@@ -977,7 +976,7 @@ def test_claude_messages_fallback_non_stream(monkeypatch):
             ],
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/messages", json=payload, headers=headers)
@@ -1008,7 +1007,7 @@ def test_claude_messages_streaming_fallback(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1181,7 +1180,7 @@ def test_chat_failover_non_stream(monkeypatch):
             "stream": False,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
@@ -1263,7 +1262,7 @@ def test_chat_failover_streaming(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1291,7 +1290,7 @@ def test_responses_streaming_rewrites_sse(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1323,7 +1322,7 @@ def test_responses_sync_request_for_gpt_codex(monkeypatch):
             "stream": False,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
         }
 
         resp = client.post("/v1/responses", json=payload, headers=headers)
@@ -1352,7 +1351,7 @@ def test_gemini_non_streaming_converted_to_openai(monkeypatch):
                 {"role": "user", "content": "测试 Gemini 非流式"},
             ],
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -1374,7 +1373,7 @@ def test_gemini_streaming_converted_to_openai(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
         with client.stream("POST", "/v1/chat/completions", json=payload, headers=headers) as resp:
@@ -1397,7 +1396,7 @@ def test_gemini_image_inline_data_converted(monkeypatch):
                 {"role": "user", "content": "画一张图片"},
             ],
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -1421,7 +1420,7 @@ def test_gemini_image_saved_to_file(monkeypatch, tmp_path):
                 {"role": "user", "content": "喜羊羊"},
             ],
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -1478,7 +1477,7 @@ def test_sdk_transport_non_stream(monkeypatch):
             "messages": [{"role": "user", "content": "你好，SDK"}],
             "stream": False,
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp.status_code == 200
@@ -1529,7 +1528,7 @@ def test_sdk_transport_streaming(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1590,7 +1589,7 @@ def test_openai_sdk_transport_non_stream(monkeypatch):
             "messages": [{"role": "user", "content": "你好，OpenAI SDK"}],
             "stream": False,
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)
         assert resp.status_code == 200
@@ -1651,7 +1650,7 @@ def test_openai_sdk_transport_streaming(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1688,7 +1687,7 @@ def test_openai_sdk_models_list(monkeypatch):
     )
 
     with TestClient(app=app, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
         resp = client.get("/v1/models", headers=headers)
         assert resp.status_code == 200
         data = resp.json()
@@ -1738,7 +1737,7 @@ def test_claude_sdk_transport_non_stream(monkeypatch):
             "max_tokens": 16,
             "stream": False,
         }
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
 
         resp = client.post("/v1/messages", json=payload, headers=headers)
         assert resp.status_code == 200
@@ -1789,7 +1788,7 @@ def test_claude_sdk_transport_streaming(monkeypatch):
             "stream": True,
         }
         headers = {
-            "Authorization": "Bearer dGltZWxpbmU=",
+            "Authorization": "Bearer timeline",
             "Accept": "text/event-stream",
         }
 
@@ -1826,7 +1825,7 @@ def test_claude_sdk_models_list(monkeypatch):
     monkeypatch.setattr("app.provider.claude_sdk.list_models", _fake_list_models)
 
     with TestClient(app=app, base_url="http://test") as client:
-        headers = {"Authorization": "Bearer dGltZWxpbmU="}
+        headers = {"Authorization": "Bearer timeline"}
         resp = client.get("/v1/models", headers=headers)
         assert resp.status_code == 200
         data = resp.json()

@@ -8,10 +8,12 @@ type Translations = {
   [key in Language]: Record<string, string>;
 };
 
+type TranslationParams = Record<string, string | number>;
+
 interface I18nContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: (key: string) => string;
+  t: (key: string, params?: TranslationParams) => string;
 }
 
 const I18nContext = createContext<I18nContextType | undefined>(undefined);
@@ -19,6 +21,20 @@ const I18nContext = createContext<I18nContextType | undefined>(undefined);
 // Cache translations at module level so they are only loaded once per runtime.
 let translationsCache: Translations | null = null;
 let translationsPromise: Promise<Translations> | null = null;
+
+const escapeRegExp = (value: string) =>
+  value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function formatTranslation(text: string, params?: TranslationParams) {
+  if (!params) {
+    return text;
+  }
+
+  return Object.entries(params).reduce((result, [paramKey, paramValue]) => {
+    const pattern = new RegExp(`\\{${escapeRegExp(paramKey)}\\}`, "g");
+    return result.replace(pattern, String(paramValue));
+  }, text);
+}
 
 async function loadAllTranslations(): Promise<Translations> {
   if (translationsCache) {
@@ -79,12 +95,13 @@ export function I18nProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const t = (key: string) => {
+  const t = (key: string, params?: TranslationParams) => {
     if (!translations) {
       // While translations are loading, fall back to the key itself.
-      return key;
+      return formatTranslation(key, params);
     }
-    return translations[language]?.[key] ?? key;
+    const template = translations[language]?.[key] ?? key;
+    return formatTranslation(template, params);
   };
 
   return (
@@ -101,4 +118,3 @@ export function useI18n() {
   }
   return context;
 }
-

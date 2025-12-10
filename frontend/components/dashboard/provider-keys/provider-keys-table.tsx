@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import {
   Card,
   CardContent,
@@ -33,7 +32,6 @@ interface ProviderKeysTableProps {
   loading: boolean;
   onEdit: (key: ProviderKey) => void;
   onDelete: (keyId: string) => void;
-  onToggleStatus: (keyId: string, newStatus: 'active' | 'inactive') => void;
 }
 
 export function ProviderKeysTable({
@@ -41,7 +39,6 @@ export function ProviderKeysTable({
   loading,
   onEdit,
   onDelete,
-  onToggleStatus,
 }: ProviderKeysTableProps) {
   const { t, language } = useI18n();
 

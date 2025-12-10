@@ -497,7 +497,42 @@
 
 ---
 
-### 4. 更新用户信息
+### 4. 搜索用户
+
+**接口**: `GET /users/search`
+
+**描述**: 根据关键字（邮箱 / 用户名 / 昵称）或一组用户 ID 查询可分享的用户列表，返回精简信息，便于前端在“私有分享”等场景中进行选择。
+
+**认证**: JWT 令牌
+
+**查询参数**:
+
+| 参数 | 类型 | 必填 | 说明 |
+| --- | --- | --- | --- |
+| `q` | string | 否 | 搜索关键字，支持模糊匹配邮箱、用户名、昵称，至少 1 个字符 |
+| `ids` | string[] (UUID) | 否 | 直接按用户 ID 精确查询，可重复提供多个 `ids` 参数 |
+| `limit` | int | 否 | 返回条数，默认 10，最大 50；仅对 `q` 搜索生效 |
+
+> `q` 和 `ids` 至少需要提供其中之一。
+
+**响应**:
+```json
+[
+  {
+    "id": "uuid",
+    "username": "string",
+    "email": "string",
+    "display_name": "string | null"
+  }
+]
+```
+
+**错误响应**:
+- 400: 未提供 `q` 或 `ids`
+
+---
+
+### 5. 更新用户信息
 
 **接口**: `PUT /users/{user_id}`
 
@@ -543,7 +578,7 @@
 
 ---
 
-### 5. 更新用户状态
+### 6. 更新用户状态
 
 **接口**: `PUT /users/{user_id}/status`
 
@@ -575,7 +610,7 @@
 
 ---
 
-### 6. 管理员获取用户列表
+### 7. 管理员获取用户列表
 
 **接口**: `GET /admin/users`
 
@@ -613,7 +648,7 @@
 
 ---
 
-### 6. 管理员获取用户权限列表
+### 8. 管理员获取用户权限列表
 
 **接口**: `GET /admin/users/{user_id}/permissions`
 
@@ -639,7 +674,7 @@
 
 ---
 
-### 7. 管理员授予或更新用户权限
+### 9. 管理员授予或更新用户权限
 
 **接口**: `POST /admin/users/{user_id}/permissions`
 
@@ -661,7 +696,7 @@
 
 ---
 
-### 7. 管理员撤销用户权限
+### 10. 管理员撤销用户权限
 
 **接口**: `DELETE /admin/users/{user_id}/permissions/{permission_id}`
 
@@ -673,7 +708,7 @@
 
 ---
 
-### 8. 超级管理员管理角色与权限（RBAC）
+### 11. 超级管理员管理角色与权限（RBAC）
 
 以下接口仅面向超级管理员 (`is_superuser = true`)，用于通过“角色 + 权限”集中管理用户能力。  
 权限判断统一走后端的 `UserPermissionService.has_permission(user_id, permission_code)`，会综合：
@@ -681,7 +716,7 @@
 - 用户直挂权限 `user_permissions.permission_type`
 - 用户所属角色上的权限 `permissions.code`
 
-#### 8.1 查询权限定义列表
+#### 11.1 查询权限定义列表
 
 **接口**: `GET /admin/permissions`
 
@@ -704,7 +739,7 @@
 
 ---
 
-#### 8.2 查询角色列表
+#### 11.2 查询角色列表
 
 **接口**: `GET /admin/roles`
 
@@ -728,7 +763,7 @@
 
 ---
 
-#### 8.3 创建角色
+#### 11.3 创建角色
 
 **接口**: `POST /admin/roles`
 
@@ -752,7 +787,7 @@
 
 ---
 
-#### 8.4 更新角色
+#### 11.4 更新角色
 
 **接口**: `PUT /admin/roles/{role_id}`
 
@@ -772,7 +807,7 @@
 
 ---
 
-#### 8.5 删除角色
+#### 11.5 删除角色
 
 **接口**: `DELETE /admin/roles/{role_id}`
 
@@ -786,7 +821,7 @@
 
 ---
 
-#### 8.6 查询角色已绑定的权限
+#### 11.6 查询角色已绑定的权限
 
 **接口**: `GET /admin/roles/{role_id}/permissions`
 
@@ -810,7 +845,7 @@
 
 ---
 
-#### 8.7 设置角色的权限列表（全量覆盖）
+#### 11.7 设置角色的权限列表（全量覆盖）
 
 **接口**: `PUT /admin/roles/{role_id}/permissions`  
 **别名**: `POST /admin/roles/{role_id}/permissions`
@@ -851,7 +886,7 @@
 
 ---
 
-#### 8.8 查询用户当前角色列表
+#### 11.8 查询用户当前角色列表
 
 **接口**: `GET /admin/users/{user_id}/roles`
 
@@ -875,7 +910,7 @@
 
 ---
 
-#### 8.9 为用户设置角色列表（全量覆盖）
+#### 11.9 为用户设置角色列表（全量覆盖）
 
 **接口**: `PUT /admin/users/{user_id}/roles`  
 **别名**: `POST /admin/users/{user_id}/roles`
@@ -2914,10 +2949,11 @@ cost_credits = ceil(total_tokens / 1000 * CREDITS_BASE_PER_1K_TOKENS * effective
 {
   "username": "string",
   "email": "string",
-  "password": "string",
-  "api_key": "string"
+  "password": "string"
 }
 ```
+
+> 初始化仅返回管理员凭据，不再自动生成 API Key。请使用上述用户名/密码登录后，再在 API Key 管理页手动创建密钥。
 
 **错误响应**:
 - 400: 系统已有用户或初始化失败
@@ -3093,11 +3129,15 @@ Authorization: Bearer {access_token}
 
 ### API 密钥认证
 
-对于需要 API 密钥认证的 API，需要在请求头中添加：
+对于需要 API 密钥认证的 API，需要在请求头中添加明文 API Key，支持两种写法：
 
 ```
+Authorization: Bearer {api_key}
+# 或
 X-API-Key: {api_key}
 ```
+
+> {api_key} 即创建密钥时返回的字符串，无需再做 Base64 编码。
 
 ---
 

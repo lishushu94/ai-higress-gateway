@@ -1,6 +1,5 @@
 "use client";
 
-import React from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useGatewayConfig } from "@/lib/swr";
 import { useI18n } from "@/lib/i18n-context";

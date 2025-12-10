@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 """
-将明文 token 转成 Base64，方便用于 Authorization: Bearer <token> 请求头。
+生成 Authorization / X-API-Key 请求头所需的 token。
+旧版本需要先 Base64 编码，现在直接使用明文 token。
 
 用法示例：
     uv run scripts/encode_token.py timeline
@@ -9,26 +10,25 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import sys
 
 
-def encode_token(value: str) -> str:
-    """Encode the provided string as Base64 (UTF-8)."""
-    if not value:
+def normalize_token(value: str) -> str:
+    """Return a trimmed token string."""
+    token = value.strip()
+    if not token:
         raise ValueError("token 不能为空")
-    encoded = base64.b64encode(value.encode("utf-8"))
-    return encoded.decode("ascii")
+    return token
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="将明文 token 转为 Base64，用于 Authorization 头。",
+        description="生成 Authorization/X-API-Key 头部内容，直接使用明文 token。",
     )
     parser.add_argument(
         "token",
         nargs="?",
-        help="要编码的明文 token，例如 timeline",
+        help="要使用的明文 token，例如 timeline",
     )
     return parser.parse_args()
 
@@ -36,24 +36,22 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
 
-    token = args.token
-    if not token:
-        token = input("请输入要编码的明文 token: ").strip()
+    token = args.token or input("请输入要使用的明文 token: ").strip()
     if not token:
         print("token 不能为空", file=sys.stderr)
         sys.exit(1)
 
     try:
-        encoded = encode_token(token)
+        normalized = normalize_token(token)
     except ValueError as exc:
-        print(f"编码失败: {exc}", file=sys.stderr)
+        print(f"处理失败: {exc}", file=sys.stderr)
         sys.exit(1)
 
-    print("=== 编码结果 ===")
-    print(f"明文: {token}")
-    print(f"Base64: {encoded}")
+    print("=== 结果 ===")
+    print(f"明文: {normalized}")
     print("\n在请求头中使用：")
-    print(f"Authorization: Bearer {encoded}")
+    print(f"Authorization: Bearer {normalized}")
+    print(f"X-API-Key: {normalized}")
 
 
 if __name__ == "__main__":

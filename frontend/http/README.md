@@ -206,7 +206,7 @@ await routingService.deleteSession('conv123');
 // 生成系统主密钥
 const { secret_key } = await systemService.generateSecretKey({ length: 64 });
 
-// 初始化系统管理员
+// 初始化系统管理员（仅返回凭证，API Key 需登录后另行创建）
 const admin = await systemService.initAdmin({
   username: 'admin',
   email: 'admin@example.com',

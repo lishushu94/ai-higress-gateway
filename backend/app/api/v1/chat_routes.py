@@ -376,9 +376,7 @@ async def chat_completions(
             exclude_providers=[],
         )
         candidates = [
-            cand
-            for cand in candidates
-            if cand.upstream.provider_id in accessible_provider_ids
+            cand for cand in candidates if cand.provider_id in accessible_provider_ids
         ]
         if not candidates:
             raise forbidden("当前用户无权访问该模型的任何可用 Provider")

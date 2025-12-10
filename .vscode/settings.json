@@ -26,5 +26,7 @@
     ],
     "ruff.lint.run": "onSave",
     "ruff.format.enable": true,
-    "codingcopilot.enableCompletionLanguage": {}
+    "codingcopilot.enableCompletionLanguage": {},
+    "python-envs.defaultEnvManager": "ms-python.python:system",
+    "python-envs.pythonProjects": []
 }

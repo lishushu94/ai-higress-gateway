@@ -163,6 +163,8 @@ curl -X POST "http://localhost:8000/system/admin/init" \
 curl -X POST "http://localhost:8000/auth/login" \
   -H "Content-Type: application/json" \
   -d '{"username": "admin", "password": "<returned_password>"}'
+
+# 5. 登录后在“API 密钥”功能中手动创建管理员需要使用的 API Key
 ```
 
 ### 2. 普通用户使用流程

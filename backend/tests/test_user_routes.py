@@ -330,6 +330,55 @@ def test_non_superuser_cannot_list_users(client_with_db):
     assert body["detail"]["message"] == "需要管理员权限"
 
 
+def test_search_users_by_keyword(client_with_db):
+    client, session_factory, admin_id, _redis = client_with_db
+    payload = {
+        "username": "share-target",
+        "email": "share-target@example.com",
+        "password": "Secret123!",
+    }
+    resp = client.post("/users", json=payload, headers=_jwt_auth_headers(admin_id))
+    assert resp.status_code == 201
+    user_id = resp.json()["id"]
+
+    headers = _jwt_auth_headers(user_id)
+    resp_search = client.get("/users/search", params={"q": "share"}, headers=headers)
+    assert resp_search.status_code == 200
+    data = resp_search.json()
+    assert any(item["email"] == payload["email"] for item in data)
+
+
+def test_search_users_by_ids(client_with_db):
+    client, session_factory, admin_id, _redis = client_with_db
+    ids: list[str] = []
+    for suffix in ("alpha", "beta"):
+        payload = {
+            "username": f"user-{suffix}",
+            "email": f"user-{suffix}@example.com",
+            "password": "Secret123!",
+        }
+        resp = client.post("/users", json=payload, headers=_jwt_auth_headers(admin_id))
+        assert resp.status_code == 201
+        ids.append(resp.json()["id"])
+
+    resp_search = client.get(
+        "/users/search",
+        params=[("ids", ids[0]), ("ids", ids[1])],
+        headers=_jwt_auth_headers(admin_id),
+    )
+    assert resp_search.status_code == 200
+    data = resp_search.json()
+    returned = {item["id"] for item in data}
+    assert set(ids).issubset(returned)
+
+
+def test_search_users_requires_params(client_with_db):
+    client, session_factory, admin_id, _redis = client_with_db
+    resp = client.get("/users/search", headers=_jwt_auth_headers(admin_id))
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "请输入关键字或提供用户 ID"
+
+
 def test_upload_my_avatar_stores_key_and_exposes_url(client_with_db):
     """
     当前用户通过 /users/me/avatar 上传头像时：

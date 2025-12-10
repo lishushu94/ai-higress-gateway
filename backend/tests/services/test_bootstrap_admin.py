@@ -24,7 +24,7 @@ def _build_session_factory():
     return engine, SessionLocal
 
 
-def test_ensure_initial_admin_creates_user_and_key(caplog):
+def test_ensure_initial_admin_creates_user_without_key(caplog):
     engine, SessionLocal = _build_session_factory()
     caplog.set_level(logging.WARNING)
     try:
@@ -33,13 +33,12 @@ def test_ensure_initial_admin_creates_user_and_key(caplog):
             assert result is not None
             assert result.username == settings.default_admin_username
             assert result.password
-            assert result.api_key_token
 
         with SessionLocal() as session:
             user_count = session.execute(select(User)).scalars().all()
             assert len(user_count) == 1
             key_count = session.execute(select(APIKey)).scalars().all()
-            assert len(key_count) == 1
+            assert len(key_count) == 0
         assert "已自动创建初始管理员账号" in caplog.text
     finally:
         Base.metadata.drop_all(bind=engine)

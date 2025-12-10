@@ -12,7 +12,6 @@ interface ArrayEditorProps {
   label: string;
   value: string[];
   onChange: (value: string[]) => void;
-  placeholder?: string;
   description?: string;
   disabled?: boolean;
   error?: string;
@@ -24,7 +23,6 @@ export function ArrayEditor({
   label,
   value = [],
   onChange,
-  placeholder = "添加项目",
   description,
   disabled = false,
   error,

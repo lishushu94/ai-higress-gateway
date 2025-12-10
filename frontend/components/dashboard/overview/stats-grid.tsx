@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useMemo } from "react";
+import { useMemo } from "react";
 import { Activity, Server, Database } from "lucide-react";
 import { StatCard } from "../common";
 import { useOverviewMetrics } from "@/lib/swr/use-overview-metrics";

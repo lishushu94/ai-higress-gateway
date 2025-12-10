@@ -370,7 +370,7 @@ async def get_provider_metrics(
 
 
 @router.get(
-    "/providers/{provider_id}/models/{model_id}/mapping",
+    "/providers/{provider_id}/models/{model_id:path}/mapping",
     response_model=ProviderModelAliasResponse,
 )
 def get_provider_model_mapping(
@@ -412,7 +412,7 @@ def get_provider_model_mapping(
 
 
 @router.put(
-    "/providers/{provider_id}/models/{model_id}/mapping",
+    "/providers/{provider_id}/models/{model_id:path}/mapping",
     response_model=ProviderModelAliasResponse,
 )
 def update_provider_model_mapping(

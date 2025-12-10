@@ -27,10 +27,10 @@ export function RoutingTable({ candidates, selectedUpstream }: RoutingTableProps
   };
 
   // 格式化成本（基于输入输出成本计算平均值）
-  const formatCost = (costInput: number | undefined, costOutput: number | undefined) => {
-    if (costInput === undefined || costOutput === undefined) return 'N/A';
+  const formatCost = (costInput: number | null | undefined, costOutput: number | null | undefined) => {
+    if (costInput === undefined || costInput === null || costOutput === undefined || costOutput === null) return 'N/A';
     const avgCost = (costInput + costOutput) / 2;
-    return `$${avgCost.toFixed(6)}`;
+    return `${avgCost.toFixed(6)}`;
   };
 
   // 格式化评分

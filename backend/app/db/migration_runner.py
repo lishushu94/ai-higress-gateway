@@ -30,6 +30,11 @@ def _build_alembic_config(base_dir: Path) -> Config:
     config_path = base_dir / "alembic.ini"
     cfg = Config(str(config_path))
     cfg.set_main_option("script_location", str(base_dir / "alembic"))
+    # pytest 或 CLI 命令可能在仓库根目录运行，此时 Alembic 默认的
+    # version_locations="alembic/versions" 会被解析为相对于当前 cwd 的路径，
+    # 导致无法定位最新的 revision（例如 0027_add_probe_settings）。
+    # 将路径改成绝对值后即可在任意工作目录执行 `alembic upgrade`。
+    cfg.set_main_option("version_locations", str(base_dir / "alembic" / "versions"))
     cfg.set_main_option("sqlalchemy.url", settings.database_url)
     return cfg
 

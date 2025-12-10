@@ -24,7 +24,6 @@ import { useProviderDetail } from "@/lib/hooks/use-provider-detail";
 import type {
   ProviderStatus,
   ProviderModelPricing,
-  Model,
   ProviderVisibility,
   ProviderAuditStatus,
   ProviderOperationStatus,
@@ -39,6 +38,7 @@ import { useAuthStore } from "@/lib/stores/auth-store";
 import { ModelCard } from "./model-card";
 import { ModelPricingDialog } from "./model-pricing-dialog";
 import { ModelAliasDialog } from "./model-alias-dialog";
+import type { ProviderDetailTranslations } from "@/lib/i18n/provider-detail";
 import {
   Drawer,
   DrawerContent,
@@ -64,6 +64,14 @@ interface ProviderDetailClientProps {
       degraded: string;
       down: string;
       unknown: string;
+      pending: string;
+      testing: string;
+      approved: string;
+      approved_limited: string;
+      rejected: string;
+      active: string;
+      paused: string;
+      offline: string;
     };
     tabs: {
       overview: string;
