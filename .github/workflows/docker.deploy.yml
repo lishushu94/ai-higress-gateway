@@ -18,7 +18,6 @@ env:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: github.event.repository.private == true
 
     steps:
       - name: Checkout (for completeness)
@@ -46,5 +45,5 @@ jobs:
             # 需提前在服务器放好 docker-compose.yml/.env，并将 api/celery_* 指向远程镜像
             docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" -p "${{ secrets.DOCKERHUB_TOKEN }}"
             docker pull "$IMAGE"
-            docker compose pull api celery_worker celery_beat
-            docker compose up -d api celery_worker celery_beat
+            docker compose --env-file .env pull api celery_worker celery_beat
+            docker compose --env-file .env up -d api celery_worker celery_beat
