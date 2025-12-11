@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Activity, Server, Database } from "lucide-react";
 import { StatCard } from "../common";
-import { useOverviewMetrics } from "@/lib/swr/use-overview-metrics";
+import { useUserOverviewSummary, UserOverviewTimeRange } from "@/lib/swr/use-user-overview-metrics";
 
 function formatNumber(value: number): string {
   if (value >= 1_000_000) {
@@ -34,18 +34,16 @@ function computeChange(
   return { text: `${sign}${percent}%`, trend };
 }
 
-import { OverviewTimeRange } from "@/lib/swr/use-overview-metrics";
-
 interface StatsGridProps {
-  timeRange?: OverviewTimeRange;
+  timeRange?: UserOverviewTimeRange;
 }
 
 export function StatsGrid({ timeRange = "today" }: StatsGridProps) {
   // 根据传入的时间范围获取数据
-  const { overview } = useOverviewMetrics({ time_range: timeRange });
+  const { summary } = useUserOverviewSummary({ time_range: timeRange });
 
   const cards = useMemo(() => {
-    if (!overview) {
+    if (!summary) {
       // 初始加载或发生错误时保留占位布局
       return [
         {
@@ -72,43 +70,34 @@ export function StatsGrid({ timeRange = "today" }: StatsGridProps) {
       ];
     }
 
-    const totalChange = computeChange(
-      overview.total_requests,
-      overview.total_requests_prev
-    );
-    const providerChange = computeChange(
-      overview.active_providers,
-      overview.active_providers_prev
-    );
-    const successChange = computeChange(
-      overview.success_rate,
-      overview.success_rate_prev
-    );
+    const totalChange = computeChange(summary.total_requests, summary.total_requests_prev);
+    const providerChange = computeChange(summary.active_providers, summary.active_providers_prev);
+    const successChange = computeChange(summary.success_rate, summary.success_rate_prev);
 
     return [
       {
-        titleKey: "overview.total_requests",
-        value: formatNumber(overview.total_requests),
+        titleKey: "overview.my_total_requests",
+        value: formatNumber(summary.total_requests),
         change: totalChange.text,
         trend: totalChange.trend,
         icon: Activity,
       },
       {
-        titleKey: "overview.active_providers",
-        value: overview.active_providers.toString(),
+        titleKey: "overview.my_active_providers",
+        value: summary.active_providers.toString(),
         change: providerChange.text,
         trend: providerChange.trend,
         icon: Server,
       },
       {
-        titleKey: "overview.success_rate",
-        value: formatPercent(overview.success_rate),
+        titleKey: "overview.my_success_rate",
+        value: formatPercent(summary.success_rate),
         change: successChange.text,
         trend: successChange.trend,
         icon: Database,
       },
     ];
-  }, [overview]);
+  }, [summary]);
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

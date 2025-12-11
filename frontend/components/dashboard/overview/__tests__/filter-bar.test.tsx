@@ -10,7 +10,7 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { FilterBar } from "../filter-bar";
-import { OverviewTimeRange } from "@/lib/swr/use-overview-metrics";
+import { UserOverviewTimeRange } from "@/lib/swr/use-user-overview-metrics";
 import { I18nProvider } from "@/lib/i18n-context";
 
 // Mock localStorage
@@ -87,7 +87,7 @@ describe("FilterBar Component", () => {
     });
 
     it("应该支持所有时间范围选项", async () => {
-      const timeRanges: OverviewTimeRange[] = ["today", "7d", "30d", "all"];
+      const timeRanges: UserOverviewTimeRange[] = ["today", "7d", "30d", "all"];
       const onTimeRangeChange = vi.fn();
 
       for (const range of timeRanges) {

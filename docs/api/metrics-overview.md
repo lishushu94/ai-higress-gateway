@@ -230,11 +230,12 @@ const { consumption: credits } = useCreditConsumptionSummary({ timeRange: '7d' }
 
 | Hook 名称 | API 端点 | 缓存策略 | 用途 |
 |---------|---------|--------|------|
-| `useOverviewMetrics` | `GET /metrics/overview/summary` | static (60s) | 整体指标汇总 |
-| `useActiveProviders` | `GET /metrics/overview/providers` | static (60s) | 活跃 Provider 列表 |
-| `useOverviewActivity` | `GET /metrics/overview/timeseries` | frequent (30s) | 近期活动时间序列 |
+| `useOverviewMetrics` | `GET /metrics/overview/summary` | static (60s) | 系统级指标汇总 |
+| `useActiveProviders` | `GET /metrics/overview/providers` | static (60s) | 系统级活跃 Provider |
+| `useOverviewActivity` | `GET /metrics/overview/timeseries` | frequent (30s) | 系统级近期活动 |
+| `useUserOverviewSummary` | `GET /metrics/user-overview/summary` | frequent (60s) | 我的指标汇总 |
+| `useUserOverviewProviders` | `GET /metrics/user-overview/providers` | frequent (60s) | 我的 Provider 排行 |
+| `useUserOverviewActivity` | `GET /metrics/user-overview/timeseries` | frequent (30s) | 我的近期活动/成功率趋势 |
 | `useCreditConsumptionSummary` | `GET /v1/credits/me/consumption/summary` | static (60s) | 积分消耗汇总 |
-| `useCreditProviderConsumption` | `GET /v1/credits/me/consumption/providers` | static (60s) | Provider 维度消耗 |
 | `useCreditConsumptionTimeseries` | `GET /v1/credits/me/consumption/timeseries` | static (60s) | 积分消耗时间序列 |
-
 

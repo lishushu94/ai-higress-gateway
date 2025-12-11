@@ -22,8 +22,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { useI18n } from "@/lib/i18n-context";
-import { useCreditProviderConsumption } from "@/lib/swr/use-credits";
-import type { ProviderConsumption } from "@/lib/api-types";
+import { useUserOverviewProviders } from "@/lib/swr/use-user-overview-metrics";
 
 interface ProviderRankingCardProps {
   timeRange?: string;
@@ -50,11 +49,17 @@ export function ProviderRankingCard({
 }: ProviderRankingCardProps) {
   const { t } = useI18n();
   const router = useRouter();
-  const { providers, loading, error, refresh } = useCreditProviderConsumption(timeRange);
+  const {
+    providers,
+    loading,
+    error,
+    refresh,
+  } = useUserOverviewProviders({ time_range: timeRange as any, limit: 5 });
 
   // 排序 Provider 列表（按消耗降序）
   const sortedProviders = useMemo(() => {
-    return [...providers].sort((a, b) => b.total_consumption - a.total_consumption);
+    const items = providers?.items ?? [];
+    return [...items].sort((a, b) => b.total_requests - a.total_requests);
   }, [providers]);
 
   // 计算排名和百分比
@@ -67,7 +72,7 @@ export function ProviderRankingCard({
 
   // 格式化数字
   const formatNumber = (value: number): string => {
-    return value.toLocaleString("en-US", { maximumFractionDigits: 2 });
+    return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
   };
 
   // 格式化百分比
@@ -76,10 +81,10 @@ export function ProviderRankingCard({
   };
 
   // 处理 Provider 行点击
-  const handleProviderClick = (provider: ProviderConsumption) => {
-    onProviderClick?.(provider.provider_id);
+  const handleProviderClick = (providerId: string) => {
+    onProviderClick?.(providerId);
     // 导航到 Provider 管理页面
-    router.push(`/dashboard/providers/${provider.provider_id}`);
+    router.push(`/dashboard/providers/${providerId}`);
   };
 
   // 处理重试
@@ -89,7 +94,7 @@ export function ProviderRankingCard({
   };
 
   // 加载状态
-  if (loading && providers.length === 0) {
+  if (loading && sortedProviders.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -113,7 +118,7 @@ export function ProviderRankingCard({
   }
 
   // 错误状态
-  if (error && providers.length === 0) {
+  if (error && sortedProviders.length === 0) {
     return (
       <Card className="border-destructive/50 bg-destructive/5">
         <CardHeader>
@@ -135,7 +140,7 @@ export function ProviderRankingCard({
   }
 
   // 无数据状态
-  if (providers.length === 0) {
+  if (sortedProviders.length === 0) {
     return (
       <Card>
         <CardHeader>
@@ -157,7 +162,7 @@ export function ProviderRankingCard({
         <div className="flex items-center justify-between">
           <CardTitle className="text-base font-medium">{t("provider_ranking.title")}</CardTitle>
           <Badge variant="outline" className="h-5 text-xs font-normal">
-            {providers.length}
+            {sortedProviders.length}
           </Badge>
         </div>
       </CardHeader>
@@ -168,7 +173,7 @@ export function ProviderRankingCard({
             <div
               key={provider.provider_id}
               className="flex items-center gap-4 py-2 cursor-pointer hover:bg-muted/30 -mx-2 px-2 rounded transition-colors"
-              onClick={() => handleProviderClick(provider)}
+              onClick={() => handleProviderClick(provider.provider_id)}
               data-testid={`provider-row-${provider.provider_id}`}
             >
               {/* 排名 */}
@@ -181,17 +186,17 @@ export function ProviderRankingCard({
               {/* Provider 名称 */}
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium truncate">
-                  {provider.provider_name}
+                  {provider.provider_id}
                 </p>
               </div>
 
-              {/* 消耗 */}
+              {/* 请求数 */}
               <div className="text-right">
                 <p className="text-sm font-light">
-                  {formatNumber(provider.total_consumption)}
+                  {formatNumber(provider.total_requests)}
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  {formatPercentage(provider.percentage_of_total)}%
+                  {t("provider_ranking.requests")}
                 </p>
               </div>
 
@@ -208,6 +213,11 @@ export function ProviderRankingCard({
                 >
                   {formatPercentage(provider.success_rate)}%
                 </span>
+              </div>
+
+              {/* 延迟 */}
+              <div className="w-20 text-right text-xs text-muted-foreground">
+                {provider.latency_p95_ms != null ? `${Math.round(provider.latency_p95_ms)}ms` : "--"}
               </div>
             </div>
           ))}

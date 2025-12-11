@@ -14,6 +14,7 @@ from .provider_model import ProviderModel
 from .provider_submission import ProviderSubmission
 from .provider_allowed_user import ProviderAllowedUser
 from .provider_metrics_history import ProviderRoutingMetricsHistory
+from .user_metrics_history import UserRoutingMetricsHistory
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
 from .notification import Notification, NotificationReceipt
 from .user_permission import UserPermission
@@ -46,6 +47,7 @@ __all__ = [
     "GatewayConfig",
     "AggregateRoutingMetrics",
     "ProviderRoutingMetricsHistory",
+    "UserRoutingMetricsHistory",
     "ProviderAuditLog",
     "ProviderTestRecord",
     "RegistrationWindow",

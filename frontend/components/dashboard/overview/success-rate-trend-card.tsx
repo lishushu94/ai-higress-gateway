@@ -13,7 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useI18n } from "@/lib/i18n-context";
-import { useSuccessRateTrend } from "@/lib/swr/use-overview-metrics";
+import { useUserSuccessRateTrend } from "@/lib/swr/use-user-overview-metrics";
 import { LineChart, Line, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
@@ -40,7 +40,7 @@ export function SuccessRateTrendCard({
   anomalyThreshold = 0.9,
 }: SuccessRateTrendCardProps) {
   const { t } = useI18n();
-  const { trend, loading, error, refresh } = useSuccessRateTrend({
+  const { trend, loading, error, refresh } = useUserSuccessRateTrend({
     time_range: timeRange as any,
   });
 
@@ -115,7 +115,7 @@ export function SuccessRateTrendCard({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t("success_rate_trend.title")}</CardTitle>
+          <CardTitle>{t("success_rate_trend.user_title")}</CardTitle>
           <CardDescription>{t("overview.from_last_month")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -140,7 +140,7 @@ export function SuccessRateTrendCard({
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <AlertCircle className="h-5 w-5 text-destructive" />
-            {t("success_rate_trend.title")}
+            {t("success_rate_trend.user_title")}
           </CardTitle>
         </CardHeader>
         <CardContent>
@@ -160,7 +160,7 @@ export function SuccessRateTrendCard({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>{t("success_rate_trend.title")}</CardTitle>
+          <CardTitle>{t("success_rate_trend.user_title")}</CardTitle>
           <CardDescription>{t("overview.from_last_month")}</CardDescription>
         </CardHeader>
         <CardContent>
@@ -176,7 +176,7 @@ export function SuccessRateTrendCard({
     <Card className="border-none shadow-sm">
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base font-medium">{t("success_rate_trend.title")}</CardTitle>
+          <CardTitle className="text-base font-medium">{t("success_rate_trend.user_title")}</CardTitle>
           {successRateStats.hasAnomaly && (
             <Badge variant="destructive" className="h-5 text-xs">
               <AlertCircle className="h-3 w-3 mr-1" />

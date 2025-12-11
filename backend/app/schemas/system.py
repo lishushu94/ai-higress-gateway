@@ -80,6 +80,7 @@ class CacheSegment(str, Enum):
 
     MODELS = "models"
     METRICS_OVERVIEW = "metrics_overview"
+    USER_METRICS_OVERVIEW = "user_metrics_overview"
     PROVIDER_MODELS = "provider_models"
     LOGICAL_MODELS = "logical_models"
     ROUTING_METRICS = "routing_metrics"

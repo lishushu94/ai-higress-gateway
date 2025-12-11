@@ -13,7 +13,7 @@ from sqlalchemy.pool import StaticPool
 from app.db import get_db_session
 from app.deps import get_db, get_redis
 from app.jwt_auth import AuthenticatedUser, require_jwt_token
-from app.models import Base, ProviderRoutingMetricsHistory
+from app.models import Base, ProviderRoutingMetricsHistory, UserRoutingMetricsHistory
 from app.routes import create_app
 from app.services.api_key_cache import CachedAPIKey
 from tests.utils import InMemoryRedis, seed_user_and_key
@@ -111,6 +111,38 @@ def _insert_api_key_metrics(
                 error_rate=0.1,
                 success_qps_1m=(9 + i) / 60.0,
                 status="healthy",
+            )
+        )
+    db.commit()
+
+
+def _insert_user_overview_metrics(
+    db: Session,
+    *,
+    user_id: UUID,
+    provider_id: str,
+    logical_model: str,
+) -> None:
+    now = dt.datetime.now(dt.timezone.utc).replace(minute=0, second=0, microsecond=0)
+    for i in range(3):
+        bucket_start = now - dt.timedelta(minutes=i)
+        db.add(
+            UserRoutingMetricsHistory(
+                id=uuid4(),
+                user_id=user_id,
+                provider_id=provider_id,
+                logical_model=logical_model,
+                transport="http",
+                is_stream=False,
+                window_start=bucket_start,
+                window_duration=60,
+                total_requests=10 + i,
+                success_requests=9 + i,
+                error_requests=1,
+                latency_avg_ms=100.0 + i,
+                latency_p95_ms=150.0 + i,
+                latency_p99_ms=180.0 + i,
+                error_rate=0.1,
             )
         )
     db.commit()
@@ -488,3 +520,81 @@ async def test_metrics_overview_timeseries_api(mock_get_cached_api_key, client_w
     # 全局总请求应为两个 Provider 之和：2 * 33 = 66
     total_requests = sum(p["total_requests"] for p in points)
     assert total_requests == 66
+
+
+@pytest.mark.asyncio
+async def test_user_overview_summary_api(client_with_db):
+    client, session_factory = client_with_db
+    target_user_id = UUID("00000000-0000-0000-0000-000000000000")
+    other_user_id = uuid4()
+
+    with session_factory() as session:
+        _insert_user_overview_metrics(
+            session,
+            user_id=target_user_id,
+            provider_id="user-provider-a",
+            logical_model="gpt-4",
+        )
+        _insert_user_overview_metrics(
+            session,
+            user_id=other_user_id,
+            provider_id="user-provider-b",
+            logical_model="claude-3",
+        )
+
+    resp = client.get(
+        "/metrics/user-overview/summary",
+        params={"time_range": "all"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == str(target_user_id)
+    assert data["total_requests"] == 33
+    assert data["active_providers"] == 1
+
+
+@pytest.mark.asyncio
+async def test_user_overview_providers_api(client_with_db):
+    client, session_factory = client_with_db
+    target_user_id = UUID("00000000-0000-0000-0000-000000000000")
+
+    with session_factory() as session:
+        _insert_user_overview_metrics(
+            session,
+            user_id=target_user_id,
+            provider_id="user-provider-a",
+            logical_model="gpt-4",
+        )
+        _insert_user_overview_metrics(
+            session,
+            user_id=target_user_id,
+            provider_id="user-provider-b",
+            logical_model="claude-3",
+        )
+
+    resp = client.get(
+        "/metrics/user-overview/providers",
+        params={"time_range": "all", "limit": 5},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["user_id"] == str(target_user_id)
+    assert len(data["items"]) == 2
+    provider_ids = {item["provider_id"] for item in data["items"]}
+    assert provider_ids == {"user-provider-a", "user-provider-b"}
+
+
+@pytest.mark.asyncio
+async def test_user_overview_timeseries_empty(client_with_db):
+    client, _ = client_with_db
+
+    resp = client.get(
+        "/metrics/user-overview/timeseries",
+        params={"time_range": "all", "bucket": "minute"},
+    )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["points"] == []

@@ -14,14 +14,12 @@ import { describe, it, expect, beforeEach, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { SuccessRateTrendCard } from "../success-rate-trend-card";
 import { I18nProvider } from "@/lib/i18n-context";
-import * as useOverviewMetricsModule from "@/lib/swr/use-overview-metrics";
+import * as useUserOverviewModule from "@/lib/swr/use-user-overview-metrics";
 
 // Mock SWR Hook
-vi.mock("@/lib/swr/use-overview-metrics");
+vi.mock("@/lib/swr/use-user-overview-metrics");
 
-const mockUseSuccessRateTrend = useOverviewMetricsModule.useSuccessRateTrend as jest.MockedFunction<
-  typeof useOverviewMetricsModule.useSuccessRateTrend
->;
+const mockUseSuccessRateTrend = useUserOverviewModule.useUserSuccessRateTrend as unknown as vi.Mock;
 
 // 包装组件以提供 i18n 上下文
 function renderWithI18n(component: React.ReactElement) {
@@ -86,7 +84,7 @@ describe("SuccessRateTrendCard Component", () => {
 
       await waitFor(() => {
         // 验证卡片标题
-        expect(screen.getByText(/请求成功率趋势|Success Rate Trend/)).toBeInTheDocument();
+        expect(screen.getByText(/我的成功率趋势|My Success Rate Trend/)).toBeInTheDocument();
 
         // 验证统计指标显示
         expect(screen.getByText(/整体成功率|Overall Success Rate/)).toBeInTheDocument();

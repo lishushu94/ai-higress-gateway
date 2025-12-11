@@ -221,6 +221,84 @@ class OverviewMetricsTimeSeries(BaseModel):
     points: list[MetricsDataPoint] = Field(default_factory=list)
 
 
+class UserOverviewMetricsSummary(BaseModel):
+    """
+    用户维度概览汇总指标。
+    """
+
+    scope: Literal["user"] = "user"
+    user_id: str
+    time_range: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+    total_requests: int
+    success_requests: int
+    error_requests: int
+    success_rate: float
+    total_requests_prev: int | None = Field(
+        None,
+        description="上一周期的总请求数，用于对比",
+    )
+    success_requests_prev: int | None = Field(None)
+    error_requests_prev: int | None = Field(None)
+    success_rate_prev: float | None = Field(None)
+    active_providers: int
+    active_providers_prev: int | None = Field(None)
+
+
+class UserOverviewMetricsTimeSeries(BaseModel):
+    """
+    用户维度近期活动时间序列。
+    """
+
+    scope: Literal["user"] = "user"
+    user_id: str
+    time_range: str
+    bucket: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+    points: list[MetricsDataPoint] = Field(default_factory=list)
+
+
+class UserActiveProviderMetrics(BaseModel):
+    provider_id: str = Field(..., description="Provider ID")
+    total_requests: int
+    success_requests: int
+    error_requests: int
+    success_rate: float
+    latency_p95_ms: float | None = Field(
+        None,
+        description="P95 延迟（毫秒），无请求时为 null",
+    )
+
+
+class UserOverviewActiveProviders(BaseModel):
+    scope: Literal["user"] = "user"
+    user_id: str
+    time_range: str
+    transport: str = Field(
+        "all",
+        description="传输模式过滤：http/sdk/all",
+    )
+    is_stream: str = Field(
+        "all",
+        description="流式过滤：true/false/all",
+    )
+    items: list[UserActiveProviderMetrics] = Field(default_factory=list)
+
+
 __all__ = [
     "APIKeyMetricsSummary",
     "ActiveProviderMetrics",
@@ -233,4 +311,8 @@ __all__ = [
     "ProviderMetricsSummary",
     "ProviderMetricsTimeSeries",
     "UserMetricsSummary",
+    "UserOverviewMetricsSummary",
+    "UserOverviewMetricsTimeSeries",
+    "UserActiveProviderMetrics",
+    "UserOverviewActiveProviders",
 ]

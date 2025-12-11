@@ -3,7 +3,7 @@
 import { useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useI18n } from "@/lib/i18n-context";
-import { useOverviewActivity } from "@/lib/swr/use-overview-metrics";
+import { useUserOverviewActivity, UserOverviewTimeRange } from "@/lib/swr/use-user-overview-metrics";
 import { AreaChart, Area, XAxis, YAxis } from "recharts";
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
 
@@ -14,15 +14,13 @@ function formatTimeLabel(iso: string): string {
   return `${hours}:${minutes}`;
 }
 
-import { OverviewTimeRange } from "@/lib/swr/use-overview-metrics";
-
 interface RecentActivityProps {
-  timeRange?: OverviewTimeRange;
+  timeRange?: UserOverviewTimeRange;
 }
 
 export function RecentActivity({ timeRange = "today" }: RecentActivityProps) {
   const { t } = useI18n();
-  const { activity, loading } = useOverviewActivity({
+  const { activity, loading } = useUserOverviewActivity({
     time_range: timeRange,
   });
 
@@ -50,7 +48,7 @@ export function RecentActivity({ timeRange = "today" }: RecentActivityProps) {
   return (
     <Card className="border-none shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-medium">{t("overview.recent_activity")}</CardTitle>
+        <CardTitle className="text-base font-medium">{t("overview.my_recent_activity")}</CardTitle>
       </CardHeader>
       <CardContent>
         {loading && !hasData ? (

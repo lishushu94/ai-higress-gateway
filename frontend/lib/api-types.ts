@@ -251,6 +251,52 @@ export interface OverviewMetricsTimeSeries {
   points: MetricsDataPoint[];
 }
 
+export interface UserOverviewMetricsSummary {
+  scope: "user";
+  user_id: string;
+  time_range: string;
+  transport: string;
+  is_stream: string;
+  total_requests: number;
+  success_requests: number;
+  error_requests: number;
+  success_rate: number;
+  total_requests_prev: number | null;
+  success_requests_prev: number | null;
+  error_requests_prev: number | null;
+  success_rate_prev: number | null;
+  active_providers: number;
+  active_providers_prev: number | null;
+}
+
+export interface UserActiveProviderMetrics {
+  provider_id: string;
+  total_requests: number;
+  success_requests: number;
+  error_requests: number;
+  success_rate: number;
+  latency_p95_ms: number | null;
+}
+
+export interface UserOverviewActiveProviders {
+  scope: "user";
+  user_id: string;
+  time_range: string;
+  transport: string;
+  is_stream: string;
+  items: UserActiveProviderMetrics[];
+}
+
+export interface UserOverviewMetricsTimeSeries {
+  scope: "user";
+  user_id: string;
+  time_range: string;
+  bucket: string;
+  transport: string;
+  is_stream: string;
+  points: MetricsDataPoint[];
+}
+
 // ============= 注册窗口 / Registration Windows =============
 
 export type RegistrationWindowStatus = "scheduled" | "active" | "closed";

@@ -62,11 +62,13 @@ def run_migrations_online() -> None:
 
 def _in_alembic_context() -> bool:
     """
-    当 env.py 被普通 Python 代码 import 时，context.get_context()
-    会抛 Exception；只有在 Alembic CLI 运行时才会成功。
+    当 env.py 被普通 Python 代码 import 时，context 未初始化会抛异常。
+    Alembic 1.12+ 在 EnvironmentContext 创建后，但在 configure 之前
+    context.get_context() 会直接报错，导致迁移被跳过。改用
+    context.is_offline_mode() 来探测是否处于 Alembic CLI 环境。
     """
     try:
-        context.get_context()
+        context.is_offline_mode()
         return True
     except (NameError, Exception):
         return False

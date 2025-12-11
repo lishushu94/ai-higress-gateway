@@ -12,7 +12,16 @@ export function PageHeader() {
   return (
     <div className="space-y-1">
       <h1 className="text-2xl font-light tracking-tight">{t("overview.title")}</h1>
-      <p className="text-sm text-muted-foreground">{t("overview.subtitle")}</p>
+      <p className="text-sm text-muted-foreground">
+        {t("overview.subtitle")}
+        {" "}
+        <a
+          href="/dashboard/metrics"
+          className="underline-offset-4 hover:underline"
+        >
+          {t("overview.system_monitor_link")}
+        </a>
+      </p>
     </div>
   );
 }

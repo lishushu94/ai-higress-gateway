@@ -15,9 +15,9 @@ except ModuleNotFoundError:  # pragma: no cover - type placeholder when redis is
 
 from app.db import get_db_session
 from app.deps import get_redis
-from app.jwt_auth import require_jwt_token
+from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.logging_config import logger
-from app.models import ProviderRoutingMetricsHistory
+from app.models import ProviderRoutingMetricsHistory, UserRoutingMetricsHistory
 from app.redis_client import redis_get_json, redis_set_json
 from app.schemas.metrics import (
     APIKeyMetricsSummary,
@@ -31,6 +31,10 @@ from app.schemas.metrics import (
     ProviderMetricsSummary,
     ProviderMetricsTimeSeries,
     UserMetricsSummary,
+    UserActiveProviderMetrics,
+    UserOverviewActiveProviders,
+    UserOverviewMetricsSummary,
+    UserOverviewMetricsTimeSeries,
 )
 
 router = APIRouter(
@@ -103,6 +107,35 @@ def _build_overview_stmt(
             ProviderRoutingMetricsHistory.is_stream == (is_stream == "true")
         )
 
+    return stmt
+
+
+def _build_user_overview_stmt(
+    *,
+    user_id: UUID,
+    start_at: dt.datetime | None,
+    end_at: dt.datetime | None,
+    transport: Literal["http", "sdk", "all"],
+    is_stream: Literal["true", "false", "all"],
+):
+    stmt = select(
+        func.coalesce(func.sum(UserRoutingMetricsHistory.total_requests), 0).label("total_requests"),
+        func.coalesce(func.sum(UserRoutingMetricsHistory.success_requests), 0).label("success_requests"),
+        func.coalesce(func.sum(UserRoutingMetricsHistory.error_requests), 0).label("error_requests"),
+        func.count(func.distinct(UserRoutingMetricsHistory.provider_id)).label("active_providers"),
+    ).where(UserRoutingMetricsHistory.user_id == user_id)
+
+    if start_at is not None:
+        stmt = stmt.where(UserRoutingMetricsHistory.window_start >= start_at)
+    if end_at is not None:
+        stmt = stmt.where(UserRoutingMetricsHistory.window_start < end_at)
+
+    if transport != "all":
+        stmt = stmt.where(UserRoutingMetricsHistory.transport == transport)
+    if is_stream != "all":
+        stmt = stmt.where(
+            UserRoutingMetricsHistory.is_stream == (is_stream == "true")
+        )
     return stmt
 
 
@@ -376,6 +409,281 @@ async def get_overview_summary(
         except Exception:  # pragma: no cover - 防御性日志
             logger.exception(
                 "Failed to store metrics overview summary to Redis (key=%s)",
+                cache_key,
+            )
+
+    return overview
+
+
+@router.get(
+    "/user-overview/timeseries",
+    response_model=UserOverviewMetricsTimeSeries,
+    summary="仪表盘概览（用户维度）：近期活动时间序列",
+)
+async def get_user_overview_timeseries(
+    time_range: Literal["today", "7d", "30d", "all"] = Query("7d"),
+    bucket: Literal["minute"] = Query("minute"),
+    transport: Literal["http", "sdk", "all"] = Query("all"),
+    is_stream: Literal["true", "false", "all"] = Query("all"),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+    db: Session = Depends(get_db_session),
+    redis: Redis = Depends(get_redis),
+) -> UserOverviewMetricsTimeSeries:
+    if bucket != MetricsBucket.MINUTE:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="仅支持 bucket=minute",
+        )
+
+    user_uuid = UUID(current_user.id)
+    cache_key = f"metrics:user-overview:timeseries:{current_user.id}:{time_range}:{transport}:{is_stream}:{bucket}"
+
+    if redis is not object:  # pragma: no branch
+        try:
+            cached = await redis_get_json(redis, cache_key)
+        except Exception:  # pragma: no cover
+            logger.exception(
+                "Failed to load user overview timeseries cache (key=%s)",
+                cache_key,
+            )
+            cached = None
+        if cached:
+            try:
+                return UserOverviewMetricsTimeSeries.model_validate(cached)
+            except Exception:  # pragma: no cover
+                logger.exception(
+                    "Malformed user overview timeseries cache (key=%s)",
+                    cache_key,
+                )
+
+    start_at = _resolve_time_range(time_range)
+
+    stmt = (
+        select(
+            UserRoutingMetricsHistory.window_start,
+            func.coalesce(func.sum(UserRoutingMetricsHistory.total_requests), 0),
+            func.coalesce(func.sum(UserRoutingMetricsHistory.success_requests), 0),
+            func.coalesce(func.sum(UserRoutingMetricsHistory.error_requests), 0),
+            func.sum(
+                UserRoutingMetricsHistory.latency_avg_ms * UserRoutingMetricsHistory.total_requests
+            ).label("lat_sum"),
+            func.sum(UserRoutingMetricsHistory.total_requests).label("weight_sum"),
+            func.sum(
+                UserRoutingMetricsHistory.latency_p95_ms * UserRoutingMetricsHistory.total_requests
+            ).label("lat_p95_sum"),
+            func.sum(
+                UserRoutingMetricsHistory.latency_p99_ms * UserRoutingMetricsHistory.total_requests
+            ).label("lat_p99_sum"),
+        )
+        .where(UserRoutingMetricsHistory.user_id == user_uuid)
+        .group_by(UserRoutingMetricsHistory.window_start)
+    )
+
+    if start_at is not None:
+        stmt = stmt.where(UserRoutingMetricsHistory.window_start >= start_at)
+    if transport != "all":
+        stmt = stmt.where(UserRoutingMetricsHistory.transport == transport)
+    if is_stream != "all":
+        stmt = stmt.where(
+            UserRoutingMetricsHistory.is_stream == (is_stream == "true")
+        )
+
+    stmt = stmt.order_by(UserRoutingMetricsHistory.window_start.asc())
+
+    try:
+        rows = db.execute(stmt).all()
+    except Exception:  # pragma: no cover
+        logger.exception("Failed to load user overview timeseries")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load user overview timeseries",
+        )
+
+    points: list[MetricsDataPoint] = []
+    for row in rows:
+        window_start = row[0]
+        total_requests = int(row[1] or 0)
+        success_requests = int(row[2] or 0)
+        error_requests = int(row[3] or 0)
+        lat_sum = row.lat_sum
+        weight_sum = row.weight_sum or 0
+        lat_p95_sum = row.lat_p95_sum
+        lat_p99_sum = row.lat_p99_sum
+
+        if total_requests > 0 and weight_sum:
+            latency_avg_ms = float(lat_sum / weight_sum) if lat_sum is not None else 0.0
+            latency_p95_ms = (
+                float(lat_p95_sum / weight_sum) if lat_p95_sum is not None else latency_avg_ms
+            )
+            latency_p99_ms = (
+                float(lat_p99_sum / weight_sum) if lat_p99_sum is not None else latency_p95_ms
+            )
+            error_rate = error_requests / total_requests
+        else:
+            latency_avg_ms = 0.0
+            latency_p95_ms = 0.0
+            latency_p99_ms = 0.0
+            error_rate = 0.0
+
+        points.append(
+            MetricsDataPoint(
+                window_start=window_start,
+                total_requests=total_requests,
+                success_requests=success_requests,
+                error_requests=error_requests,
+                latency_avg_ms=latency_avg_ms,
+                latency_p95_ms=latency_p95_ms,
+                latency_p99_ms=latency_p99_ms,
+                error_rate=error_rate,
+            )
+        )
+
+    result = UserOverviewMetricsTimeSeries(
+        user_id=current_user.id,
+        time_range=time_range,
+        bucket=bucket,
+        transport=transport,
+        is_stream=is_stream,
+        points=points,
+    )
+
+    if redis is not object:
+        try:
+            await redis_set_json(
+                redis,
+                cache_key,
+                result.model_dump(),
+                ttl_seconds=OVERVIEW_CACHE_TTL_SECONDS,
+            )
+        except Exception:  # pragma: no cover
+            logger.exception(
+                "Failed to store user overview timeseries cache (key=%s)",
+                cache_key,
+            )
+
+    return result
+
+
+@router.get(
+    "/user-overview/providers",
+    response_model=UserOverviewActiveProviders,
+    summary="仪表盘概览（用户维度）：活跃 Provider 排行",
+)
+async def get_user_overview_providers(
+    time_range: Literal["today", "7d", "30d", "all"] = Query("7d"),
+    transport: Literal["http", "sdk", "all"] = Query("all"),
+    is_stream: Literal["true", "false", "all"] = Query("all"),
+    limit: int = Query(4, ge=1, le=50),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+    db: Session = Depends(get_db_session),
+    redis: Redis = Depends(get_redis),
+) -> UserOverviewActiveProviders:
+    user_uuid = UUID(current_user.id)
+    cache_key = f"metrics:user-overview:providers:{current_user.id}:{time_range}:{transport}:{is_stream}:{limit}"
+
+    if redis is not object:  # pragma: no branch
+        try:
+            cached = await redis_get_json(redis, cache_key)
+        except Exception:  # pragma: no cover
+            logger.exception(
+                "Failed to load user overview providers cache (key=%s)",
+                cache_key,
+            )
+            cached = None
+        if cached:
+            try:
+                return UserOverviewActiveProviders.model_validate(cached)
+            except Exception:  # pragma: no cover
+                logger.exception(
+                    "Malformed user overview providers cache (key=%s)",
+                    cache_key,
+                )
+
+    start_at = _resolve_time_range(time_range)
+
+    stmt = (
+        select(
+            UserRoutingMetricsHistory.provider_id,
+            func.coalesce(func.sum(UserRoutingMetricsHistory.total_requests), 0).label("total_requests"),
+            func.coalesce(func.sum(UserRoutingMetricsHistory.success_requests), 0).label("success_requests"),
+            func.coalesce(func.sum(UserRoutingMetricsHistory.error_requests), 0).label("error_requests"),
+            func.sum(
+                UserRoutingMetricsHistory.latency_p95_ms * UserRoutingMetricsHistory.total_requests
+            ).label("latency_p95_sum"),
+            func.sum(UserRoutingMetricsHistory.total_requests).label("weight_sum"),
+        )
+        .where(UserRoutingMetricsHistory.user_id == user_uuid)
+        .group_by(UserRoutingMetricsHistory.provider_id)
+    )
+
+    if start_at is not None:
+        stmt = stmt.where(UserRoutingMetricsHistory.window_start >= start_at)
+    if transport != "all":
+        stmt = stmt.where(UserRoutingMetricsHistory.transport == transport)
+    if is_stream != "all":
+        stmt = stmt.where(
+            UserRoutingMetricsHistory.is_stream == (is_stream == "true")
+        )
+
+    stmt = stmt.order_by(
+        func.sum(UserRoutingMetricsHistory.total_requests).desc()
+    ).limit(limit)
+
+    try:
+        rows = db.execute(stmt).all()
+    except Exception:  # pragma: no cover
+        logger.exception("Failed to load user overview providers")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load user overview providers",
+        )
+
+    items: list[UserActiveProviderMetrics] = []
+    for row in rows:
+        provider_id = row[0]
+        total_requests = int(row.total_requests or 0)
+        success_requests = int(row.success_requests or 0)
+        error_requests = int(row.error_requests or 0)
+        latency_p95_sum = row.latency_p95_sum
+        weight_sum = row.weight_sum or 0
+
+        if weight_sum and latency_p95_sum is not None:
+            latency_p95_ms: float | None = float(latency_p95_sum / weight_sum)
+        else:
+            latency_p95_ms = None
+
+        success_rate = success_requests / total_requests if total_requests > 0 else 0.0
+
+        items.append(
+            UserActiveProviderMetrics(
+                provider_id=provider_id,
+                total_requests=total_requests,
+                success_requests=success_requests,
+                error_requests=error_requests,
+                success_rate=success_rate,
+                latency_p95_ms=latency_p95_ms,
+            )
+        )
+
+    overview = UserOverviewActiveProviders(
+        user_id=current_user.id,
+        time_range=time_range,
+        transport=transport,
+        is_stream=is_stream,
+        items=items,
+    )
+
+    if redis is not object:
+        try:
+            await redis_set_json(
+                redis,
+                cache_key,
+                overview.model_dump(),
+                ttl_seconds=OVERVIEW_CACHE_TTL_SECONDS,
+            )
+        except Exception:  # pragma: no cover
+            logger.exception(
+                "Failed to store user overview providers cache (key=%s)",
                 cache_key,
             )
 
@@ -713,6 +1021,132 @@ async def get_overview_timeseries(
             )
 
     return result
+
+
+@router.get(
+    "/user-overview/summary",
+    response_model=UserOverviewMetricsSummary,
+    summary="仪表盘概览（用户维度）：请求量 / 成功率 / 活跃 Provider 汇总",
+)
+async def get_user_overview_summary(
+    time_range: Literal["today", "7d", "30d", "all"] = Query(
+        "7d",
+        description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
+    ),
+    transport: Literal["http", "sdk", "all"] = Query("all"),
+    is_stream: Literal["true", "false", "all"] = Query("all"),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+    db: Session = Depends(get_db_session),
+    redis: Redis = Depends(get_redis),
+) -> UserOverviewMetricsSummary:
+    user_uuid = UUID(current_user.id)
+    cache_key = f"metrics:user-overview:summary:{current_user.id}:{time_range}:{transport}:{is_stream}"
+
+    if redis is not object:  # pragma: no branch
+        try:
+            cached = await redis_get_json(redis, cache_key)
+        except Exception:  # pragma: no cover - 防御性日志
+            logger.exception(
+                "Failed to load user overview summary cache (key=%s)",
+                cache_key,
+            )
+            cached = None
+
+        if cached:
+            try:
+                return UserOverviewMetricsSummary.model_validate(cached)
+            except Exception:  # pragma: no cover
+                logger.exception(
+                    "Malformed user overview summary cache (key=%s)",
+                    cache_key,
+                )
+
+    current_range, prev_range = _compute_overview_windows(time_range)
+
+    def _load_window(
+        window: tuple[dt.datetime | None, dt.datetime | None] | None,
+    ) -> tuple[int, int, int, int]:
+        if window is None:
+            return 0, 0, 0, 0
+        start_at, end_at = window
+        stmt = _build_user_overview_stmt(
+            user_id=user_uuid,
+            start_at=start_at,
+            end_at=end_at,
+            transport=transport,
+            is_stream=is_stream,
+        )
+        row = db.execute(stmt).one()
+        total_requests = int(row.total_requests or 0)
+        success_requests = int(row.success_requests or 0)
+        error_requests = int(row.error_requests or 0)
+        active_providers = int(row.active_providers or 0)
+        return total_requests, success_requests, error_requests, active_providers
+
+    try:
+        (
+            total_requests,
+            success_requests,
+            error_requests,
+            active_providers,
+        ) = _load_window(current_range)
+        if prev_range is not None:
+            (
+                total_requests_prev,
+                success_requests_prev,
+                error_requests_prev,
+                active_providers_prev,
+            ) = _load_window(prev_range)
+        else:
+            total_requests_prev = None
+            success_requests_prev = None
+            error_requests_prev = None
+            active_providers_prev = None
+    except Exception:  # pragma: no cover
+        logger.exception("Failed to load user metrics overview summary")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to load user overview summary",
+        )
+
+    success_rate = success_requests / total_requests if total_requests > 0 else 0.0
+    if total_requests_prev and total_requests_prev > 0:
+        success_rate_prev: float | None = success_requests_prev / total_requests_prev  # type: ignore[operator]
+    else:
+        success_rate_prev = None
+
+    overview = UserOverviewMetricsSummary(
+        user_id=current_user.id,
+        time_range=time_range,
+        transport=transport,
+        is_stream=is_stream,
+        total_requests=total_requests,
+        success_requests=success_requests,
+        error_requests=error_requests,
+        success_rate=success_rate,
+        total_requests_prev=total_requests_prev,
+        success_requests_prev=success_requests_prev,
+        error_requests_prev=error_requests_prev,
+        success_rate_prev=success_rate_prev,
+        active_providers=active_providers,
+        active_providers_prev=active_providers_prev,
+    )
+
+    if redis is not object:
+        try:
+            await redis_set_json(
+                redis,
+                cache_key,
+                overview.model_dump(),
+                ttl_seconds=OVERVIEW_CACHE_TTL_SECONDS,
+            )
+        except Exception:  # pragma: no cover
+            logger.exception(
+                "Failed to store user overview summary to Redis (key=%s)",
+                cache_key,
+            )
+
+    return overview
 
 
 @router.get(

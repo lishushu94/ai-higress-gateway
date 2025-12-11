@@ -344,6 +344,7 @@ async def clear_cache(
     当前会清理以下几类缓存：
     - gateway:models:all：聚合后的模型列表缓存；
     - metrics:overview:*：仪表盘指标概览缓存（summary/providers/timeseries）；
+    - metrics:user-overview:*：用户维度概览缓存；
     - llm:vendor:*:models：各 Provider 的模型列表缓存；
     - llm:logical:*：逻辑模型在 Redis 中的派生表示；
     - llm:metrics:* / llm:metrics:history:*：路由指标缓存与历史窗口。
@@ -364,6 +365,7 @@ async def clear_cache(
     segment_patterns: dict[CacheSegment, list[str]] = {
         CacheSegment.MODELS: ["gateway:models:all"],
         CacheSegment.METRICS_OVERVIEW: ["metrics:overview:*"],
+        CacheSegment.USER_METRICS_OVERVIEW: ["metrics:user-overview:*"],
         CacheSegment.PROVIDER_MODELS: ["llm:vendor:*:models"],
         CacheSegment.LOGICAL_MODELS: ["llm:logical:*"],
         CacheSegment.ROUTING_METRICS: ["llm:metrics:*", "llm:metrics:history:*"],

@@ -11,10 +11,15 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.logging_config import logger
-from app.models import ProviderRoutingMetricsHistory
 from app.upstream import UpstreamStreamError, stream_upstream
 from app.settings import settings
-from app.services.metrics_buffer import BufferedMetricsRecorder, MetricsKey, MetricsStats
+from app.services.metrics_buffer import (
+    BufferedMetricsRecorder,
+    BufferedUserMetricsRecorder,
+    MetricsKey,
+    MetricsStats,
+    UserMetricsKey,
+)
 
 BucketSizeSeconds = Literal[60]
 
@@ -27,8 +32,16 @@ metrics_recorder = BufferedMetricsRecorder(
     success_sample_rate=settings.metrics_success_sample_rate,
 )
 
+user_metrics_recorder = BufferedUserMetricsRecorder(
+    flush_interval_seconds=settings.metrics_flush_interval_seconds,
+    latency_sample_size=settings.metrics_latency_sample_size,
+    max_buffered_buckets=settings.metrics_max_buffered_buckets,
+    success_sample_rate=settings.metrics_success_sample_rate,
+)
+
 if settings.metrics_buffer_enabled:
     metrics_recorder.start()
+    user_metrics_recorder.start()
 
 
 def _current_bucket_start(now: dt.datetime, bucket_seconds: int) -> dt.datetime:
@@ -82,6 +95,18 @@ def record_provider_call_metric(
                 success=success,
                 latency_ms=latency_ms,
             )
+            if user_id is not None:
+                _record_user_metrics_buffered(
+                    user_id=user_id,
+                    provider_id=provider_id,
+                    logical_model=logical_model,
+                    transport=transport,
+                    is_stream=is_stream,
+                    window_start=window_start,
+                    bucket_seconds=bucket_seconds,
+                    success=success,
+                    latency_ms=latency_ms,
+                )
             return
 
         # 缓冲关闭时，直接写库（保留旧逻辑）。
@@ -99,6 +124,21 @@ def record_provider_call_metric(
         )
         immediate_stmt = metrics_recorder._build_upsert_stmt(key, stats)
         db.execute(immediate_stmt)
+
+        if user_id is not None:
+            _record_user_metrics_immediate(
+                db,
+                user_id=user_id,
+                provider_id=provider_id,
+                logical_model=logical_model,
+                transport=transport,
+                is_stream=is_stream,
+                window_start=window_start,
+                bucket_seconds=bucket_seconds,
+                success=success,
+                latency_ms=latency_ms,
+            )
+
         db.commit()
     except Exception:  # pragma: no cover - 防御性日志，不影响主流程
         logger.exception(
@@ -111,6 +151,72 @@ def record_provider_call_metric(
 def flush_metrics_buffer() -> int:
     """手动触发一次缓冲刷新，便于调试或关停前落盘。"""
     return metrics_recorder.flush()
+
+
+def flush_user_metrics_buffer() -> int:
+    """手动触发一次用户维度指标的缓冲刷新。"""
+    return user_metrics_recorder.flush()
+
+
+def _record_user_metrics_buffered(
+    *,
+    user_id: UUID,
+    provider_id: str,
+    logical_model: str,
+    transport: str,
+    is_stream: bool,
+    window_start: dt.datetime,
+    bucket_seconds: int,
+    success: bool,
+    latency_ms: float,
+) -> None:
+    try:
+        user_metrics_recorder.record_sample(
+            user_id=user_id,
+            provider_id=provider_id,
+            logical_model=logical_model,
+            transport=transport,
+            is_stream=is_stream,
+            window_start=window_start,
+            bucket_seconds=bucket_seconds,
+            success=success,
+            latency_ms=latency_ms,
+        )
+    except Exception:  # pragma: no cover - 防御性日志
+        logger.exception(
+            "Failed to buffer user metrics for user=%s provider=%s model=%s",
+            user_id,
+            provider_id,
+            logical_model,
+        )
+
+
+def _record_user_metrics_immediate(
+    db: Session,
+    *,
+    user_id: UUID,
+    provider_id: str,
+    logical_model: str,
+    transport: str,
+    is_stream: bool,
+    window_start: dt.datetime,
+    bucket_seconds: int,
+    success: bool,
+    latency_ms: float,
+) -> None:
+    stats = MetricsStats()
+    stats.record(success=success, latency_ms=latency_ms, sample_limit=1)
+    key = UserMetricsKey(
+        user_id=user_id,
+        provider_id=provider_id,
+        logical_model=logical_model,
+        transport=transport,
+        is_stream=is_stream,
+        window_start=window_start,
+        bucket_seconds=bucket_seconds,
+    )
+    stmt = user_metrics_recorder._build_upsert_stmt(key, stats)
+    db.execute(stmt)
 
 
 async def call_upstream_http_with_metrics(
@@ -385,6 +491,7 @@ async def stream_sdk_with_metrics(
 __all__ = [
     "record_provider_call_metric",
     "flush_metrics_buffer",
+    "flush_user_metrics_buffer",
     "call_upstream_http_with_metrics",
     "stream_upstream_with_metrics",
     "call_sdk_generate_with_metrics",

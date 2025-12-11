@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import { Bell } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,6 +20,7 @@ interface NotificationPopoverProps {
 }
 
 export function NotificationPopover({ className }: NotificationPopoverProps) {
+  const router = useRouter();
   const { t } = useI18n();
   const { unreadCount } = useUnreadCount();
   const { notifications, loading } = useNotifications({
@@ -101,7 +103,7 @@ export function NotificationPopover({ className }: NotificationPopoverProps) {
               variant="ghost"
               size="sm"
               className="w-full"
-              onClick={() => window.location.href = '/dashboard/notifications'}
+              onClick={() => router.push('/dashboard/notifications')}
             >
               {t('notifications.viewAll')}
             </Button>

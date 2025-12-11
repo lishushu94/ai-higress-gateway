@@ -10,9 +10,9 @@ import {
 } from "@/components/ui/select";
 import { useI18n } from "@/lib/i18n-context";
 
-import { OverviewTimeRange } from "@/lib/swr/use-overview-metrics";
+import { UserOverviewTimeRange } from "@/lib/swr/use-user-overview-metrics";
 
-export type TimeRange = OverviewTimeRange;
+export type TimeRange = UserOverviewTimeRange;
 
 interface FilterBarProps {
   onTimeRangeChange?: (range: TimeRange) => void;
@@ -89,7 +89,7 @@ export function FilterBar({
   }
 
   return (
-    <div className="flex items-center justify-between">
+    <div className="flex items-center justify-between flex-wrap gap-3">
       {/* 时间范围选择器 */}
       <div className="flex items-center gap-3">
         <span className="text-xs text-muted-foreground uppercase tracking-wider">
@@ -108,6 +108,12 @@ export function FilterBar({
           </SelectContent>
         </Select>
       </div>
+      <a
+        href="/dashboard/metrics"
+        className="text-xs text-muted-foreground hover:text-foreground underline-offset-4 hover:underline transition-colors"
+      >
+        {t("overview.system_monitor_link")}
+      </a>
     </div>
   );
 }

@@ -13,7 +13,7 @@ from sqlalchemy.dialects.postgresql import insert
 
 from app.db import SessionLocal
 from app.logging_config import logger
-from app.models import ProviderRoutingMetricsHistory
+from app.models import ProviderRoutingMetricsHistory, UserRoutingMetricsHistory
 
 BucketSeconds = int
 
@@ -272,8 +272,197 @@ class BufferedMetricsRecorder:
         )
 
 
+@dataclass(frozen=True)
+class UserMetricsKey:
+    user_id: UUID
+    provider_id: str
+    logical_model: str
+    transport: str
+    is_stream: bool
+    window_start: dt.datetime
+    bucket_seconds: BucketSeconds
+
+
+class BufferedUserMetricsRecorder:
+    """
+    Similar to BufferedMetricsRecorder but dedicated to per-user aggregates.
+    """
+
+    def __init__(
+        self,
+        *,
+        flush_interval_seconds: int,
+        latency_sample_size: int,
+        max_buffered_buckets: int,
+        success_sample_rate: float,
+    ) -> None:
+        self.flush_interval_seconds = flush_interval_seconds
+        self.latency_sample_size = latency_sample_size
+        self.max_buffered_buckets = max_buffered_buckets
+        self.success_sample_rate = max(0.0, min(1.0, success_sample_rate))
+
+        self._buffer: Dict[UserMetricsKey, MetricsStats] = {}
+        self._lock = threading.Lock()
+        self._stop_event = threading.Event()
+        self._flush_thread: threading.Thread | None = None
+
+    def start(self) -> None:
+        if self._flush_thread and self._flush_thread.is_alive():
+            return
+
+        self._flush_thread = threading.Thread(
+            target=self._flush_loop,
+            name="user-metrics-buffer-flusher",
+            daemon=True,
+        )
+        self._flush_thread.start()
+
+    def shutdown(self) -> None:
+        self._stop_event.set()
+        if self._flush_thread:
+            self._flush_thread.join(timeout=1.0)
+
+    def record_sample(
+        self,
+        *,
+        user_id: UUID,
+        provider_id: str,
+        logical_model: str,
+        transport: str,
+        is_stream: bool,
+        window_start: dt.datetime,
+        bucket_seconds: BucketSeconds,
+        success: bool,
+        latency_ms: float,
+    ) -> None:
+        if success and self.success_sample_rate < 1.0:
+            if random.random() > self.success_sample_rate:
+                return
+
+        key = UserMetricsKey(
+            user_id=user_id,
+            provider_id=provider_id,
+            logical_model=logical_model,
+            transport=transport,
+            is_stream=is_stream,
+            window_start=window_start,
+            bucket_seconds=bucket_seconds,
+        )
+
+        with self._lock:
+            stats = self._buffer.get(key) or MetricsStats()
+            stats.record(success=success, latency_ms=latency_ms, sample_limit=self.latency_sample_size)
+            self._buffer[key] = stats
+
+            if len(self._buffer) >= self.max_buffered_buckets:
+                threading.Thread(target=self.flush, daemon=True).start()
+
+    def flush(self) -> int:
+        items = self._drain_buffer()
+        if not items:
+            return 0
+
+        session = SessionLocal()
+        flushed = 0
+        try:
+            for key, stats in items:
+                stmt = self._build_upsert_stmt(key, stats)
+                session.execute(stmt)
+                flushed += 1
+            session.commit()
+        except Exception:
+            session.rollback()
+            logger.exception("Failed to flush buffered user routing metrics")
+        finally:
+            session.close()
+        return flushed
+
+    def _drain_buffer(self) -> list[Tuple[UserMetricsKey, MetricsStats]]:
+        with self._lock:
+            if not self._buffer:
+                return []
+            items = list(self._buffer.items())
+            self._buffer = {}
+            return items
+
+    def _flush_loop(self) -> None:
+        while not self._stop_event.wait(self.flush_interval_seconds):
+            try:
+                flushed = self.flush()
+                if flushed:
+                    logger.debug("Flushed %d buffered user metric buckets", flushed)
+            except Exception:
+                logger.exception("Unexpected error while flushing user metrics buffer")
+
+    def _build_upsert_stmt(self, key: UserMetricsKey, stats: MetricsStats):
+        total_requests = stats.total_requests
+        success_requests = stats.success_requests
+        error_requests = stats.error_requests
+
+        latency_avg = stats.latency_avg()
+        latency_p95 = stats.latency_p95()
+        latency_p99 = stats.latency_p99()
+        error_rate = (error_requests / total_requests) if total_requests else 0.0
+
+        base_insert = insert(UserRoutingMetricsHistory).values(
+            user_id=key.user_id,
+            provider_id=key.provider_id,
+            logical_model=key.logical_model,
+            transport=key.transport,
+            is_stream=key.is_stream,
+            window_start=key.window_start,
+            window_duration=key.bucket_seconds,
+            total_requests=total_requests,
+            success_requests=success_requests,
+            error_requests=error_requests,
+            latency_avg_ms=latency_avg,
+            latency_p95_ms=latency_p95,
+            latency_p99_ms=latency_p99,
+            error_rate=error_rate,
+        )
+
+        new_total = UserRoutingMetricsHistory.total_requests + total_requests
+        new_success = UserRoutingMetricsHistory.success_requests + success_requests
+        new_error = UserRoutingMetricsHistory.error_requests + error_requests
+
+        existing_latency_sum = (
+            UserRoutingMetricsHistory.latency_avg_ms
+            * UserRoutingMetricsHistory.total_requests
+        )
+
+        return base_insert.on_conflict_do_update(
+            constraint="uq_user_routing_metrics_history_bucket",
+            set_={
+                "total_requests": new_total,
+                "success_requests": new_success,
+                "error_requests": new_error,
+                "latency_avg_ms": (existing_latency_sum + stats.latency_sum_ms)
+                / cast(new_total, Float),
+                "latency_p95_ms": (
+                    (
+                        UserRoutingMetricsHistory.latency_p95_ms
+                        * UserRoutingMetricsHistory.total_requests
+                        + latency_p95 * total_requests
+                    )
+                    / cast(new_total, Float)
+                ),
+                "latency_p99_ms": (
+                    (
+                        UserRoutingMetricsHistory.latency_p99_ms
+                        * UserRoutingMetricsHistory.total_requests
+                        + latency_p99 * total_requests
+                    )
+                    / cast(new_total, Float)
+                ),
+                "error_rate": cast(new_error, Float) / cast(new_total, Float),
+            },
+        )
+
+
 __all__ = [
     "MetricsKey",
     "MetricsStats",
     "BufferedMetricsRecorder",
+    "BufferedUserMetricsRecorder",
+    "UserMetricsKey",
 ]

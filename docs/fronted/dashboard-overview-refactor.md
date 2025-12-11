@@ -5,7 +5,7 @@
 ## 前端数据层（SWR Hooks）
 
 ### useOverviewMetrics
-获取整体指标汇总，包括总请求数、成功率、活跃 Provider 数等。
+获取系统级指标汇总，包括总请求数、成功率、活跃 Provider 数等。
 
 **位置**：`frontend/lib/swr/use-overview-metrics.ts`
 
@@ -33,6 +33,17 @@ const { summary, isLoading, error } = useOverviewMetrics({
 ```
 
 **缓存策略**：`static` (60s TTL)
+
+> ⚠️ 用户维度概览不要复用该 Hook，请使用下方的 `use-user-overview-metrics`。
+
+### use-user-overview-metrics
+新增的用户专属指标 Hook，封装在 `frontend/lib/swr/use-user-overview-metrics.ts` 中，包含：
+
+- `useUserOverviewSummary`：请求 `/metrics/user-overview/summary`；
+- `useUserOverviewProviders`：请求 `/metrics/user-overview/providers`；
+- `useUserOverviewActivity` / `useUserSuccessRateTrend`：请求 `/metrics/user-overview/timeseries`。
+
+所有接口均自动携带 `scope="user"` 字段，便于前端区分系统/用户维度。
 
 ---
 
@@ -94,29 +105,34 @@ const { providers, isLoading, error } = useActiveProviders({
 
 ---
 
-### useCreditProviderConsumption
-获取按 Provider 聚合的积分消耗排行。
+### useUserOverviewProviders
+获取“我的 Provider 排行”列表，替代之前的积分消耗排名。
 
-**位置**：`frontend/lib/swr/use-credits.ts` (扩展)
+**位置**：`frontend/lib/swr/use-user-overview-metrics.ts`
 
 **使用示例**：
 ```typescript
-const { providers, isLoading, error } = useCreditProviderConsumption({
-  timeRange: '7d'
+const { providers, loading, error } = useUserOverviewProviders({
+  time_range: '7d',
+  limit: 5
 });
 ```
 
 **返回数据结构**：
 ```typescript
 {
-  provider_id: string;
-  provider_name: string;
-  total_consumption: number;        // 消耗积分
-  request_count: number;            // 请求数
-  success_rate: number;             // 成功率
-  latency_p95_ms?: number;          // P95 延迟
-  percentage_of_total: number;      // 占总消耗的百分比
-}[]
+  scope: "user";
+  user_id: string;
+  time_range: string;
+  items: Array<{
+    provider_id: string;
+    total_requests: number;
+    success_requests: number;
+    error_requests: number;
+    success_rate: number;
+    latency_p95_ms?: number;
+  }>
+}
 ```
 
 **缓存策略**：`static` (60s TTL)
@@ -124,7 +140,7 @@ const { providers, isLoading, error } = useCreditProviderConsumption({
 ---
 
 ### useOverviewActivity
-获取近期活动时间序列数据，用于"近期活动"卡片。
+获取近期活动时间序列数据，用于“系统级”近期活动卡片；用户维度改用 `useUserOverviewActivity`。
 
 **位置**：`frontend/lib/swr/use-overview-metrics.ts`
 
@@ -132,6 +148,15 @@ const { providers, isLoading, error } = useCreditProviderConsumption({
 ```typescript
 const { activity, isLoading, error } = useOverviewActivity({
   timeRange: 'today',
+  bucket: 'minute'
+});
+```
+
+用户维度 Hook：
+
+```typescript
+const { activity } = useUserOverviewActivity({
+  time_range: '7d',
   bucket: 'minute'
 });
 ```
@@ -176,6 +201,7 @@ interface OverviewFilterBarProps {
 - 将选择状态保存到本地存储（localStorage key: `overview_time_range`）
 - 页面刷新时恢复上次选择
 - 使用 `@/components/ui/select` 和 `@/components/ui/button` 组件
+- 右侧展示“查看系统监控”链接，文案来自 `overview.system_monitor_link`
 
 ---
 

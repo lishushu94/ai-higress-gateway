@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { OverviewTimeRange } from "@/lib/swr/use-overview-metrics";
+import { UserOverviewTimeRange } from "@/lib/swr/use-user-overview-metrics";
 import { FilterBar } from "@/components/dashboard/overview/filter-bar";
 import { StatsGrid } from "@/components/dashboard/overview/stats-grid";
 import { MetricsGrid } from "@/components/dashboard/overview/metrics-grid";
@@ -21,9 +21,9 @@ import { RecentActivity } from "@/components/dashboard/overview/recent-activity"
  * - 协调筛选器与数据更新的联动
  */
 export function OverviewClient() {
-  const [timeRange, setTimeRange] = useState<OverviewTimeRange>("7d");
+  const [timeRange, setTimeRange] = useState<UserOverviewTimeRange>("7d");
 
-  const handleTimeRangeChange = (range: OverviewTimeRange) => {
+  const handleTimeRangeChange = (range: UserOverviewTimeRange) => {
     setTimeRange(range);
   };
 

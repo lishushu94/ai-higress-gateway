@@ -21,13 +21,11 @@ import { SWRConfig } from "swr";
 // Mock SWR hooks
 vi.mock("@/lib/swr/use-credits", () => ({
   useCreditConsumptionSummary: vi.fn(),
-  useCreditProviderConsumption: vi.fn(),
 }));
 
-vi.mock("@/lib/swr/use-overview-metrics", () => ({
-  useSuccessRateTrend: vi.fn(),
-  useActiveModels: vi.fn(),
-  useOverviewEvents: vi.fn(),
+vi.mock("@/lib/swr/use-user-overview-metrics", () => ({
+  useUserSuccessRateTrend: vi.fn(),
+  useUserOverviewProviders: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -156,13 +154,20 @@ describe("Loading and Error Handling Integration", () => {
 
   describe("空数据处理", () => {
     it("应该在没有数据时显示空数据提示", async () => {
-      const { useCreditProviderConsumption } = require("@/lib/swr/use-credits");
-      useCreditProviderConsumption.mockReturnValue({
-        providers: [],
+      const { useUserOverviewProviders } = require("@/lib/swr/use-user-overview-metrics");
+      useUserOverviewProviders.mockReturnValue({
+        providers: {
+          scope: "user",
+          user_id: "tester",
+          time_range: "7d",
+          transport: "all",
+          is_stream: "all",
+          items: [],
+        },
         loading: false,
         error: null,
         refresh: vi.fn(),
-      });
+      } as any);
 
       renderWithProviders(<ProviderRankingCard timeRange="7d" />);
 
@@ -224,13 +229,20 @@ describe("Loading and Error Handling Integration", () => {
     });
 
     it("应该在没有数据时显示友好的空数据提示", async () => {
-      const { useCreditProviderConsumption } = require("@/lib/swr/use-credits");
-      useCreditProviderConsumption.mockReturnValue({
-        providers: [],
+      const { useUserOverviewProviders } = require("@/lib/swr/use-user-overview-metrics");
+      useUserOverviewProviders.mockReturnValue({
+        providers: {
+          scope: "user",
+          user_id: "tester",
+          time_range: "7d",
+          transport: "all",
+          is_stream: "all",
+          items: [],
+        },
         loading: false,
         error: null,
         refresh: vi.fn(),
-      });
+      } as any);
 
       renderWithProviders(<ProviderRankingCard timeRange="7d" />);
 

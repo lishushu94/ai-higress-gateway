@@ -1,97 +1,197 @@
-# APIProxy - AI 网关
+<p align="center">
+  <img src="docs/images/logo.svg" alt="AI-Higress 徽标" width="360" />
+</p>
 
-[English README](README.md)
+<div align="center">
 
-APIProxy 是一个基于 FastAPI 构建的高性能 AI 代理网关。它为上游 AI 服务提供了统一、兼容 OpenAI 标准的接口，并内置了多提供商路由、模型缓存、会话管理、格式转换和跨厂商故障转移等能力，帮助你在一个出口下接入多家大模型服务。
----
+[![Release](https://img.shields.io/github/v/release/MarshallEriksen-Neura/AI-Higress-Gateway?label=release&style=flat-square)](https://github.com/MarshallEriksen-Neura/AI-Higress-Gateway/releases)
+[![Build](https://img.shields.io/github/actions/workflow/status/MarshallEriksen-Neura/AI-Higress-Gateway/test.yml?branch=main&style=flat-square)](https://github.com/MarshallEriksen-Neura/AI-Higress-Gateway/actions)
+[![License](https://img.shields.io/github/license/MarshallEriksen-Neura/AI-Higress-Gateway?style=flat-square)](https://github.com/MarshallEriksen-Neura/AI-Higress-Gateway/blob/main/LICENSE)
+[![Stars](https://img.shields.io/github/stars/MarshallEriksen-Neura/AI-Higress-Gateway?style=flat-square)](https://github.com/MarshallEriksen-Neura/AI-Higress-Gateway/stargazers)
 
-## 功能特性
+</div>
 
-- **兼容 OpenAI 的 API**  
-  提供 `/v1/chat/completions`、`/v1/responses` 和 `/models` 端点，以便您可以重用现有的 OpenAI SDK 和工具。
+<h1 align="center">AI-Higress-Gateway</h1>
 
-- **动态多提供商路由**  
-  - **逻辑模型**: 将多个物理提供商模型映射到单个逻辑模型（例如，“fast-model” -> OpenAI 的 `gpt-3.5-turbo`、Gemini 的 `gemini-pro`）。
-  - **零配置模型路由**: 如果请求的模型未被显式映射，网关会自动发现支持该模型的提供商，并动态创建路由组。
-  - **基于权重和指标的调度**: 根据配置的权重和运行时性能指标分配流量。
+<p align="center"><em>面向生产的 AI 网关 — 提供 OpenAI 兼容 API、多厂商路由、缓存与故障切换。</em></p>
 
-- **跨提供商故障转移**  
-  在流式和非流式请求中，当遇到可重试的错误（例如 429、5xx）时，自动在另一家提供商上重试请求。
+__语言__: 中文 · [English](README.md)
 
-- **请求格式适配器**  
-  - 自动将不同的请求格式转换为统一的 OpenAI 风格的 `messages` 结构。
-  - 支持 Gemini 风格的 `input`、Claude 风格的请求以及 OpenAI Responses API (`/v1/responses`)。
-  - 当客户端直接访问 `/v1/responses` 时，请求会以 Responses 原生格式贯穿全链路：路由层会将流量转发至上游的 `/v1/responses` 端点，使得仅支持 Responses API 的模型（例如 `gpt-5.1-codex`）无需额外适配即可调用。
-  - 处理带前缀的模型名称（例如 `my-provider/some-model`），以简化路由逻辑。
+<details>
+  <summary><strong>版本信息</strong></summary>
 
-- **会话粘性**  
-  通过 `X-Session-Id` 头将对话绑定到首次选择的提供商，以在多消息对话中保持上下文。
+  - **v1.x**（稳定）：`main` 分支 ✅
+  - **v2.x**（开发中）：`next` 分支 🔥
 
-- **模型列表聚合与缓存**  
-  从所有已配置的提供商处获取模型列表，将其规范化为 OpenAI 风格的 `/models` 响应，并缓存在 Redis 中。
+</details>
 
-- **支持流式与非流式响应**  
-  通过 `stream: true` 或 `Accept: text/event-stream` 头自动检测客户端对流式响应的需求。
+> 说明：徽章链接已指向 `MarshallEriksen-Neura/AI-Higress-Gateway`，如需改为其他仓库请告知。
 
-- **会话上下文存储**  
-  使用 `X-Session-Id` 头将请求/响应片段持久化到 Redis，以便通过 HTTP 端点检查简单的对话历史。
+## 概要
 
-- **灵活配置**  
-  上游地址、API 密钥、Redis URL、提供商权重和故障转移行为都通过环境变量进行控制。
+- 对外呈现统一的 OpenAI 兼容 API（如 `/v1/chat/completions`, `/v1/responses`, `/models`）。
+- 聚合来自多提供商的模型目录并做缓存以加速发现。
+- 将请求路由到上游提供商，支持基于权重与指标的调度与故障切换。
+- 通过 `X-Session-Id` 将短对话片段持久化到 Redis，实现会话粘性与审计能力。
+- 同时支持流式（SSE）与非流式响应。
 
-- **Docker 友好**  
-  包含一个 `docker-compose.yml` 文件，可通过单个命令启动 API 网关和 Redis。
+<p align="center">
+  <img src="docs/images/architecture.svg" alt="架构图" width="700" />
+</p>
 
 ---
 
-## 技术栈
+**目录概览**
 
-- Web 框架：FastAPI
-- ASGI 服务器：Uvicorn
-- HTTP 客户端：HTTPX
-- 缓存与存储：Redis
-- 配置管理：Pydantic Settings
-- 依赖管理：uv / pip
+- `backend/`：FastAPI 后端实现，入口为 `main.py`，业务代码位于 `app/`。
+- `frontend/`：Next.js 管理与监控 UI（App Router + Tailwind + shadcn 组件风格）。
+- `docs/`：设计与运维文档（路由、上下文、迁移等）。
+- `scripts/`：各类辅助脚本（模型检查、批量任务、密钥生成示例等）。
+- `tests/`：后端 pytest 测试套件（包含 async 测试）。
+- `docker-compose.yml`：开发/本地调试容器化编排（包含 Redis）。
+
+详细结构与设计说明见 `docs/` 目录。
 
 ---
 
+**主要特性（概览）**
 
-## 数据库迁移
+- OpenAI 兼容的 API（如 `/v1/chat/completions`, `/v1/responses`, `/models`）；
+- 多供应商模型路由与加权调度；
+- 跨厂商故障切换（重试与回退策略）；
+- 请求格式适配器（支持不同厂商的请求/响应形态）；
+- 会话粘滞与基于 `X-Session-Id` 的上下文存储（Redis）；
+- 模型列表聚合与缓存（统一 `/models` 返回）；
+- 支持 SSE 流式与非流式响应；
+- 完善的本地开发与容器化部署流程；
 
-- 后端进程启动时会自动执行 `alembic upgrade head`，确保诸如 `providers.probe_enabled`
-  这类新字段在 Celery/HTTP 任务访问数据库前已经创建完成。
-- 如需手动控制（例如在 CI 场景），可以设置 `AUTO_APPLY_DB_MIGRATIONS=0`
-  关闭自动迁移，再手动运行 `alembic upgrade head`。
-- 针对测试所用的 SQLite/内存数据库会自动跳过该逻辑，避免影响单元测试。
+---
 
+**快速开始（开发环境）**
 
-## 测试
-
-项目使用 `pytest` 和 `pytest-asyncio` 进行测试。  
-推荐本地执行：
+1. 克隆仓库并进入项目根目录：
 
 ```bash
-pytest
+git clone https://github.com/MarshallEriksen-Neura/AI-Higress-Gateway.git
+cd AI-Higress-Gateway
 ```
 
-或仅运行某个测试文件：
+2. Python 环境与后端依赖（推荐 Python 3.12）：
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e backend/  # 或 pip install . 在 backend/ 根目录运行
+```
+
+3. 启动本地 Redis（开发时可用 docker-compose 一键启动）：
+
+```bash
+docker-compose up -d
+```
+
+4. 本地运行后端（开发模式）：
+
+```bash
+# 在 backend/ 目录下
+apiproxy    # 项目内已提供的本地运行脚本（或： uvicorn main:app --reload）
+```
+
+5. 前端（可选）
+
+```bash
+cd frontend
+# 可使用 bun、pnpm 或 npm，仓库支持 bun 示例
+bun install
+bun dev
+```
+
+更多环境变量与运行参数请参阅 `backend/app/settings.py`。
+
+---
+
+**测试**
+
+后端测试使用 `pytest` 与 `pytest-asyncio`：
+
+```bash
+# 在 backend/ 根目录
+pytest
+# 或运行单个文件
 pytest tests/test_chat_greeting.py
 ```
 
----
-
-## 贡献
-
-欢迎通过 Issue 和 Pull Request 参与贡献。请在提交前：
-
-- 为新增功能补充或更新测试；
-- 本地运行 `pytest` 确认测试通过；
-- 遵循现有的提交信息风格（中英文均可，如 `添加跨厂商故障转移` 或 `Add cross-provider failover`）。
+注意：AI Agent 不会自动运行测试，请在本地虚拟环境中执行并反馈结果。
 
 ---
 
-## 许可证
+**数据库迁移**
 
-本项目使用 MIT 许可证，详情参见 `LICENSE` 文件。
+使用 Alembic 管理模式变更：
+
+```bash
+cd backend
+alembic upgrade head
+```
+
+开发时可启用自动迁移：设置环境变量 `ENABLE_AUTO_MIGRATION=true`（生产环境推荐手动执行）。
+
+---
+
+**容器化与部署**
+
+- 本地快速启动（包含 Redis）:
+
+```bash
+docker-compose up -d
+```
+
+- 生产部署建议：
+  - 使用外部 Redis、可观察性与日志系统（ELK/Prometheus/Grafana）；
+  - 先在 CI 中运行 `alembic upgrade head`，再滚动发布后端服务；
+  - 使用健康检查与速率限制做流量保护。
+
+---
+
+**配置与 Secrets**
+
+- 配置集中在 `backend/app/settings.py`，优先使用环境变量进行注入；
+- 请通过系统 API 生成并保存 `SECRET_KEY`：`POST /system/secret-key/generate`（见项目安全规范），避免将真实密钥提交到仓库；
+- Redis、上游提供商的 API Keys、权重配置均通过环境变量或容器运行时注入。
+
+---
+
+**架构概览**
+
+- 网关层：FastAPI 提供统一接入面，负责鉴权、路由、格式转换与限流；
+- 上游适配：`app/upstream.py` 管理与各模型提供商的通信与重试策略；
+- 会话与缓存：使用 Redis 保存模型列表缓存与会话上下文（`app/context_store.py`、`app/model_cache.py`）；
+- 前端：Next.js 管理界面用于模型管理、审计与运维监控。
+
+---
+
+**贡献指南**
+
+- 新增改动请同时添加/更新测试（后端使用 pytest）；
+- 遵循代码风格：Python 使用 PEP8；函数/变量 snake_case，类 PascalCase；优先添加类型注释；
+- 提交信息简洁清晰（参见仓库历史样式，例如 `添加模型缓存错误处理`）；
+- 在变更涉及 API、鉴权或错误码时，务必同步更新 `docs/api/` 下对应文档。
+
+---
+
+**常见命令速查**
+
+- 创建并激活 Python 虚拟环境：`python -m venv .venv && source .venv/bin/activate`
+- 安装依赖：在 `backend/` 目录运行 `pip install -e .`
+- 启动服务：`apiproxy` 或 `uvicorn main:app --reload`（在 `backend/`）
+- 运行测试：`pytest`（在 `backend/`）
+- 启动本地全部服务：`docker-compose up -d`
+
+---
+
+如果你希望我把 README 的英文版或更为精简的“开发者速查”页单独拆出来，我可以继续生成对应的 `docs/` 页面或 `CONTRIBUTING.md`。
+
+---
+
+License: MIT
+
