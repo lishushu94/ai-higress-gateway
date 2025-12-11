@@ -25,6 +25,7 @@ backend/logs/
 # Backend environment
 backend/.env
 backend/.env.deploy
+backend/.env.local
 
 # Root environment (for Docker Compose)
 .env

@@ -53,7 +53,7 @@ services:
     container_name: apiproxy-api
     restart: unless-stopped
     env_file:
-      - backend/.env
+      - backend/.env.local
     volumes:
       - ./backend/logs:/app/logs
       # 开发模式:挂载源代码实现热重载
@@ -86,7 +86,7 @@ services:
     container_name: apiproxy-celery-worker
     restart: unless-stopped
     env_file:
-      - backend/.env
+      - backend/.env.local
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/app:/app/app:ro
@@ -109,7 +109,7 @@ services:
     container_name: apiproxy-celery-beat
     restart: unless-stopped
     env_file:
-      - backend/.env
+      - backend/.env.local
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/app:/app/app:ro
