@@ -23,8 +23,9 @@
 - 🔀 多提供商路由与权重调度，健康探测 + 故障切换。
 - 🧭 OpenAI 兼容接口（`/v1/chat/completions`, `/v1/responses`, `/models`），内置请求/响应适配器。
 - 🧠 会话粘滞：`X-Session-Id` + Redis 保存上下文、模型缓存。
-- 📊 指标与看板：Provider 排行、成功率趋势、请求历史、额度概览。
-- 🛡️ 安全内置：鉴权、API Key 发行、角色/权限、中间件安全校验。
+- 💳 积分与计费：用户/Provider 维度的请求计量、额度与交易历史。
+- 📊 指标与看板：Provider 排行、成功率趋势、请求历史、用户维度概览。
+- 🛡️ 安全内置：鉴权、API Key 发行、角色/权限、中间件安全校验、限流。
 - 🧰 研发友好：FastAPI 后端 + Next.js 管理台（App Router + Tailwind + shadcn/ui），docker-compose 一键本地栈。
 
 <p align="center">
@@ -36,6 +37,19 @@
 <p align="center">
   <img src="docs/images/overview.png" alt="仪表盘截图" width="820" />
 </p>
+
+<p align="center">
+  <img src="docs/images/provider-overview.png" alt="Provider 管理截图" width="820" />
+</p>
+
+## 🧩 功能矩阵
+- 网关与 API：OpenAI 兼容（Chat/Responses/Models）、SSE/非流、上下文存储。
+- Provider：公共/私有 Provider 注册，预设模板，逻辑模型映射，权重路由，提交与审核流程。
+- 路由与控制：路由规则、故障切换/回退、健康探测、缓存失效。
+- 身份与访问：JWT 登录、API Key、角色/权限、用户资料与头像。
+- 积分与计费：余额/消耗/交易历史，用户 & Provider 维度指标。
+- 可观测性：用户/Provider 指标、成功率趋势、请求历史、会话审计片段。
+- 运维与管理：系统配置、通知、Provider 审核、网关健康检查。
 
 ## 🚀 快速开始
 
@@ -73,6 +87,13 @@ bun dev       # 启动 Next.js 管理台
 - 核心配置在 `backend/app/settings.py`，推荐使用环境变量。
 - 通过系统 API `POST /system/secret-key/generate` 生成 `SECRET_KEY` 写入 `.env`。
 - Redis/PostgreSQL 连接信息从 `.env` 读取，可按需调整端口/密码。
+- Celery 可复用 Redis 作为 broker/result（参考 `.env` 示例）。
+- 常用环境变量：
+  - `REDIS_URL`, `REDIS_PASSWORD`
+  - `DATABASE_URL`（postgresql+psycopg）
+  - `SECRET_KEY`
+  - `LOG_LEVEL`（默认 INFO）
+  - `ENABLE_AUTO_MIGRATION`（开发可选自动迁移）
 
 ## 🧪 测试
 后端使用 `pytest` / `pytest-asyncio`（AI Agent 不代跑，请本地执行）：
@@ -101,6 +122,7 @@ docker-compose up -d  # 后端 + Redis
 - 前端设计：`docs/fronted/`
 - UI 规范：`ui-prompt.md`
 - 前端文案与 i18n：`frontend/lib/i18n/`
+- 设计/截图资源：`docs/images/`
 
 ## 🤝 贡献指南
 - 遵循 PEP 8、类型注解；函数/变量 snake_case，类 PascalCase。
