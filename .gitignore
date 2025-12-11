@@ -28,6 +28,18 @@ backend/.env
 # Root environment (for Docker Compose)
 .env
 
+# Celery Beat scheduler database
+backend/celerybeat-schedule
+backend/celerybeat-schedule-shm
+backend/celerybeat-schedule-wal
+
+# Temporary database files
+backend/tmp.db
+backend/*.db
+
+# Python version files
+backend/.python-version
+
 # ============================================
 # Node.js (Frontend)
 # ============================================
