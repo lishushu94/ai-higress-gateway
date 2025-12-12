@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session
 
@@ -28,6 +28,7 @@ def _build_admin_user_response(
     role_service: RoleService,
     perm_service: UserPermissionService,
     user: User,
+    request_base_url: str | None = None,
 ) -> UserResponse:
     """构造用于管理员视角的 UserResponse。"""
 
@@ -57,7 +58,10 @@ def _build_admin_user_response(
         username=user.username,
         email=user.email,
         display_name=user.display_name,
-        avatar=build_avatar_url(user.avatar),
+        avatar=build_avatar_url(
+            user.avatar,
+            request_base_url=request_base_url,
+        ),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         role_codes=role_codes,
@@ -72,6 +76,7 @@ def _build_admin_user_response(
     response_model=list[UserResponse],
 )
 def list_users_endpoint(
+    request: Request,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
 ) -> list[UserResponse]:
@@ -88,9 +93,15 @@ def list_users_endpoint(
 
     role_service = RoleService(db)
     perm_service = UserPermissionService(db)
+    request_base_url = str(request.base_url).rstrip("/")
 
     return [
-        _build_admin_user_response(role_service, perm_service, user)
+        _build_admin_user_response(
+            role_service,
+            perm_service,
+            user,
+            request_base_url=request_base_url,
+        )
         for user in users
     ]
 

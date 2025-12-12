@@ -4,15 +4,30 @@ import { ErrorHandler } from '@/lib/errors';
 
 // 认证状态变更回调
 let authErrorCallback: (() => void) | null = null;
+let authErrorTriggered = false; // 防止重复触发认证错误回调
 
 // 设置认证错误回调
 export const setAuthErrorCallback = (callback: () => void) => {
   authErrorCallback = callback;
+  authErrorTriggered = false; // 重置标志
 };
 
 // 清除认证错误回调
 export const clearAuthErrorCallback = () => {
   authErrorCallback = null;
+  authErrorTriggered = false;
+};
+
+// 触发认证错误（带防重复机制）
+const triggerAuthError = () => {
+  if (!authErrorTriggered && authErrorCallback) {
+    authErrorTriggered = true;
+    authErrorCallback();
+    // 5秒后重置标志，允许再次触发（防止永久锁定）
+    setTimeout(() => {
+      authErrorTriggered = false;
+    }, 5000);
+  }
 };
 
 // 环境变量
@@ -78,12 +93,58 @@ const createHttpClient = (): AxiosInstance => {
 
   // 请求拦截器
   instance.interceptors.request.use(
-    (config: InternalAxiosRequestConfig) => {
+    async (config: InternalAxiosRequestConfig) => {
       // 从 tokenManager 获取 token
-      const token = tokenManager.getAccessToken();
+      let token = tokenManager.getAccessToken();
+      const refreshToken = tokenManager.getRefreshToken();
       const apiKey = typeof window !== 'undefined' 
         ? localStorage.getItem('api_key') 
         : null;
+
+      // 如果没有 access_token 但有 refresh_token，且不是刷新请求本身，先刷新
+      const isRefreshRequest = config.url?.includes('/auth/refresh');
+      if (!token && refreshToken && !isRefreshRequest) {
+        console.log('[Auth Debug] No access token but has refresh token, refreshing before request...');
+        
+        // 如果正在刷新，等待刷新完成
+        if (isRefreshing && refreshTokenPromise) {
+          try {
+            token = await refreshTokenPromise;
+          } catch (error) {
+            console.log('[Auth Debug] Refresh failed in request interceptor:', error);
+            // 刷新失败，继续发送请求（会收到 401）
+          }
+        } else if (!isRefreshing) {
+          // 开始刷新
+          isRefreshing = true;
+          refreshTokenPromise = refreshAccessToken()
+            .then(newToken => {
+              console.log('[Auth Debug] Token refresh successful in request interceptor');
+              processQueue(null, newToken);
+              return newToken;
+            })
+            .catch(refreshError => {
+              console.log('[Auth Debug] Token refresh failed in request interceptor:', refreshError);
+              processQueue(refreshError, null);
+              tokenManager.clearAll();
+              if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
+                triggerAuthError();
+              }
+              throw refreshError;
+            })
+            .finally(() => {
+              isRefreshing = false;
+              refreshTokenPromise = null;
+            });
+          
+          try {
+            token = await refreshTokenPromise;
+          } catch (error) {
+            console.log('[Auth Debug] Refresh failed in request interceptor:', error);
+            // 刷新失败，继续发送请求（会收到 401）
+          }
+        }
+      }
 
       // 添加认证信息
       if (token) {
@@ -122,7 +183,7 @@ const createHttpClient = (): AxiosInstance => {
         if (isRefreshRequest) {
           tokenManager.clearAll();
           if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-            authErrorCallback?.();
+            triggerAuthError();
           }
           // 标准化错误后抛出，让业务层决定如何展示
           const standardError = ErrorHandler.normalize(error);
@@ -161,7 +222,7 @@ const createHttpClient = (): AxiosInstance => {
               // 刷新失败，清除所有token并触发认证错误回调
               tokenManager.clearAll();
               if (typeof window !== 'undefined' && !window.location.pathname.includes('/login')) {
-                authErrorCallback?.();
+                triggerAuthError();
               }
               throw refreshError;
             })

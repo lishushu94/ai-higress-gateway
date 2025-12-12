@@ -30,6 +30,27 @@ const defaultSWRConfig: SWRProviderConfig = {
   onSuccess: (data, key) => {
     console.debug(`SWR Success for key ${key}:`, data);
   },
+  // 错误重试条件：401 错误不重试
+  onErrorRetry: (error, key, _config, revalidate, { retryCount }) => {
+    // 401 认证错误不重试，避免无限循环
+    if (error?.status === 401 || error?.response?.status === 401) {
+      console.warn(`[SWR] 401 error for ${key}, skipping retry`);
+      return;
+    }
+    
+    // 404 错误不重试
+    if (error?.status === 404 || error?.response?.status === 404) {
+      return;
+    }
+    
+    // 超过最大重试次数
+    if (retryCount >= 3) {
+      return;
+    }
+    
+    // 其他错误按指数退避重试
+    setTimeout(() => revalidate({ retryCount }), Math.min(1000 * Math.pow(2, retryCount), 30000));
+  },
 };
 
 // SWR Provider 上下文

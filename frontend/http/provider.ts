@@ -1,4 +1,5 @@
 import { httpClient } from './client';
+import type { SubmissionStatus } from './provider-submission';
 
 // 提供商类型定义
 export type ProviderVisibility = 'public' | 'private' | 'restricted';
@@ -52,6 +53,13 @@ export interface Provider {
   probe_interval_seconds?: number | null;
   probe_model?: string | null;
   last_check?: number | string | null;
+  created_at: string;
+  updated_at: string;
+  latest_submission?: ProviderSubmissionSummary | null;
+}
+export interface ProviderSubmissionSummary {
+  id: string;
+  approval_status: SubmissionStatus;
   created_at: string;
   updated_at: string;
 }

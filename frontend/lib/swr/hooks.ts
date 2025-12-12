@@ -5,11 +5,22 @@ import useSWRMutation, { SWRMutationConfiguration } from 'swr/mutation';
 import { useState, useCallback } from 'react';
 import { swrFetcher } from './fetcher';
 import { useCacheStrategy } from './cache';
+import { tokenManager } from '@/lib/auth/token-manager';
+
+// 检查是否已认证（有 token）
+// 只要有 refresh_token 就认为已登录，因为可以用它刷新 access_token
+const isAuthenticated = (): boolean => {
+  if (typeof window === 'undefined') return false;
+  // 优先检查 refresh_token，因为它的生命周期更长
+  // 即使 access_token 过期了，只要有 refresh_token 就可以自动刷新
+  return !!tokenManager.getRefreshToken() || !!tokenManager.getAccessToken();
+};
 
 // 自定义 Hook 选项
 export interface UseSWROptions extends SWRConfiguration {
   strategy?: 'default' | 'frequent' | 'static' | 'realtime';
   params?: Record<string, any>;
+  requireAuth?: boolean; // 是否需要认证，默认 true
 }
 
 // 基础 GET 请求 Hook
@@ -17,11 +28,15 @@ export const useApiGet = <T = any>(
   url: string | null,
   options: UseSWROptions = {}
 ) => {
-  const { strategy = 'default', params, ...restOptions } = options;
+  const { strategy = 'default', params, requireAuth = true, ...restOptions } = options;
   const cacheStrategy = useCacheStrategy(strategy);
 
+  // 如果需要认证但用户未登录，则不发起请求
+  const shouldFetch = !requireAuth || isAuthenticated();
+  const effectiveUrl = shouldFetch ? url : null;
+
   // 构建完整 URL
-  const fullUrl = url && params ? `${url}?${new URLSearchParams(params).toString()}` : url;
+  const fullUrl = effectiveUrl && params ? `${effectiveUrl}?${new URLSearchParams(params).toString()}` : effectiveUrl;
 
   const {
     data,
@@ -243,7 +258,7 @@ export const usePaginatedData = <T = any>(
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   
-  const { params } = options;
+  const { params, requireAuth = true } = options;
   const fullParams = {
     ...params,
     page,
@@ -261,6 +276,7 @@ export const usePaginatedData = <T = any>(
     {
       ...options,
       params: fullParams,
+      requireAuth,
     }
   );
 
@@ -288,7 +304,7 @@ export const useSearchData = <T = any>(
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   
-  const { params } = options;
+  const { params, requireAuth = true } = options;
   const fullParams = {
     ...params,
     search: debouncedSearchTerm,
@@ -305,6 +321,7 @@ export const useSearchData = <T = any>(
     {
       ...options,
       params: fullParams,
+      requireAuth,
     }
   );
 
@@ -334,8 +351,9 @@ export const useResource = <T = any, P = any>(
   resourceUrl: string,
   options: UseSWROptions = {}
 ) => {
+  const { requireAuth = true } = options;
   // 获取资源列表
-  const getResource = useApiGet<T[]>(resourceUrl, options);
+  const getResource = useApiGet<T[]>(resourceUrl, { ...options, requireAuth });
   
   // 创建资源
   const createResource = useApiPost<T, P>(resourceUrl);

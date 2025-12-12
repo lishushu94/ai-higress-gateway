@@ -121,7 +121,7 @@ export function SidebarNav() {
         roleCodes.includes("admin");
 
     return (
-        <div className="w-64 border-r bg-sidebar h-screen flex flex-col">
+        <div className="hidden lg:flex w-64 border-r bg-sidebar h-screen flex-col">
             <div className="p-6 border-b">
                 <Link href="/" className="text-2xl font-bold tracking-tight hover:opacity-80 transition-opacity">
                     {t("app.title")}

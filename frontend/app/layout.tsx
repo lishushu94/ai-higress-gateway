@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Suspense } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
@@ -9,41 +9,104 @@ import { SWRProvider } from "@/lib/swr";
 import { Toaster } from "@/components/ui/sonner";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
 import { PerformanceMonitor } from "@/components/performance-monitor";
-
+import { generateJsonLd } from "@/lib/seo";
 
 export const metadata: Metadata = {
-  title: "AI Higress Frontend",
-  description: "Frontend for AI Higress API Gateway",
+  metadataBase: new URL(process.env.NEXT_PUBLIC_BASE_URL || 'https://ai-higress.example.com'),
+  title: {
+    default: "AI Higress Gateway - 智能 AI 路由网关",
+    template: "%s | AI Higress Gateway",
+  },
+  description: "AI Higress - 智能 AI 路由网关，统一管理多个 AI 提供商，提供高效的模型路由和 API 管理服务",
+  keywords: ["AI Gateway", "AI 网关", "API Gateway", "智能路由", "OpenAI", "Claude", "Gemini"],
+  authors: [{ name: "AI Higress Team" }],
+  creator: "AI Higress",
+  publisher: "AI Higress",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
     title: "AI HIGRESS GATEWAY",
   },
+  openGraph: {
+    type: "website",
+    locale: "zh_CN",
+    url: "/",
+    title: "AI Higress Gateway - 智能 AI 路由网关",
+    description: "统一管理多个 AI 提供商，提供高效的模型路由和 API 管理服务",
+    siteName: "AI Higress Gateway",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "AI Higress Gateway",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "AI Higress Gateway - 智能 AI 路由网关",
+    description: "统一管理多个 AI 提供商，提供高效的模型路由和 API 管理服务",
+    images: ["/og-image.png"],
+    creator: "@ai_higress",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      'max-video-preview': -1,
+      'max-image-preview': 'large',
+      'max-snippet': -1,
+    },
+  },
+  verification: {
+    google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION,
+    yandex: process.env.NEXT_PUBLIC_YANDEX_VERIFICATION,
+  },
 };
 
-export function generateThemeColor() {
-  return "#0066cc";
-}
-
-export function generateViewport() {
-  return "width=device-width, initial-scale=1, maximum-scale=1";
-}
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
+  userScalable: true,
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#0a0a0a" },
+  ],
+};
 
 export default function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // 生成结构化数据
+  const organizationSchema = generateJsonLd('Organization', {});
+  const websiteSchema = generateJsonLd('WebSite', {});
+
   return (
-    <html lang="en" suppressHydrationWarning>
+    <html lang="zh-CN" suppressHydrationWarning>
       <head>
         <meta name="apple-mobile-web-app-title" content="AI HIGRESS GATEWAY" />
         <link rel="icon" href="/favicon.ico" />
         <link rel="shortcut icon" href="/favicon.ico" />
         <link rel="apple-touch-icon" sizes="180x180" href="/apple-icon.png" />
         <link rel="manifest" href="/manifest.json" />
-        <meta name="theme-color" content="#0066cc" />
+        
+        {/* 结构化数据 - 组织信息 */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationSchema) }}
+        />
+        {/* 结构化数据 - 网站信息 */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteSchema) }}
+        />
       </head>
       <body className="antialiased">
         <ThemeProvider

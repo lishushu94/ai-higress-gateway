@@ -137,9 +137,8 @@ def trigger_provider_test(
         session.refresh(provider)
         return record
 
-    redis = get_redis_client()
-
     async def _run_probe():
+        redis = get_redis_client()
         async with httpx.AsyncClient(timeout=settings.upstream_timeout) as client:
             status = await check_provider_health(client, cfg, redis)
             await persist_provider_health(

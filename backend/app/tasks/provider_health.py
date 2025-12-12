@@ -29,7 +29,6 @@ else:  # pragma: no cover - fallback type when redis isn't installed
 
 
 async def _run_checks(
-    redis: Redis,
     session: Session,
     *,
     provider_ids: Sequence[str] | None = None,
@@ -40,6 +39,8 @@ async def _run_checks(
     if client is None:
         client = httpx.AsyncClient(timeout=settings.upstream_timeout)
         owns_client = True
+
+    redis = get_redis_client()
 
     try:
         pairs = load_providers_with_configs(session=session)
@@ -67,13 +68,11 @@ async def _run_checks(
 def check_all_providers_health() -> int:
     """巡检所有可用 Provider 的健康状态。"""
 
-    redis = get_redis_client()
     session = SessionLocal()
 
     try:
         return asyncio.run(
             _run_checks(
-                redis,
                 session,
                 cache_ttl_seconds=settings.provider_health_cache_ttl_seconds,
             )
@@ -86,13 +85,11 @@ def check_all_providers_health() -> int:
 def check_selected_providers_health(provider_ids: Sequence[str]) -> int:
     """巡检指定 provider_id 列表的健康状态。"""
 
-    redis = get_redis_client()
     session = SessionLocal()
 
     try:
         return asyncio.run(
             _run_checks(
-                redis,
                 session,
                 provider_ids=provider_ids,
                 cache_ttl_seconds=settings.provider_health_cache_ttl_seconds,

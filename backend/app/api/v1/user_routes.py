@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile, status
 from sqlalchemy import Select, or_, select
 from sqlalchemy.orm import Session
 
@@ -45,6 +45,14 @@ router = APIRouter(
 DEFAULT_USER_ROLE_CODE = "default_user"
 
 
+def _request_base_url(request: Request | None) -> str | None:
+    """提取请求的 base_url 并去掉末尾斜杠，便于用于拼接头像链接。"""
+
+    if request is None:
+        return None
+    return str(request.base_url).rstrip("/")
+
+
 def _assign_default_role(db: Session, user_id: UUID) -> None:
     """为新用户分配默认角色（若不存在则自动创建）。"""
 
@@ -67,7 +75,12 @@ def _assign_default_role(db: Session, user_id: UUID) -> None:
     service.set_user_roles(user_id, [role.id])
 
 
-def _build_user_response(db: Session, user_id: UUID) -> UserResponse:
+def _build_user_response(
+    db: Session,
+    user_id: UUID,
+    *,
+    request_base_url: str | None = None,
+) -> UserResponse:
     """聚合用户基础信息 + 角色 + 能力标记列表，构造 UserResponse。"""
 
     user = get_user_by_id(db, user_id)
@@ -102,7 +115,7 @@ def _build_user_response(db: Session, user_id: UUID) -> UserResponse:
         username=user.username,
         email=user.email,
         display_name=user.display_name,
-        avatar=build_avatar_url(user.avatar),
+        avatar=build_avatar_url(user.avatar, request_base_url=request_base_url),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         role_codes=role_codes,
@@ -115,6 +128,7 @@ def _build_user_response(db: Session, user_id: UUID) -> UserResponse:
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register_user_endpoint(
     payload: UserCreateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
 ) -> UserResponse:
@@ -132,20 +146,30 @@ def register_user_endpoint(
     # 初始化积分账户（如已存在则直接返回）
     get_or_create_account_for_user(db, user.id)
 
-    return _build_user_response(db, user.id)
+    return _build_user_response(
+        db,
+        user.id,
+        request_base_url=_request_base_url(request),
+    )
 
 
 @router.get("/users/me", response_model=UserResponse)
 def get_current_user_endpoint(
+    request: Request,
     current_user: AuthenticatedUser = Depends(require_jwt_token),
     db: Session = Depends(get_db),
 ) -> UserResponse:
     """获取当前认证用户的信息。"""
-    return _build_user_response(db, UUID(current_user.id))
+    return _build_user_response(
+        db,
+        UUID(current_user.id),
+        request_base_url=_request_base_url(request),
+    )
 
 
 @router.post("/users/me/avatar", response_model=UserResponse)
 async def upload_my_avatar_endpoint(
+    request: Request,
     file: UploadFile = File(...),
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
@@ -213,7 +237,11 @@ async def upload_my_avatar_endpoint(
     db.commit()
     db.refresh(user)
 
-    return _build_user_response(db, user.id)
+    return _build_user_response(
+        db,
+        user.id,
+        request_base_url=_request_base_url(request),
+    )
 
 
 @router.get("/users/search", response_model=list[UserLookupResponse])
@@ -271,6 +299,7 @@ def search_users_endpoint(
 def update_user_endpoint(
     user_id: UUID,
     payload: UserUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
 ) -> UserResponse:
@@ -288,7 +317,11 @@ def update_user_endpoint(
         updated = update_user(db, user, payload)
     except EmailAlreadyExistsError:
         raise bad_request("邮箱已被使用")
-    return _build_user_response(db, updated.id)
+    return _build_user_response(
+        db,
+        updated.id,
+        request_base_url=_request_base_url(request),
+    )
 
 
 async def _invalidate_user_api_keys(redis, key_hashes: list[str]) -> None:
@@ -300,6 +333,7 @@ async def _invalidate_user_api_keys(redis, key_hashes: list[str]) -> None:
 async def update_user_status_endpoint(
     user_id: UUID,
     payload: UserStatusUpdateRequest,
+    request: Request,
     db: Session = Depends(get_db),
     redis=Depends(get_redis),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
@@ -326,7 +360,11 @@ async def update_user_status_endpoint(
             reason="user_disabled_by_admin",
         )
 
-    return _build_user_response(db, updated.id)
+    return _build_user_response(
+        db,
+        updated.id,
+        request_base_url=_request_base_url(request),
+    )
 
 
 __all__ = ["router"]

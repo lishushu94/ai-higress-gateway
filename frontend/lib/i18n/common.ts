@@ -28,6 +28,10 @@ export const commonTranslations: Record<Language, Record<string, string>> = {
     "common.saving": "Saving...",
     "common.previous": "Previous",
     "common.next": "Next",
+    "common.status": "Status",
+    "common.active": "Active",
+    "common.inactive": "Inactive",
+    "common.created_at": "Created At",
     "common.error_superuser_required": "Superuser permission is required to perform this operation.",
     // Top navigation
     "topnav.admin_user_name": "Admin User",
@@ -60,6 +64,10 @@ export const commonTranslations: Record<Language, Record<string, string>> = {
     "common.saving": "保存中...",
     "common.previous": "上一页",
     "common.next": "下一页",
+    "common.status": "状态",
+    "common.active": "激活",
+    "common.inactive": "未激活",
+    "common.created_at": "创建时间",
     "common.error_superuser_required": "需要超级管理员权限才能执行此操作。",
     // Top navigation
     "topnav.admin_user_name": "管理员",

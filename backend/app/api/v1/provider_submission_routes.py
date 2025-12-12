@@ -5,9 +5,16 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
-from app.deps import get_db
+try:
+    from redis.asyncio import Redis
+except ModuleNotFoundError:  # pragma: no cover - optional dependency
+    Redis = object  # type: ignore[misc,assignment]
+
+from app.deps import get_db, get_redis
 from app.errors import bad_request, forbidden, not_found
 from app.jwt_auth import AuthenticatedUser, require_jwt_token
+from app.logging_config import logger
+from app.model_cache import MODELS_CACHE_KEY
 from app.schemas import (
     ProviderReviewRequest,
     ProviderSubmissionRequest,
@@ -26,6 +33,7 @@ from app.services.provider_submission_service import (
 )
 from app.services.provider_validation_service import ProviderValidationService
 from app.services.user_permission_service import UserPermissionService
+from app.storage.redis_service import PROVIDER_MODELS_KEY_TEMPLATE
 
 router = APIRouter(
     tags=["provider-submissions"],
@@ -112,15 +120,33 @@ def list_my_provider_submissions_endpoint(
     return [ProviderSubmissionResponse.model_validate(s) for s in submissions]
 
 
+async def _invalidate_public_provider_cache(redis: Redis, provider_id: str) -> None:
+    """
+    清理公共池相关缓存，确保审核通过的 Provider 能即时出现在 /models 等接口中。
+    """
+    if redis is object:
+        return
+    keys = [
+        MODELS_CACHE_KEY,
+        PROVIDER_MODELS_KEY_TEMPLATE.format(provider_id=provider_id),
+    ]
+    try:
+        await redis.delete(*keys)
+    except Exception:  # pragma: no cover - 缓存清理失败不阻断主流程
+        logger.warning(
+            "Failed to invalidate provider cache for %s", provider_id, exc_info=True
+        )
+
 @router.put(
     "/providers/submissions/{submission_id}/review",
     response_model=ProviderSubmissionResponse,
 )
-def review_provider_submission_endpoint(
+async def review_provider_submission_endpoint(
     submission_id: UUID,
     payload: ProviderReviewRequest,
     db: Session = Depends(get_db),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
+    redis: Redis = Depends(get_redis),
 ) -> ProviderSubmissionResponse:
     """管理员审核共享提供商提交。"""
 
@@ -152,6 +178,7 @@ def review_provider_submission_endpoint(
                 status=decision,
                 limit_qps=payload.limit_qps,
             )
+            await _invalidate_public_provider_cache(redis, submission.provider_id)
         else:
             reject_submission(
                 db,

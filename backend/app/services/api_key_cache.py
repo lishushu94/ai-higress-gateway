@@ -92,10 +92,14 @@ def cache_api_key_sync(api_key: APIKey) -> None:
     """
     Best-effort helper to cache API key metadata from sync endpoints.
     """
-    try:
+
+    async def _cache() -> None:
         redis = get_redis_client()
         entry = build_cache_entry(api_key)
-        asyncio.run(cache_api_key(redis, api_key.key_hash, entry))
+        await cache_api_key(redis, api_key.key_hash, entry)
+
+    try:
+        asyncio.run(_cache())
     except Exception:  # pragma: no cover - logging best-effort
         logger.exception("Failed to cache API key %s", api_key.id)
 
@@ -104,9 +108,13 @@ def invalidate_api_key_cache_sync(key_hash: str) -> None:
     """
     Best-effort helper to drop cached API key data from sync endpoints.
     """
-    try:
+
+    async def _invalidate() -> None:
         redis = get_redis_client()
-        asyncio.run(invalidate_cached_api_key(redis, key_hash))
+        await invalidate_cached_api_key(redis, key_hash)
+
+    try:
+        asyncio.run(_invalidate())
     except Exception:  # pragma: no cover - logging best-effort
         logger.exception("Failed to invalidate API key cache for %s", key_hash)
 

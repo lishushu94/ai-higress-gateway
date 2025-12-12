@@ -38,6 +38,22 @@ def create_submission(
     注意：此函数不会立即创建 Provider，仅保存提交与加密后的 API Key。
     """
 
+    # 提交前先校验 provider_id 是否已被占用，允许当前用户的私有 Provider 复用该 ID。
+    existing_provider = (
+        session.execute(select(Provider).where(Provider.provider_id == payload.provider_id))
+        .scalars()
+        .first()
+    )
+    if existing_provider is not None:
+        is_user_private_provider = (
+            existing_provider.owner_id == user_id
+            and existing_provider.visibility in ("private", "restricted")
+        )
+        if not is_user_private_provider:
+            raise ProviderSubmissionServiceError(
+                f"provider_id '{payload.provider_id}' 已存在，请更换后再提交"
+            )
+
     encrypted_config: str | None = None
     if payload.extra_config is not None:
         # 目前直接存为 JSON 字符串，后续可接入统一加密方案。
@@ -139,31 +155,77 @@ def approve_submission(
     if submission is None:
         raise ProviderSubmissionNotFoundError(f"Submission {submission_id} not found")
 
-    provider = Provider(
-        provider_id=submission.provider_id,
-        name=submission.name,
-        base_url=submission.base_url,
-        transport="http",
-        provider_type=submission.provider_type or "native",
-        weight=1.0,
-        visibility="public",
-        audit_status=status or "approved",
-        operation_status="active",
-        max_qps=limit_qps,
-    )
-    session.add(provider)
-    session.flush()  # ensure provider.id
+    if submission.approval_status in ("approved", "approved_limited"):
+        raise ProviderSubmissionServiceError("该提交已通过审核，无需重复审批")
+    if submission.approval_status == "rejected":
+        raise ProviderSubmissionServiceError("该提交已被拒绝，无法再次审批")
 
-    if submission.encrypted_api_key:
-        api_key = ProviderAPIKey(
-            provider_uuid=provider.id,
-            encrypted_key=submission.encrypted_api_key,
-            weight=1.0,
-            max_qps=None,
-            label="default",
-            status="active",
+    provider: Provider | None = None
+    existing_provider = (
+        session.execute(select(Provider).where(Provider.provider_id == submission.provider_id))
+        .scalars()
+        .first()
+    )
+    reused_private_provider = False
+    if existing_provider is not None:
+        is_user_private_provider = (
+            existing_provider.owner_id == submission.user_id
+            and existing_provider.visibility in ("private", "restricted")
         )
-        session.add(api_key)
+        if is_user_private_provider:
+            provider = existing_provider
+            reused_private_provider = True
+        else:
+            raise ProviderSubmissionServiceError(
+                f"provider_id '{submission.provider_id}' 已存在，无法创建公共提供商"
+            )
+
+    if provider is None:
+        provider = Provider(
+            provider_id=submission.provider_id,
+            name=submission.name,
+            base_url=submission.base_url,
+            transport="http",
+            provider_type=submission.provider_type or "native",
+            weight=1.0,
+            visibility="public",
+            audit_status=status or "approved",
+            operation_status="active",
+            max_qps=limit_qps,
+        )
+        session.add(provider)
+        try:
+            session.flush()  # ensure provider.id
+        except IntegrityError as exc:  # pragma: no cover - 并发保护
+            session.rollback()
+            logger.error("Failed to approve provider submission during flush: %s", exc)
+            raise ProviderSubmissionServiceError(
+                f"无法创建公共提供商，可能已存在相同 provider_id: {submission.provider_id}"
+            ) from exc
+
+        if submission.encrypted_api_key:
+            api_key = ProviderAPIKey(
+                provider_uuid=provider.id,
+                encrypted_key=submission.encrypted_api_key,
+                weight=1.0,
+                max_qps=None,
+                label="default",
+                status="active",
+            )
+            session.add(api_key)
+    else:
+        # 将私有 Provider 提升为公共 Provider
+        provider.name = submission.name
+        provider.base_url = submission.base_url
+        provider.provider_type = submission.provider_type or provider.provider_type
+        provider.visibility = "public"
+        provider.owner_id = None
+        provider.audit_status = status or "approved"
+        provider.operation_status = "active"
+        provider.max_qps = limit_qps
+        provider.weight = provider.weight or 1.0
+        provider.transport = provider.transport or "http"
+        reused_private_provider = True
 
     # 关键：保存 Provider 关联到 Submission，用于后续取消时删除
     submission.approved_provider_uuid = provider.id
@@ -179,7 +241,8 @@ def approve_submission(
         logger.error("Failed to approve provider submission: %s", exc)
         raise ProviderSubmissionServiceError("无法通过提供商提交") from exc
 
-    session.refresh(provider)
+    if not reused_private_provider:
+        session.refresh(provider)
 
     # 通知提交者审核通过
     try:

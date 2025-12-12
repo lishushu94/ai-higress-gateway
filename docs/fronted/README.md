@@ -163,6 +163,7 @@ AI Higress 前端架构设计、组件设计和功能实现文档。
 ### 数据请求
 - **SWR** - 数据获取和缓存
 - **Axios** - HTTP 客户端
+- [认证错误处理](./auth-error-handling.md) - 401 错误处理机制
 
 ### 状态管理
 - **Zustand** - 轻量级状态管理
@@ -216,6 +217,7 @@ frontend/
 - **封装 Hooks**: 在 `lib/swr/` 中封装业务 Hooks
 - **缓存策略**: 合理选择 `static`/`frequent`/`realtime`
 - **错误处理**: 统一处理加载和错误状态
+- **认证处理**: 使用 `requireAuth` 选项控制是否需要认证（详见 [认证错误处理](./auth-error-handling.md)）
 - **类型安全**: 使用 TypeScript 定义请求和响应类型
 
 ### 国际化规范
@@ -252,6 +254,9 @@ frontend/
 
 #### 管理员功能
 → [管理员权限管理](./features/admin/permission-management.md)
+
+#### 认证错误处理
+→ [认证错误处理机制](./auth-error-handling.md)
 
 #### 已完成的项目
 → [归档文档](./archived/)

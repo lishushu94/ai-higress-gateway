@@ -9,8 +9,10 @@ provider components do not duplicate this logic.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
+from weakref import WeakKeyDictionary
 
 from fastapi.encoders import jsonable_encoder
 
@@ -21,21 +23,36 @@ except ModuleNotFoundError:  # pragma: no cover - allows running without redis i
 
 from .settings import settings
 
-_redis_client: Redis | None = None
+_redis_clients_by_loop: WeakKeyDictionary[asyncio.AbstractEventLoop, Redis] = (
+    WeakKeyDictionary()
+)
+
+
+def _ensure_event_loop() -> asyncio.AbstractEventLoop:
+    try:
+        return asyncio.get_running_loop()
+    except RuntimeError as exc:  # pragma: no cover - easier debugging for sync misuse
+        raise RuntimeError(
+            "get_redis_client() 必须在运行中的事件循环内调用，请在 async 环境或 "
+            "asyncio.run(...) 内部获取 Redis 客户端"
+        ) from exc
+
+
+def _create_client() -> Redis:
+    return Redis.from_url(settings.redis_url, decode_responses=True)
 
 
 def get_redis_client() -> Redis:
     """
-    Return a lazily-created global Redis client.
-
-    This is intentionally sync so it can be reused both from FastAPI
-    dependencies and background tasks. The underlying driver is fully
-    async and should be awaited by callers.
+    Return a Redis client bound to the current event loop.
     """
-    global _redis_client
-    if _redis_client is None:
-        _redis_client = Redis.from_url(settings.redis_url, decode_responses=True)
-    return _redis_client
+
+    loop = _ensure_event_loop()
+    client = _redis_clients_by_loop.get(loop)
+    if client is None:
+        client = _create_client()
+        _redis_clients_by_loop[loop] = client
+    return client
 
 
 async def redis_get_json(redis: Redis, key: str) -> Any | None:

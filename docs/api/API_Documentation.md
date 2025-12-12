@@ -464,7 +464,7 @@
 - 数据库中 `users.avatar` 字段只保存相对路径 / 对象 key，例如：`"<user_id>/<uuid>.png"`；
 - 对外返回的 `avatar` 字段为前端可直接访问的完整 URL：
   - 如果配置了 `AVATAR_OSS_BASE_URL`，则为：`<AVATAR_OSS_BASE_URL>/<key>`；
-  - 否则为：`<GATEWAY_API_BASE_URL>/<AVATAR_LOCAL_BASE_URL>/<key>`，默认等价于 `http://localhost:8000/media/avatars/<key>`。
+  - 否则为：`<GATEWAY_API_BASE_URL>/<AVATAR_LOCAL_BASE_URL>/<key>`，默认等价于 `http://localhost:8000/media/avatars/<key>`；当未显式配置网关地址或仍使用默认 localhost 时，会优先使用当前请求的 base_url（包含 `X-Forwarded-Proto`/`Host`）来拼接，避免返回错误域名。
 
 **响应**:
 
@@ -2333,7 +2333,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 
 **错误响应**:
 - 403: 当前用户未被授权提交共享提供商  
-- 400: 提供商配置验证失败（如无法访问 /models）
+- 400: provider_id 已存在或提供商配置验证失败（如无法访问 /models）
 
 ---
 
@@ -2438,6 +2438,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 ```
 
 **错误响应**:
+- 400: provider_id 已存在或提交已无法再次审批  
 - 404: 提交记录不存在  
 - 403: 需要管理员权限
 

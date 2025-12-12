@@ -61,6 +61,7 @@ from .provider import (
     ProviderAPIKeyUpdateRequest,
     ProviderConfig,
     ProviderStatus,
+    ProviderSubmissionStatus,
 )
 from .provider_control import (
     AdminProviderResponse,
@@ -184,6 +185,7 @@ __all__ = [
     "Provider",
     "ProviderAPIKey",
     "ProviderConfig",
+    "ProviderSubmissionStatus",
     "ProviderStatus",
     "ProviderLimitsResponse",
     "ProviderLimitsUpdateRequest",

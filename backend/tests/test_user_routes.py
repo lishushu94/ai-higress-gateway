@@ -414,8 +414,11 @@ def test_upload_my_avatar_stores_key_and_exposes_url(client_with_db):
     # 返回的 avatar 字段应为可访问 URL，且包含用户 ID
     assert data["avatar"] is not None
     local_path = settings.avatar_local_base_url.rstrip("/")
+    request_base = str(client.base_url).rstrip("/")
     api_base = settings.gateway_api_base_url.rstrip("/")
-    assert data["avatar"].startswith(f"{api_base}{local_path}/")
+    assert data["avatar"].startswith(f"{request_base}{local_path}/")
+    # 当请求基址与默认配置不同，也应优先使用实际访问域名
+    assert not data["avatar"].startswith(f"{api_base}{local_path}/")
     assert user_id in data["avatar"]
 
     # 数据库中仅保存 key，而非完整 URL

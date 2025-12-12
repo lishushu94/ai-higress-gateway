@@ -2,6 +2,7 @@
 
 import type { ElementType } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
 import { ArrowUpRight, ArrowDownRight } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 
@@ -52,19 +53,24 @@ interface ProviderStatusProps {
 
 export function ProviderStatusCard({ name, statusKey, latency, success }: ProviderStatusProps) {
   const { t } = useI18n();
+  
+  const isHealthy = statusKey === "overview.status_healthy";
 
   return (
-    <Card className="border-none shadow-sm">
+    <Card className="border-none shadow-sm hover:shadow-md transition-shadow">
       <CardHeader className="pb-3">
-        <div className="flex items-center justify-between">
-          <CardTitle className="text-sm font-medium">{name}</CardTitle>
-          <span
-            className={`h-2 w-2 rounded-full ${
-              statusKey === "overview.status_healthy"
-                ? "bg-green-500"
-                : "bg-yellow-500"
+        <div className="flex items-start justify-between gap-2">
+          <CardTitle className="text-sm font-medium flex-1">{name}</CardTitle>
+          <Badge 
+            variant="outline"
+            className={`text-[10px] px-2 py-0.5 h-5 font-normal shrink-0 ${
+              isHealthy 
+                ? "bg-emerald-50 text-emerald-700 border-emerald-200" 
+                : "bg-amber-50 text-amber-700 border-amber-200"
             }`}
-          />
+          >
+            {t(statusKey)}
+          </Badge>
         </div>
       </CardHeader>
       <CardContent>

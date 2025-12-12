@@ -8,7 +8,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { ArrowLeft, AlertCircle, RefreshCw, Share2, Loader2, Shield } from "lucide-react";
+import { ArrowLeft, AlertCircle, RefreshCw, Share2, Loader2, Shield, CheckCircle } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useProviderDetail } from "@/lib/hooks/use-provider-detail";
 import { useProviderAudit } from "@/lib/hooks/use-provider-audit";
 import type {
@@ -19,7 +20,9 @@ import type {
 } from "@/http/provider";
 import { providerService } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
+import { useApiGet } from "@/lib/swr";
 import { providerSubmissionService } from "@/http/provider-submission";
+import type { ProviderSubmission, SubmissionStatus } from "@/http/provider-submission";
 import { toast } from "sonner";
 import { useErrorDisplay } from "@/lib/errors";
 import { useAuthStore } from "@/lib/stores/auth-store";
@@ -28,6 +31,11 @@ import { ModelAliasDialog } from "./model-alias-dialog";
 import { StatusBadge } from "./status-badges";
 import { ProviderOverviewTab } from "./provider-overview-tab";
 import { ProviderSharingConfig } from "./provider-sharing-config";
+
+type SubmissionLike = Pick<
+  ProviderSubmission,
+  "id" | "approval_status" | "created_at" | "updated_at"
+>;
 
 // 使用 dynamic 导入非首屏 Tab 组件
 const ProviderModelsTab = dynamic(() => import("./provider-models-tab").then(mod => ({ default: mod.ProviderModelsTab })), {
@@ -77,6 +85,43 @@ const LoadingSkeleton = ({ loadingText }: { loadingText: string }) => (
   </div>
 );
 
+const SHARE_STATUS_BADGE_META: Record<
+  SubmissionStatus,
+  {
+    icon: LucideIcon;
+    className: string;
+    iconClassName?: string;
+  }
+> = {
+  pending: {
+    icon: Loader2,
+    className:
+      "gap-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800",
+    iconClassName: "animate-spin",
+  },
+  testing: {
+    icon: Loader2,
+    className:
+      "gap-1.5 bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/20 dark:text-amber-300 dark:border-amber-800",
+    iconClassName: "animate-spin",
+  },
+  approved: {
+    icon: CheckCircle,
+    className:
+      "gap-1.5 bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800",
+  },
+  approved_limited: {
+    icon: CheckCircle,
+    className:
+      "gap-1.5 bg-green-50 text-green-700 border-green-200 dark:bg-green-900/20 dark:text-green-400 dark:border-green-800",
+  },
+  rejected: {
+    icon: AlertCircle,
+    className:
+      "gap-1.5 bg-red-50 text-red-700 border-red-200 dark:bg-red-900/20 dark:text-red-400 dark:border-red-800",
+  },
+};
+
 export function ProviderDetailMain({ providerId, currentUserId, translations }: ProviderDetailClientProps) {
   const router = useRouter();
   const { t } = useI18n();
@@ -91,6 +136,7 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
   
   // 状态管理
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCancellingSubmission, setIsCancellingSubmission] = useState(false);
   const [isUserOwnedPrivate, setIsUserOwnedPrivate] = useState<boolean>(false);
   const [editingModelId, setEditingModelId] = useState<string | null>(null);
   const [pricingDraft, setPricingDraft] = useState<{ input: string; output: string }>({
@@ -204,6 +250,88 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
     };
   }, [effectiveUserId, isUserOwnedPrivate, isAdminUser, provider?.visibility, provider?.owner_id]);
 
+  const shouldLoadSubmissionStatus = !!provider?.provider_id && !!effectiveUserId;
+
+  const {
+    data: mySubmissions,
+    loading: submissionStatusLoading,
+    refresh: refreshSubmissionStatus,
+  } = useApiGet<ProviderSubmission[]>(
+    shouldLoadSubmissionStatus ? "/providers/submissions/me" : null,
+    {
+      strategy: "default",
+    },
+  );
+
+  const latestSubmissionFromApi = useMemo(() => {
+    if (!shouldLoadSubmissionStatus || !provider?.provider_id || !mySubmissions?.length) {
+      return null;
+    }
+    const sorted = [...mySubmissions].filter(
+      (submission) => submission.provider_id === provider.provider_id,
+    );
+    if (sorted.length === 0) {
+      return null;
+    }
+    return sorted.sort(
+      (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
+    )[0];
+  }, [mySubmissions, provider?.provider_id, shouldLoadSubmissionStatus]);
+
+  const hasLoadedSubmissionList = mySubmissions !== undefined;
+  const baseSubmission = useMemo<SubmissionLike | null>(() => {
+    if (hasLoadedSubmissionList) {
+      return latestSubmissionFromApi ?? null;
+    }
+    if (provider?.latest_submission) {
+      return provider.latest_submission as SubmissionLike;
+    }
+    return null;
+  }, [hasLoadedSubmissionList, latestSubmissionFromApi, provider?.latest_submission]);
+  const [optimisticSubmission, setOptimisticSubmission] = useState<SubmissionLike | null>(null);
+  const latestSubmission = optimisticSubmission ?? baseSubmission;
+
+  useEffect(() => {
+    if (
+      optimisticSubmission &&
+      baseSubmission &&
+      optimisticSubmission.id === baseSubmission.id &&
+      optimisticSubmission.approval_status === baseSubmission.approval_status
+    ) {
+      setOptimisticSubmission(null);
+    }
+  }, [optimisticSubmission, baseSubmission]);
+
+  const shareStatusBadge = useMemo(() => {
+    if (!latestSubmission) {
+      return null;
+    }
+    const status = latestSubmission.approval_status as SubmissionStatus;
+    const config = SHARE_STATUS_BADGE_META[status];
+    const Icon = config.icon;
+    const iconClasses = ["h-3.5", "w-3.5", config.iconClassName].filter(Boolean).join(" ");
+    return (
+      <Badge variant="outline" className={config.className}>
+        <Icon className={iconClasses} />
+        {t("submissions.share_status_prefix")} {t(`submissions.status_${status}`)}
+      </Badge>
+    );
+  }, [latestSubmission, t]);
+
+  const isAwaitingShareReview =
+    !!latestSubmission &&
+    (latestSubmission.approval_status === "pending" || latestSubmission.approval_status === "testing");
+  const canDisplayShareButton =
+    permissions.canShareToPool &&
+    (!latestSubmission || latestSubmission.approval_status === "rejected");
+  const canCancelSubmission =
+    permissions.canShareToPool && !!latestSubmission && isAwaitingShareReview;
+  const shareButtonLabel =
+    latestSubmission?.approval_status === "rejected"
+      ? t("submissions.share_again_button")
+      : t("submissions.share_from_private_button");
+  const shareButtonDisabled = isSubmitting || submissionStatusLoading;
+
   // 管理员加载测试记录与审核日志
   useEffect(() => {
     if (permissions.canShowAuditUI && providerId) {
@@ -225,17 +353,22 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
 
   // 事件处理函数
   const handleShareToPool = useCallback(async () => {
-    if (!permissions.canShareToPool || !effectiveUserId) {
+    if (!canDisplayShareButton || !effectiveUserId) {
       return;
     }
 
     setIsSubmitting(true);
     try {
-      await providerSubmissionService.submitFromPrivateProvider(
+      const submission = await providerSubmissionService.submitFromPrivateProvider(
         effectiveUserId,
         providerId,
       );
       toast.success(t("submissions.toast_submit_success"));
+      setOptimisticSubmission(submission);
+      await Promise.all([
+        shouldLoadSubmissionStatus ? refreshSubmissionStatus() : Promise.resolve(),
+        refresh(),
+      ]);
     } catch (error: any) {
       if (error?.response?.status === 403) {
         toast.error(t("submissions.toast_no_permission"));
@@ -247,7 +380,34 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
     } finally {
       setIsSubmitting(false);
     }
-  }, [permissions.canShareToPool, effectiveUserId, providerId, t, showError]);
+  }, [
+    canDisplayShareButton,
+    effectiveUserId,
+    providerId,
+    t,
+    showError,
+    shouldLoadSubmissionStatus,
+    refreshSubmissionStatus,
+  ]);
+
+  const handleCancelSubmission = useCallback(async () => {
+    if (!latestSubmission) {
+      return;
+    }
+    setIsCancellingSubmission(true);
+    try {
+      await providerSubmissionService.cancelSubmission(latestSubmission.id);
+      toast.success(t("submissions.toast_cancel_success"));
+      setOptimisticSubmission(null);
+      await Promise.all([refreshSubmissionStatus(), refresh()]);
+    } catch (error: any) {
+      showError(error, {
+        context: t("submissions.toast_cancel_error"),
+      });
+    } finally {
+      setIsCancellingSubmission(false);
+    }
+  }, [latestSubmission, t, showError, refreshSubmissionStatus]);
 
   const openPricingEditor = useCallback(async (modelId: string) => {
     if (!providerId) return;
@@ -382,14 +542,18 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
   return (
     <div className="space-y-6 max-w-7xl animate-in fade-in duration-500">
       {/* 页头 */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button variant="ghost" size="icon" onClick={() => router.back()}>
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-4 flex-1 min-w-0">
+          <Button variant="ghost" size="icon" onClick={() => router.back()} className="mt-1 shrink-0">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">{provider.name}</h1>
-            <div className="flex items-center gap-2 text-muted-foreground mt-1">
+          <div className="flex-1 min-w-0 space-y-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <h1 className="text-3xl font-bold tracking-tight">{provider.name}</h1>
+              <StatusBadge status={health?.status} translations={translations.status} />
+              {shareStatusBadge}
+            </div>
+            <div className="flex items-center gap-2 text-muted-foreground flex-wrap">
               <code className="text-sm font-mono bg-muted px-2 py-0.5 rounded">
                 {provider.provider_id}
               </code>
@@ -410,13 +574,13 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {permissions.canShareToPool && (
+        <div className="flex items-start gap-2 shrink-0 mt-1">
+          {canDisplayShareButton && (
             <Button
               variant="default"
               size="sm"
               onClick={handleShareToPool}
-              disabled={isSubmitting}
+              disabled={shareButtonDisabled}
             >
               {isSubmitting ? (
                 <>
@@ -426,12 +590,28 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
               ) : (
                 <>
                   <Share2 className="h-4 w-4 mr-2" />
-                  {t("submissions.share_from_private_button")}
+                  {shareButtonLabel}
                 </>
               )}
             </Button>
           )}
-          <StatusBadge status={health?.status} translations={translations.status} />
+          {canCancelSubmission && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleCancelSubmission}
+              disabled={isCancellingSubmission}
+            >
+              {isCancellingSubmission ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("submissions.btn_cancelling")}
+                </>
+              ) : (
+                t("submissions.cancel_share_button")
+              )}
+            </Button>
+          )}
           <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
             <RefreshCw className={`h-4 w-4 mr-2 ${loading ? "animate-spin" : ""}`} />
             {translations.refresh}

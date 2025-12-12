@@ -187,6 +187,10 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.sharing_error_load": "Failed to load sharing list",
     "providers.sharing_visibility_private": "Only you can use this provider (visibility: private).",
     "providers.sharing_visibility_restricted": "Shared with selected users (visibility: restricted).",
+    "providers.sharing_selected_empty": "No users selected",
+    "providers.sharing_search_placeholder": "Search users by name or email...",
+    "providers.sharing_remove_user": "Remove user",
+    "providers.sharing_no_results": "No users found",
 
     // Provider Directory page
     "providers.directory_title": "Provider Directory",
@@ -358,6 +362,10 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.sharing_error_load": "加载分享名单失败",
     "providers.sharing_visibility_private": "仅自己可用（private）。",
     "providers.sharing_visibility_restricted": "已分享给指定用户（restricted）。",
+    "providers.sharing_selected_empty": "暂未选择用户",
+    "providers.sharing_search_placeholder": "搜索用户名或邮箱...",
+    "providers.sharing_remove_user": "移除用户",
+    "providers.sharing_no_results": "未找到用户",
 
     // Provider models dialog（模型路径 + 静态模型）
     "providers.models_path_label": "Models Path",

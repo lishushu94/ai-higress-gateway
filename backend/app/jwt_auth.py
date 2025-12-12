@@ -6,7 +6,7 @@ import datetime
 from dataclasses import dataclass
 from typing import Optional
 
-from fastapi import Depends, Header, HTTPException, status
+from fastapi import Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 try:
@@ -74,6 +74,7 @@ def _get_token_from_headers(
 
 
 async def require_jwt_token(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_auth_token: Optional[str] = Header(None, alias="X-Auth-Token"),
     db: Session = Depends(get_db),
@@ -155,7 +156,8 @@ async def require_jwt_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled",
         )
-    
+    request_base_url = str(request.base_url).rstrip("/")
+
     return AuthenticatedUser(
         id=str(user.id),
         username=user.username,
@@ -163,11 +165,15 @@ async def require_jwt_token(
         is_superuser=user.is_superuser,
         is_active=user.is_active,
         display_name=user.display_name,
-        avatar=build_avatar_url(user.avatar),
+        avatar=build_avatar_url(
+            user.avatar,
+            request_base_url=request_base_url,
+        ),
     )
 
 
 async def require_jwt_refresh_token(
+    request: Request,
     authorization: Optional[str] = Header(None),
     x_auth_token: Optional[str] = Header(None, alias="X-Auth-Token"),
     db: Session = Depends(get_db),
@@ -216,7 +222,8 @@ async def require_jwt_refresh_token(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="User account is disabled",
         )
-    
+    request_base_url = str(request.base_url).rstrip("/")
+
     return AuthenticatedUser(
         id=str(user.id),
         username=user.username,
@@ -224,7 +231,10 @@ async def require_jwt_refresh_token(
         is_superuser=user.is_superuser,
         is_active=user.is_active,
         display_name=user.display_name,
-        avatar=build_avatar_url(user.avatar),
+        avatar=build_avatar_url(
+            user.avatar,
+            request_base_url=request_base_url,
+        ),
     )
 
 

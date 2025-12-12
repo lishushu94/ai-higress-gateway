@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
 try:
@@ -55,8 +55,20 @@ from app.services.registration_window_service import (
 router = APIRouter(tags=["authentication"], prefix="/auth")
 
 
+def _request_base_url(request: Request | None) -> str | None:
+    """提取请求基址（去掉末尾斜杠），用于拼接头像 URL。"""
+
+    if request is None:
+        return None
+    return str(request.base_url).rstrip("/")
+
+
 def _build_user_response(
-    db: Session, user_id: UUID, *, requires_manual_activation: bool = False
+    db: Session,
+    user_id: UUID,
+    *,
+    requires_manual_activation: bool = False,
+    request_base_url: str | None = None,
 ) -> UserResponse:
     """聚合用户基础信息 + 角色 + 能力标记列表，构造 UserResponse。"""
 
@@ -94,7 +106,10 @@ def _build_user_response(
         username=user.username,
         email=user.email,
         display_name=user.display_name,
-        avatar=build_avatar_url(user.avatar),
+        avatar=build_avatar_url(
+            user.avatar,
+            request_base_url=request_base_url,
+        ),
         is_active=user.is_active,
         is_superuser=user.is_superuser,
         requires_manual_activation=requires_manual_activation,
@@ -108,6 +123,7 @@ def _build_user_response(
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
+    http_request: Request,
     db: Session = Depends(get_db),
 ) -> UserResponse:
     """
@@ -136,6 +152,7 @@ async def register(
             db,
             user.id,
             requires_manual_activation=requires_manual_activation,
+            request_base_url=_request_base_url(http_request),
         )
     except RegistrationWindowNotFoundError as exc:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(exc))
@@ -397,6 +414,7 @@ async def refresh_token(
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user(
+    request: Request,
     current_user: AuthenticatedUser = Depends(require_jwt_token),
     db: Session = Depends(get_db),
 ) -> UserResponse:
@@ -409,7 +427,11 @@ async def get_current_user(
     Returns:
         用户信息
     """
-    return _build_user_response(db, UUID(current_user.id))
+    return _build_user_response(
+        db,
+        UUID(current_user.id),
+        request_base_url=_request_base_url(request),
+    )
 
 
 @router.post("/logout")

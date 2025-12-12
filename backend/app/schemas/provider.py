@@ -43,6 +43,17 @@ class ProviderAPIKey(BaseModel):
     )
 
 
+class ProviderSubmissionStatus(BaseModel):
+    """
+    精简版提交状态，仅在 Provider 详情页展示审核进度。
+    """
+
+    id: UUID
+    approval_status: str
+    created_at: datetime
+    updated_at: datetime
+
+
 class ProviderConfig(BaseModel):
     """
     Static configuration for a model provider, usually loaded from env.
@@ -141,6 +152,9 @@ class ProviderConfig(BaseModel):
     probe_enabled: bool | None = Field(default=None, description="是否开启自动探针")
     probe_interval_seconds: int | None = Field(default=None, description="探针间隔（秒）")
     probe_model: str | None = Field(default=None, description="探针使用的模型 ID")
+    latest_submission: ProviderSubmissionStatus | None = Field(
+        default=None, description="当前用户最近一次提交共享池的状态"
+    )
 
     @model_validator(mode="after")
     def validate_sdk_vendor(self) -> "ProviderConfig":

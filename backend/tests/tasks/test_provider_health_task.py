@@ -52,9 +52,9 @@ async def test_run_checks_updates_db_and_cache(monkeypatch, db_session, provider
         )
 
     monkeypatch.setattr("app.tasks.provider_health.check_provider_health", _fake_check)
+    monkeypatch.setattr("app.tasks.provider_health.get_redis_client", lambda: redis)
 
     updated = await provider_health._run_checks(
-        redis,
         db_session,
         cache_ttl_seconds=60,
     )

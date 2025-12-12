@@ -54,6 +54,10 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
 
     // Quick share from private provider
     "submissions.share_from_private_button": "Share to shared pool",
+    "submissions.share_again_button": "Share again",
+    "submissions.cancel_share_button": "Cancel share",
+    "submissions.share_status_prefix": "Shared pool:",
+    "submissions.btn_cancelling": "Cancelling...",
     
     // Submit dialog
     "submissions.submit_dialog_title": "Submit Shared Provider",
@@ -166,6 +170,10 @@ export const submissionsTranslations: Record<Language, Record<string, string>> =
 
     // Quick share from private provider
     "submissions.share_from_private_button": "分享到共享池",
+    "submissions.share_again_button": "重新分享",
+    "submissions.cancel_share_button": "取消分享",
+    "submissions.share_status_prefix": "共享池：",
+    "submissions.btn_cancelling": "取消中...",
     
     // Submit dialog
     "submissions.submit_dialog_title": "提交共享提供商",

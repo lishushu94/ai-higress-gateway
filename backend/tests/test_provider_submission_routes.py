@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import select
 
 from app.models import Notification, Provider, ProviderSubmission, User
@@ -8,7 +9,8 @@ from app.schemas.provider_control import ProviderSubmissionRequest
 from app.services.provider_submission_service import create_submission
 from app.services.user_permission_service import UserPermissionService
 from app.services.user_provider_service import create_private_provider
-from tests.utils import jwt_auth_headers, seed_user_and_key
+from app.deps import get_redis
+from tests.utils import InMemoryRedis, jwt_auth_headers, seed_user_and_key
 
 
 def _create_user(session, username: str, email: str, is_superuser: bool = False) -> User:
@@ -90,6 +92,58 @@ def test_get_my_submissions_requires_authentication(client, db_session):
     # 没有认证头时应返回 401
     resp = client.get("/providers/submissions/me")
     assert resp.status_code == 401
+
+
+def test_submit_provider_rejects_existing_provider_id(client, db_session, monkeypatch):
+    # 先插入一个已存在的公共 Provider 占用 provider_id
+    existing_provider = Provider(
+        provider_id="dup-provider",
+        name="Existing Provider",
+        base_url="https://existing.example.com",
+        transport="http",
+        provider_type="native",
+        visibility="public",
+        audit_status="approved",
+        operation_status="active",
+    )
+    db_session.add(existing_provider)
+    db_session.commit()
+
+    # 创建有权限的用户
+    user = _create_user(db_session, "dup-user", "dup-user@example.com", is_superuser=False)
+    perm = UserPermissionService(db_session)
+    perm.grant_permission(user.id, "submit_shared_provider")
+
+    async def _fake_validate(_self, base_url: str, api_key: str, provider_type: str):
+        return ProviderValidationResult(is_valid=True, error_message=None, metadata={})
+
+    monkeypatch.setattr(
+        "app.services.provider_validation_service.ProviderValidationService.validate_provider_config",
+        _fake_validate,
+        raising=False,
+    )
+
+    headers = jwt_auth_headers(str(user.id))
+    resp = client.post(
+        "/providers/submissions",
+        headers=headers,
+        json={
+            "name": "Dup Submission",
+            "provider_id": "dup-provider",
+            "base_url": "https://dup.example.com",
+            "provider_type": "native",
+            "api_key": "sk-test-dup",
+        },
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json().get("detail", {})
+    assert "已存在" in (detail.get("message") or "")
+    # 确认没有创建新的 Submission
+    sub = db_session.execute(
+        select(ProviderSubmission).where(ProviderSubmission.provider_id == "dup-provider")
+    ).scalars().first()
+    assert sub is None
 
 
 def test_submit_private_provider_to_shared_pool_success(
@@ -265,3 +319,173 @@ def test_submission_review_broadcasts_notification(client, db_session):
     broadcast = [n for n in notifications_after_review if n.target_type == "all"]
     assert len(broadcast) == 1
     assert submission.provider_id in (broadcast[0].content or "")
+
+
+def test_submission_review_promotes_private_provider_to_public(client, db_session):
+    admin = _create_user(
+        db_session,
+        "promote-admin",
+        "promote-admin@example.com",
+        is_superuser=True,
+    )
+    submitter = _create_user(
+        db_session,
+        "promote-user",
+        "promote-user@example.com",
+        is_superuser=False,
+    )
+
+    create_payload = UserProviderCreateRequest(
+        name="Private Provider",
+        base_url="https://private.example.com",
+        api_key="sk-private-123",
+    )
+    provider = create_private_provider(db_session, submitter.id, create_payload)
+
+    submission = create_submission(
+        db_session,
+        submitter.id,
+        ProviderSubmissionRequest(
+            name="Private Provider",
+            provider_id=provider.provider_id,
+            base_url="https://private.example.com",
+            provider_type="native",
+            api_key="sk-private-123",
+        ),
+    )
+
+    assert provider.visibility == "private"
+    headers = jwt_auth_headers(str(admin.id))
+    resp = client.put(
+        f"/providers/submissions/{submission.id}/review",
+        headers=headers,
+        json={"approved": True, "limit_qps": 5},
+    )
+    assert resp.status_code == 200
+
+    db_session.refresh(provider)
+    db_session.refresh(submission)
+
+    assert provider.visibility == "public"
+    assert provider.owner_id is None
+    assert provider.audit_status == "approved"
+    assert provider.max_qps == 5
+    assert submission.approved_provider_uuid == provider.id
+    # 仍然只有一条 Provider 记录
+    providers = db_session.execute(
+        select(Provider).where(Provider.provider_id == provider.provider_id)
+    ).scalars().all()
+    assert len(providers) == 1
+
+
+def test_submission_review_invalidates_cache(monkeypatch, client, db_session):
+    admin = _create_user(
+        db_session,
+        "cache-admin",
+        "cache-admin@example.com",
+        is_superuser=True,
+    )
+    submitter = _create_user(
+        db_session,
+        "cache-user",
+        "cache-user@example.com",
+        is_superuser=False,
+    )
+
+    submission = create_submission(
+        db_session,
+        submitter.id,
+        ProviderSubmissionRequest(
+            name="Cache Provider",
+            provider_id="cache-provider",
+            base_url="https://cache.example.com",
+            provider_type="native",
+            api_key="sk-cache-test",
+        ),
+    )
+
+    called: dict[str, str] = {}
+
+    async def _fake_invalidate(redis, provider_id: str):
+        called["provider_id"] = provider_id
+
+    monkeypatch.setattr(
+        "app.api.v1.provider_submission_routes._invalidate_public_provider_cache",
+        _fake_invalidate,
+    )
+
+    headers = jwt_auth_headers(str(admin.id))
+    resp = client.put(
+        f"/providers/submissions/{submission.id}/review",
+        headers=headers,
+        json={"approved": True},
+    )
+    assert resp.status_code == 200
+    assert called.get("provider_id") == submission.provider_id
+
+
+def test_submission_review_fails_when_provider_id_conflicts(client, db_session):
+    admin = _create_user(
+        db_session,
+        "conflict-admin",
+        "conflict-admin@example.com",
+        is_superuser=True,
+    )
+    submitter = _create_user(
+        db_session,
+        "conflict-user",
+        "conflict-user@example.com",
+        is_superuser=False,
+    )
+
+    submission = create_submission(
+        db_session,
+        submitter.id,
+        ProviderSubmissionRequest(
+            name="Dup Provider Submission",
+            provider_id="dup-provider",
+            base_url="https://dup.example.com",
+            provider_type="native",
+            api_key="sk-test-dup",
+        ),
+    )
+
+    # 提交创建后才出现同名 Provider，模拟审核阶段的冲突场景
+    existing_provider = Provider(
+        provider_id="dup-provider",
+        name="Existing Provider",
+        base_url="https://existing.example.com",
+        transport="http",
+        provider_type="native",
+        visibility="public",
+        audit_status="approved",
+        operation_status="active",
+    )
+    db_session.add(existing_provider)
+    db_session.commit()
+    db_session.refresh(existing_provider)
+
+    headers = jwt_auth_headers(str(admin.id))
+    resp = client.put(
+        f"/providers/submissions/{submission.id}/review",
+        headers=headers,
+        json={"approved": True},
+    )
+
+    assert resp.status_code == 400
+    detail = resp.json().get("detail", {})
+    assert "已存在" in (detail.get("message") or "")
+
+    db_session.refresh(submission)
+    assert submission.approval_status == "pending"
+    assert submission.approved_provider_uuid is None
+@pytest.fixture(autouse=True)
+def _override_redis_dependency(client):
+    fake_redis = InMemoryRedis()
+
+    async def override_get_redis():
+        return fake_redis
+
+    client.app.dependency_overrides[get_redis] = override_get_redis
+    yield
+    client.app.dependency_overrides.pop(get_redis, None)

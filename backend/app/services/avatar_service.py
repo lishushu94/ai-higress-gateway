@@ -25,7 +25,35 @@ def _is_root_relative_path(value: str) -> bool:
     return value.startswith("/")
 
 
-def build_avatar_url(avatar_value: str | None) -> str | None:
+def _normalize_base_url(value: str | None) -> str:
+    """
+    去除基础 URL 末尾的斜杠，避免后续重复的双斜杠。
+    """
+
+    if not value:
+        return ""
+    return value.rstrip("/")
+
+
+def _resolve_api_base_url(request_base_url: str | None) -> str:
+    """
+    计算用于拼接头像 URL 的基础域名。
+
+    - 如果调用方提供了请求实际的 base_url，则优先使用该值；
+      这样在未配置 GATEWAY_API_BASE_URL 时，也能返回匹配当前访问域名的完整 URL。
+    - 否则回退到配置项 settings.gateway_api_base_url。
+    """
+
+    if request_base_url:
+        return _normalize_base_url(request_base_url)
+    return _normalize_base_url(settings.gateway_api_base_url)
+
+
+def build_avatar_url(
+    avatar_value: str | None,
+    *,
+    request_base_url: str | None = None,
+) -> str | None:
     """
     根据数据库中存储的 avatar 值构造对前端友好的访问 URL。
 
@@ -54,7 +82,7 @@ def build_avatar_url(avatar_value: str | None) -> str | None:
     # 形如 /media/avatars/xxx.png 的路径，视为网关下的相对路径，
     # 需要补上 GATEWAY_API_BASE_URL 前缀，方便前端直接使用完整 URL。
     if _is_root_relative_path(avatar_value):
-        base = settings.gateway_api_base_url.rstrip("/")
+        base = _resolve_api_base_url(request_base_url)
         return f"{base}{avatar_value}"
 
     key = avatar_value.lstrip("/")
@@ -69,7 +97,7 @@ def build_avatar_url(avatar_value: str | None) -> str | None:
     if not base_path.startswith("/"):
         base_path = "/" + base_path
     base_path = base_path.rstrip("/")
-    api_base = settings.gateway_api_base_url.rstrip("/")
+    api_base = _resolve_api_base_url(request_base_url)
     return f"{api_base}{base_path}/{key}"
 
 

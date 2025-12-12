@@ -43,9 +43,8 @@ def sync_logical_models_task(provider_ids: Sequence[str] | None = None) -> int:
         实际写入（或更新）的逻辑模型数量。
     """
 
-    redis = get_redis_client()
-
     async def _run() -> int:
+        redis = get_redis_client()
         logical_models = await sync_logical_models(redis, provider_ids=provider_ids)
         logger.info(
             "Celery sync_logical_models_task finished: %d logical models synced (providers=%s)",

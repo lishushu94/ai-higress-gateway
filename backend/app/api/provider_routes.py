@@ -15,13 +15,14 @@ from app.deps import get_db, get_http_client, get_redis
 from app.errors import bad_request, forbidden, not_found
 from app.jwt_auth import AuthenticatedUser, require_jwt_token
 from app.logging_config import logger
-from app.models import Provider, ProviderModel
+from app.models import Provider, ProviderModel, ProviderSubmission
 from app.schemas import (
     ProviderAPIKey,
     ProviderConfig,
     RoutingMetrics,
     ModelAliasUpdateRequest,
     ProviderModelAliasResponse,
+    ProviderSubmissionStatus,
 )
 from app.schemas.provider_routes import (
     ProviderMetricsResponse,
@@ -83,6 +84,42 @@ def _sanitize_provider_config(cfg: ProviderConfig) -> ProviderConfig:
         ]
 
     return cfg.model_copy(update={"api_key": masked_api_key, "api_keys": masked_api_keys})
+
+
+def _get_latest_submission_status(
+    db: Session,
+    provider_slug: str,
+    owner_id: UUID | None,
+    current_user_id: UUID,
+    is_superuser: bool,
+) -> ProviderSubmissionStatus | None:
+    """
+    查询当前用户最近一次投稿的状态，仅限提供商所有者或超级管理员查看。
+    """
+    if owner_id is None:
+        return None
+    if owner_id != current_user_id and not is_superuser:
+        return None
+
+    submission = (
+        db.execute(
+            select(ProviderSubmission)
+            .where(ProviderSubmission.provider_id == provider_slug)
+            .where(ProviderSubmission.user_id == owner_id)
+            .order_by(ProviderSubmission.created_at.desc())
+        )
+        .scalars()
+        .first()
+    )
+    if submission is None:
+        return None
+
+    return ProviderSubmissionStatus(
+        id=submission.id,
+        approval_status=submission.approval_status,
+        created_at=submission.created_at,
+        updated_at=submission.updated_at,
+    )
 
 
 def _ensure_can_edit_provider_models(
@@ -160,7 +197,23 @@ async def get_provider(
     cfg = get_provider_config(provider_id)
     if cfg is None:
         raise not_found(f"Provider '{provider_id}' not found")
-    return _sanitize_provider_config(cfg)
+    sanitized = _sanitize_provider_config(cfg)
+    provider_row = (
+        db.execute(select(Provider).where(Provider.provider_id == provider_id))
+        .scalars()
+        .first()
+    )
+    owner_uuid = provider_row.owner_id if provider_row else None
+    latest_submission = _get_latest_submission_status(
+        db=db,
+        provider_slug=provider_id,
+        owner_id=owner_uuid,
+        current_user_id=UUID(current_user.id),
+        is_superuser=current_user.is_superuser,
+    )
+    if latest_submission:
+        sanitized = sanitized.model_copy(update={"latest_submission": latest_submission})
+    return sanitized
 
 
 def _sync_provider_models_to_db(
