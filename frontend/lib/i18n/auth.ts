@@ -21,6 +21,17 @@ export const authTranslations: Record<Language, Record<string, string>> = {
     "auth.confirm_password_placeholder": "Confirm your password",
     "auth.have_account": "Already have an account?",
     "auth.signin_link": "Sign in",
+    
+    // OAuth
+    "auth.oauth_processing": "Processing OAuth login...",
+    "auth.oauth_success": "Login successful!",
+    "auth.oauth_failed": "OAuth login failed",
+    "auth.oauth_redirecting": "Redirecting to dashboard...",
+    "auth.oauth_redirect_login": "Redirecting to login page...",
+    "auth.oauth_provider_error": "OAuth provider returned an error",
+    "auth.oauth_missing_code": "Missing authorization code",
+    "auth.oauth_divider": "Or continue with",
+    "auth.oauth_linuxdo": "Continue with LinuxDo",
   },
   zh: {
     // Auth / Login
@@ -42,5 +53,16 @@ export const authTranslations: Record<Language, Record<string, string>> = {
     "auth.confirm_password_placeholder": "请再次输入密码",
     "auth.have_account": "已经有账号？",
     "auth.signin_link": "去登录",
+    
+    // OAuth
+    "auth.oauth_processing": "正在处理 OAuth 登录...",
+    "auth.oauth_success": "登录成功！",
+    "auth.oauth_failed": "OAuth 登录失败",
+    "auth.oauth_redirecting": "正在跳转到仪表盘...",
+    "auth.oauth_redirect_login": "正在跳转到登录页...",
+    "auth.oauth_provider_error": "OAuth 提供商返回错误",
+    "auth.oauth_missing_code": "缺少授权码",
+    "auth.oauth_divider": "或使用以下方式继续",
+    "auth.oauth_linuxdo": "使用 LinuxDo 继续",
   },
 };

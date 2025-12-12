@@ -289,6 +289,43 @@ class Settings(BaseSettings):
         ge=60,
     )
 
+    # LinuxDo OAuth
+    linuxdo_enabled: bool = Field(
+        False,
+        alias="LINUXDO_OAUTH_ENABLED",
+        description="是否启用 LinuxDo Connect OAuth 登录",
+    )
+    linuxdo_client_id: str | None = Field(
+        default=None,
+        alias="LINUXDO_CLIENT_ID",
+        description="LinuxDo Connect 应用的 Client ID",
+    )
+    linuxdo_client_secret: str | None = Field(
+        default=None,
+        alias="LINUXDO_CLIENT_SECRET",
+        description="LinuxDo Connect 应用的 Client Secret",
+    )
+    linuxdo_redirect_uri: str | None = Field(
+        default=None,
+        alias="LINUXDO_REDIRECT_URI",
+        description="LinuxDo OAuth 回调地址（通常为前端 /callback 页面）",
+    )
+    linuxdo_authorize_endpoint: str = Field(
+        "https://connect.linux.do/oauth2/authorize",
+        alias="LINUXDO_AUTHORIZE_ENDPOINT",
+        description="LinuxDo 授权端点",
+    )
+    linuxdo_token_endpoint: str = Field(
+        "https://connect.linux.do/oauth2/token",
+        alias="LINUXDO_TOKEN_ENDPOINT",
+        description="LinuxDo Token 端点",
+    )
+    linuxdo_userinfo_endpoint: str = Field(
+        "https://connect.linux.do/api/user",
+        alias="LINUXDO_USERINFO_ENDPOINT",
+        description="LinuxDo 用户信息端点",
+    )
+
     # Gateway public configuration (exposed to users on the UI)
     gateway_api_base_url: str = Field(
         "http://localhost:8000",

@@ -1,5 +1,7 @@
 from pydantic import BaseModel, Field
 
+from app.schemas.user import UserResponse
+
 
 class LoginRequest(BaseModel):
     email: str
@@ -23,8 +25,22 @@ class RegisterRequest(BaseModel):
     display_name: str = None
 
 
+class OAuthCallbackRequest(BaseModel):
+    code: str = Field(..., description="LinuxDo 授权码")
+    state: str | None = Field(
+        default=None,
+        description="state 参数，需与授权请求生成的一致",
+    )
+
+
+class OAuthCallbackResponse(TokenResponse):
+    user: UserResponse
+
+
 __all__ = [
     "LoginRequest",
+    "OAuthCallbackRequest",
+    "OAuthCallbackResponse",
     "RefreshTokenRequest",
     "RegisterRequest",
     "TokenResponse",

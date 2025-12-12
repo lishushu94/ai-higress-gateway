@@ -63,15 +63,27 @@ const refreshAccessToken = async (): Promise<string> => {
   }
 
   try {
-    const response = await axios.post(`${BASE_URL}/auth/refresh`, {
-      refresh_token: refreshToken,
+    // 直接调用后端刷新接口（不使用 axios 实例，避免拦截器循环）
+    const response = await fetch(`${BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ refresh_token: refreshToken }),
     });
 
-    const { access_token, refresh_token: new_refresh_token } = response.data;
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Token refresh failed' }));
+      throw new Error(errorData.error || 'Token refresh failed');
+    }
+
+    const { access_token, refresh_token: new_refresh_token } = await response.json();
     
     // 更新 tokens
     tokenManager.setAccessToken(access_token);
-    tokenManager.setRefreshToken(new_refresh_token);
+    if (new_refresh_token) {
+      tokenManager.setRefreshToken(new_refresh_token);
+    }
     
     return access_token;
   } catch (error) {

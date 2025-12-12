@@ -2,11 +2,13 @@
 用户认证路由，处理用户登录、注册和令牌管理
 """
 
-from datetime import datetime, timedelta
 from typing import Optional
 from uuid import UUID
 
+import httpx
 from fastapi import APIRouter, Depends, Header, HTTPException, Request, status
+from fastapi.responses import RedirectResponse
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 try:
@@ -14,12 +16,15 @@ try:
 except ModuleNotFoundError:
     Redis = object  # type: ignore[misc,assignment]
 
-from app.deps import get_db, get_redis
+from app.deps import get_db, get_http_client, get_redis
 from app.jwt_auth import AuthenticatedUser, require_jwt_refresh_token, require_jwt_token
+from app.models import User
 from app.settings import settings
 from app.schemas.token import DeviceInfo
 from app.schemas.auth import (
     LoginRequest,
+    OAuthCallbackRequest,
+    OAuthCallbackResponse,
     RefreshTokenRequest,
     RegisterRequest,
     TokenResponse,
@@ -29,13 +34,16 @@ from app.services.avatar_service import build_avatar_url
 from app.services.jwt_auth_service import (
     JWT_ACCESS_TOKEN_EXPIRE_MINUTES,
     JWT_REFRESH_TOKEN_EXPIRE_DAYS,
-    create_access_token,
     create_access_token_with_jti,
-    create_refresh_token,
     create_refresh_token_with_jti,
     extract_family_id_from_token,
     extract_jti_from_token,
     verify_password,
+)
+from app.services.linuxdo_oauth_service import (
+    LinuxDoOAuthError,
+    build_linuxdo_authorize_url,
+    complete_linuxdo_oauth_flow,
 )
 from app.services.token_redis_service import TokenRedisService
 from app.services.role_service import RoleService
@@ -120,6 +128,62 @@ def _build_user_response(
     )
 
 
+def _build_device_info(
+    user_agent: Optional[str],
+    x_forwarded_for: Optional[str],
+) -> DeviceInfo:
+    ip_address = None
+    if x_forwarded_for:
+        ip_address = x_forwarded_for.split(",")[0].strip()
+    return DeviceInfo(
+        user_agent=user_agent,
+        ip_address=ip_address or None,
+    )
+
+
+async def _issue_token_pair(
+    user: User,
+    redis: Redis,
+    device_info: DeviceInfo,
+) -> TokenResponse:
+    access_token_data = {"sub": str(user.id)}
+    refresh_token_data = {"sub": str(user.id)}
+
+    access_token, access_jti, access_token_id = create_access_token_with_jti(
+        access_token_data
+    )
+    refresh_token, refresh_jti, refresh_token_id, family_id = create_refresh_token_with_jti(
+        refresh_token_data
+    )
+
+    token_service = TokenRedisService(redis)
+    await token_service.store_access_token(
+        token_id=access_token_id,
+        user_id=str(user.id),
+        jti=access_jti,
+        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        device_info=device_info,
+    )
+    await token_service.store_refresh_token(
+        token_id=refresh_token_id,
+        user_id=str(user.id),
+        jti=refresh_jti,
+        family_id=family_id,
+        expires_in=JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
+        device_info=device_info,
+    )
+    await token_service.enforce_session_limit(
+        str(user.id),
+        settings.max_sessions_per_user,
+    )
+
+    return TokenResponse(
+        access_token=access_token,
+        refresh_token=refresh_token,
+        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+    )
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(
     request: RegisterRequest,
@@ -180,24 +244,7 @@ async def login(
 ) -> TokenResponse:
     """
     用户登录并获取JWT令牌
-    
-    Args:
-        request: 登录请求数据
-        db: 数据库会话
-        redis: Redis 连接
-        user_agent: 用户代理字符串
-        x_forwarded_for: 客户端 IP 地址
-        
-    Returns:
-        JWT访问令牌和刷新令牌
-        
-    Raises:
-        HTTPException: 如果用户名或密码错误
     """
-    # 查找用户，只使用邮箱
-    from sqlalchemy import select
-    from app.models import User
-    
     stmt = select(User).where(User.email == request.email)
     user = db.execute(stmt).scalars().first()
     
@@ -222,53 +269,68 @@ async def login(
             detail="账户已被禁用",
         )
     
-    # 创建设备信息
-    device_info = DeviceInfo(
-        user_agent=user_agent,
-        ip_address=x_forwarded_for.split(',')[0].strip() if x_forwarded_for else None
-    )
-    
-    # 创建带 JTI 的 JWT 令牌
-    access_token_data = {"sub": str(user.id)}
-    refresh_token_data = {"sub": str(user.id)}
-    
-    access_token, access_jti, access_token_id = create_access_token_with_jti(access_token_data)
-    refresh_token, refresh_jti, refresh_token_id, family_id = create_refresh_token_with_jti(
-        refresh_token_data
-    )
-    
-    # 存储 token 到 Redis
-    token_service = TokenRedisService(redis)
-    
-    # 存储 access token
-    await token_service.store_access_token(
-        token_id=access_token_id,
-        user_id=str(user.id),
-        jti=access_jti,
-        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        device_info=device_info,
-    )
-    
-    # 存储 refresh token
-    await token_service.store_refresh_token(
-        token_id=refresh_token_id,
-        user_id=str(user.id),
-        jti=refresh_jti,
-        family_id=family_id,
-        expires_in=JWT_REFRESH_TOKEN_EXPIRE_DAYS * 24 * 60 * 60,
-        device_info=device_info,
+    device_info = _build_device_info(user_agent, x_forwarded_for)
+    return await _issue_token_pair(user, redis, device_info)
+
+
+@router.get("/oauth/linuxdo/authorize", status_code=status.HTTP_307_TEMPORARY_REDIRECT)
+async def linuxdo_oauth_authorize(
+    redis: Redis = Depends(get_redis),
+) -> RedirectResponse:
+    """
+    生成 LinuxDo 授权链接并重定向。
+    """
+
+    try:
+        authorize_url = await build_linuxdo_authorize_url(redis)
+    except LinuxDoOAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+    return RedirectResponse(
+        authorize_url,
+        status_code=status.HTTP_307_TEMPORARY_REDIRECT,
     )
 
-    # 按配置限制单用户最大活跃会话数，超出部分自动淘汰最旧会话
-    await token_service.enforce_session_limit(
-        str(user.id),
-        settings.max_sessions_per_user,
+
+@router.post("/oauth/callback", response_model=OAuthCallbackResponse)
+async def linuxdo_oauth_callback(
+    payload: OAuthCallbackRequest,
+    request: Request,
+    db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+    client: httpx.AsyncClient = Depends(get_http_client),
+    user_agent: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None, alias="X-Forwarded-For"),
+) -> OAuthCallbackResponse:
+    """
+    处理 LinuxDo OAuth 回调，完成用户同步与登录。
+    """
+
+    try:
+        user = await complete_linuxdo_oauth_flow(
+            db,
+            redis,
+            client,
+            code=payload.code,
+            state=payload.state,
+        )
+    except LinuxDoOAuthError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc))
+
+    device_info = _build_device_info(user_agent, x_forwarded_for)
+    token_pair = await _issue_token_pair(user, redis, device_info)
+    user_response = _build_user_response(
+        db,
+        user.id,
+        request_base_url=_request_base_url(request),
     )
-    
-    return TokenResponse(
-        access_token=access_token,
-        refresh_token=refresh_token,
-        expires_in=JWT_ACCESS_TOKEN_EXPIRE_MINUTES * 60,  # 转换为秒
+
+    return OAuthCallbackResponse(
+        access_token=token_pair.access_token,
+        refresh_token=token_pair.refresh_token,
+        expires_in=token_pair.expires_in,
+        token_type=token_pair.token_type,
+        user=user_response,
     )
 
 

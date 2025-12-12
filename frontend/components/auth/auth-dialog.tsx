@@ -18,6 +18,7 @@ import {
 } from "@/components/ui/dialog";
 import { useI18n } from "@/lib/i18n-context";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { OAuthButtons } from "@/components/auth/oauth-buttons";
 
 type AuthMode = "login" | "register";
 
@@ -125,6 +126,9 @@ export function AuthDialog() {
             {isLogin ? t("auth.login.subtitle") : t("auth.register.subtitle")}
           </DialogDescription>
         </DialogHeader>
+
+        {/* OAuth 登录按钮 */}
+        <OAuthButtons redirectUrl={redirectTo} />
 
         <BrushBorder className="mt-4">
           {isLogin ? (
