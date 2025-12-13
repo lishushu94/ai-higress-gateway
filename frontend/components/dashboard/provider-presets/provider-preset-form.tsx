@@ -146,7 +146,9 @@ export function ProviderPresetForm({
     // 路径验证
     const paths = [
       { value: modelsPath, name: "modelsPath", label: "模型路径" },
+      { value: messagesPath, name: "messagesPath", label: "消息路径" },
       { value: chatCompletionsPath, name: "chatCompletionsPath", label: "聊天完成路径" },
+      { value: responsesPath, name: "responsesPath", label: "响应路径" },
     ];
 
     paths.forEach(({ value, name, label }) => {
@@ -154,6 +156,17 @@ export function ProviderPresetForm({
         newErrors[name] = `${label}必须以 / 开头`;
       }
     });
+
+    // 至少需要一个有效的 API 路径（Messages Path、Chat Completions Path 或 Responses Path）
+    const hasMessagesPath = messagesPath?.trim();
+    const hasChatCompletionsPath = chatCompletionsPath?.trim();
+    const hasResponsesPath = responsesPath?.trim();
+    
+    if (!hasMessagesPath && !hasChatCompletionsPath && !hasResponsesPath) {
+      newErrors.messagesPath = "消息路径、聊天完成路径、响应路径至少需要填写一个";
+      newErrors.chatCompletionsPath = "消息路径、聊天完成路径、响应路径至少需要填写一个";
+      newErrors.responsesPath = "消息路径、聊天完成路径、响应路径至少需要填写一个";
+    }
 
     // JSON验证
     if (customHeadersText.trim()) {

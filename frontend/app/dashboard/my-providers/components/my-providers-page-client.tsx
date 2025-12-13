@@ -287,15 +287,7 @@ export function MyProvidersPageClient({
         onOpenChange={setModelsDialogOpen}
         providerId={viewingModelsProviderId}
         modelsPathByProvider={{}}
-        providerModels={{}}
-        selectedModelByProvider={{}}
-        newModelNameByProvider={{}}
         onModelsPathChange={() => {}}
-        onAddModel={() => {}}
-        onRemoveModel={() => {}}
-        onSelectModel={() => {}}
-        onModelNameChange={() => {}}
-        onSave={() => setModelsDialogOpen(false)}
       />
     </div>
   );

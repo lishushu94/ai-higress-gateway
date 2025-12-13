@@ -52,9 +52,9 @@ class UserProviderCreateRequest(BaseModel):
     max_qps: int | None = Field(default=None, gt=0)
     retryable_status_codes: List[int] | None = Field(default=None)
     custom_headers: Dict[str, str] | None = Field(default=None)
-    models_path: str | None = Field(default="/v1/models")
-    messages_path: str | None = Field(default="/v1/message")
-    chat_completions_path: str | None = Field(default="/v1/chat/completions")
+    models_path: str | None = Field(default=None)
+    messages_path: str | None = Field(default=None)
+    chat_completions_path: str | None = Field(default=None)
     responses_path: str | None = Field(default=None)
     supported_api_styles: List[ApiStyleValue] | None = Field(default=None)
     static_models: List[Dict[str, Any]] | None = Field(
@@ -77,6 +77,7 @@ class UserProviderCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_paths(self) -> "UserProviderCreateRequest":
+        # 验证路径格式并规范化
         for field_name in (
             "models_path",
             "messages_path",
@@ -93,6 +94,16 @@ class UserProviderCreateRequest(BaseModel):
             if not trimmed.startswith("/"):
                 raise ValueError(f"{field_name} 必须以 / 开头")
             setattr(self, field_name, trimmed)
+        
+        # 至少需要一个 API 路径（messages_path、chat_completions_path 或 responses_path）
+        has_api_path = any([
+            self.messages_path,
+            self.chat_completions_path,
+            self.responses_path,
+        ])
+        if not has_api_path:
+            raise ValueError("messages_path、chat_completions_path、responses_path 至少需要填写一个")
+        
         return self
 
     @model_validator(mode="after")
@@ -189,6 +200,10 @@ class UserProviderUpdateRequest(BaseModel):
             if value is None:
                 continue
             trimmed = value.strip()
+            # 空字符串表示清空该字段，转为 None
+            if not trimmed:
+                setattr(self, field_name, None)
+                continue
             if not trimmed.startswith("/"):
                 raise ValueError(f"{field_name} 必须以 / 开头")
             setattr(self, field_name, trimmed)
@@ -220,6 +235,23 @@ class UserProviderResponse(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    
+    # API 路径配置
+    models_path: str | None = None
+    messages_path: str | None = None
+    chat_completions_path: str | None = None
+    responses_path: str | None = None
+    
+    # 其他配置
+    weight: float | None = None
+    region: str | None = None
+    max_qps: int | None = None
+    cost_input: float | None = None
+    cost_output: float | None = None
+    retryable_status_codes: list[int] | None = None
+    custom_headers: dict[str, str] | None = None
+    static_models: list[dict] | None = None
+    supported_api_styles: list[str] | None = None
 
     shared_user_ids: list[UUID] | None = Field(
         default=None,
@@ -455,9 +487,9 @@ class ProviderPresetBase(BaseModel):
         description="当 transport=sdk 时必须指定的 SDK 厂商标识，例如 openai/google/claude",
     )
     base_url: HttpUrl
-    models_path: str = Field(default="/v1/models")
-    messages_path: str | None = Field(default="/v1/message")
-    chat_completions_path: str = Field(default="/v1/chat/completions")
+    models_path: str | None = Field(default=None)
+    messages_path: str | None = Field(default=None)
+    chat_completions_path: str | None = Field(default=None)
     responses_path: str | None = Field(default=None)
     supported_api_styles: List[ApiStyleValue] | None = Field(default=None)
     retryable_status_codes: List[int] | None = Field(default=None)
@@ -466,6 +498,7 @@ class ProviderPresetBase(BaseModel):
 
     @model_validator(mode="after")
     def ensure_paths(self) -> "ProviderPresetBase":
+        # 验证路径格式并规范化
         for field_name in (
             "models_path",
             "messages_path",
@@ -482,6 +515,16 @@ class ProviderPresetBase(BaseModel):
             if not trimmed.startswith("/"):
                 raise ValueError(f"{field_name} 必须以 / 开头")
             setattr(self, field_name, trimmed)
+        
+        # 至少需要一个 API 路径（messages_path、chat_completions_path 或 responses_path）
+        has_api_path = any([
+            self.messages_path,
+            self.chat_completions_path,
+            self.responses_path,
+        ])
+        if not has_api_path:
+            raise ValueError("messages_path、chat_completions_path、responses_path 至少需要填写一个")
+        
         return self
 
     @model_validator(mode="after")

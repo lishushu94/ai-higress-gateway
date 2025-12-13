@@ -24,9 +24,10 @@ import { PresetSelector } from "./preset-selector";
 import { BasicProviderConfig } from "./basic-provider-config";
 import { AdvancedProviderConfig } from "./advanced-provider-config";
 import { useSdkVendors } from "@/lib/swr";
+import { useI18n } from "@/lib/i18n-context";
 
 // 表单验证 Schema（根据服务端返回的 SDK 列表动态校验）
-const createProviderFormSchema = (sdkVendorOptions: string[]) =>
+const createProviderFormSchema = (sdkVendorOptions: string[], t: (key: string) => string) =>
     z
     .object({
         // 预设相关
@@ -36,8 +37,8 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
         name: z
             .string()
             .trim()
-            .min(1, "Provider 名称不能为空")
-            .max(100, "Provider 名称最长 100 个字符"),
+            .min(1, t("providers.form_error_name_required"))
+            .max(100, t("providers.form_error_name_max_length")),
         
         // Provider 配置
         providerType: z.enum(["native", "aggregator"]),
@@ -67,7 +68,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
         supportedApiStyles: z.array(z.string()).default([]),
         
         // API Key（必填）
-        apiKey: z.string().trim().min(1, "API Key 不能为空"),
+        apiKey: z.string().trim().min(1, t("providers.form_error_api_key_required")),
     })
     .superRefine((values, ctx) => {
         // 所有模式下，当未使用预设时都需要合法的 Base URL
@@ -75,7 +76,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ["baseUrl"],
-                message: "Base URL 不能为空",
+                message: t("providers.form_error_base_url_required"),
             });
         } else {
             try {
@@ -84,7 +85,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["baseUrl"],
-                    message: "请输入合法的 URL",
+                    message: t("providers.form_error_base_url_invalid"),
                 });
             }
         }
@@ -95,7 +96,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["sdkVendor"],
-                    message: "SDK 模式必须选择 SDK 类型",
+                    message: t("providers.form_error_sdk_vendor_required"),
                 });
             } else if (
                 sdkVendorOptions.length > 0 &&
@@ -104,7 +105,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["sdkVendor"],
-                    message: "SDK 类型不在支持列表中",
+                    message: t("providers.form_error_sdk_vendor_invalid"),
                 });
             }
         }
@@ -122,10 +123,34 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: [name],
-                    message: "路径应以 / 开头",
+                    message: t("providers.form_error_path_format"),
                 });
             }
         });
+
+        // 至少需要一个有效的 API 路径（Messages Path、Chat Completions Path 或 Responses Path）
+        const hasMessagesPath = values.messagesPath?.trim();
+        const hasChatCompletionsPath = values.chatCompletionsPath?.trim();
+        const hasResponsesPath = values.responsesPath?.trim();
+        
+        if (!hasMessagesPath && !hasChatCompletionsPath && !hasResponsesPath) {
+            const errorMsg = t("providers.form_error_path_required");
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["messagesPath"],
+                message: errorMsg,
+            });
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["chatCompletionsPath"],
+                message: errorMsg,
+            });
+            ctx.addIssue({
+                code: z.ZodIssueCode.custom,
+                path: ["responsesPath"],
+                message: errorMsg,
+            });
+        }
 
         // 权重验证
         const weightValue = Number(values.weight);
@@ -133,7 +158,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
             ctx.addIssue({
                 code: z.ZodIssueCode.custom,
                 path: ["weight"],
-                message: "请输入大于 0 的权重",
+                message: t("providers.form_error_weight_required"),
             });
         }
 
@@ -144,7 +169,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["maxQps"],
-                    message: "Max QPS 需为大于 0 的数字",
+                    message: t("providers.form_error_qps_invalid"),
                 });
             }
         }
@@ -156,7 +181,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["costInput"],
-                    message: "输入成本必须为非负数",
+                    message: t("providers.form_error_cost_input_invalid"),
                 });
             }
         }
@@ -167,7 +192,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[]) =>
                 ctx.addIssue({
                     code: z.ZodIssueCode.custom,
                     path: ["costOutput"],
-                    message: "输出成本必须为非负数",
+                    message: t("providers.form_error_cost_output_invalid"),
                 });
             }
         }
@@ -183,9 +208,9 @@ const providerFormDefaults: ProviderFormValues = {
     transport: "http",
     sdkVendor: "",
     baseUrl: "",
-    modelsPath: "/v1/models",
+    modelsPath: "",
     messagesPath: "",
-    chatCompletionsPath: "/v1/chat/completions",
+    chatCompletionsPath: "",
     responsesPath: "",
     weight: "1",
     maxQps: "",
@@ -206,10 +231,10 @@ const buildFormValuesFromProvider = (provider: any): ProviderFormValues => ({
     transport: provider?.transport || "http",
     sdkVendor: provider?.sdk_vendor || "",
     baseUrl: provider?.base_url || "",
-    modelsPath: provider?.models_path || "/v1/models",
-    messagesPath: provider?.messages_path || "",
-    chatCompletionsPath: provider?.chat_completions_path || "/v1/chat/completions",
-    responsesPath: provider?.responses_path || "",
+    modelsPath: provider?.models_path ?? "",
+    messagesPath: provider?.messages_path ?? "",
+    chatCompletionsPath: provider?.chat_completions_path ?? "",
+    responsesPath: provider?.responses_path ?? "",
     weight:
         provider?.weight !== undefined && provider?.weight !== null
             ? String(provider.weight)
@@ -247,12 +272,13 @@ export function ProviderFormEnhanced({
     onSuccess,
     editingProvider,
 }: ProviderFormEnhancedProps) {
+    const { t } = useI18n();
     const { showError } = useErrorDisplay();
     const { data: sdkVendorsData, loading: sdkVendorsLoading } = useSdkVendors();
     const sdkVendors = sdkVendorsData?.vendors || [];
     const providerFormSchema = useMemo(
-        () => createProviderFormSchema(sdkVendors),
-        [sdkVendors]
+        () => createProviderFormSchema(sdkVendors, t),
+        [sdkVendors, t]
     );
     const [showAdvanced, setShowAdvanced] = useState(false);
     const [selectedPreset, setSelectedPreset] = useState<ProviderPreset | null>(null);
@@ -292,7 +318,7 @@ export function ProviderFormEnhanced({
                 }
             } catch (error) {
                 if (!cancelled) {
-                    showError(error, { context: "加载 Provider 详情" });
+                    showError(error, { context: t("providers.form_context_loading_detail") });
                 }
             } finally {
                 if (!cancelled) {
@@ -380,7 +406,7 @@ export function ProviderFormEnhanced({
             const userId = useAuthStore.getState().user?.id;
             
             if (!userId) {
-                throw new Error("用户未登录");
+                throw new Error(t("providers.form_error_user_not_logged_in"));
             }
 
             // 使用用户级别的 API
@@ -394,10 +420,10 @@ export function ProviderFormEnhanced({
                     transport: values.transport,
                     sdk_vendor: values.transport === "sdk" && values.sdkVendor ? values.sdkVendor as SdkVendor : undefined,
                     base_url: values.baseUrl?.trim(),
-                    models_path: values.modelsPath?.trim(),
-                    messages_path: values.messagesPath?.trim(),
-                    chat_completions_path: values.chatCompletionsPath?.trim(),
-                    responses_path: values.responsesPath?.trim(),
+                    models_path: values.modelsPath?.trim() || undefined,
+                    messages_path: values.messagesPath?.trim() || undefined,
+                    chat_completions_path: values.chatCompletionsPath?.trim() || undefined,
+                    responses_path: values.responsesPath?.trim() || undefined,
                     region: values.region?.trim(),
                     max_qps: values.maxQps?.trim() ? Number(values.maxQps) : undefined,
                     cost_input: values.costInput?.trim() ? Number(values.costInput) : undefined,
@@ -410,7 +436,7 @@ export function ProviderFormEnhanced({
                 };
 
                 await providerService.updatePrivateProvider(userId, editingProvider.provider_id, updatePayload);
-                toast.success("Provider 更新成功");
+                toast.success(t("providers.form_success_updated"));
             } else {
                 // 创建模式
                 const createPayload: CreatePrivateProviderRequest = {
@@ -457,7 +483,7 @@ export function ProviderFormEnhanced({
                 }
 
                 await providerService.createPrivateProvider(userId, createPayload);
-                toast.success("Provider 创建成功");
+                toast.success(t("providers.form_success_created"));
             }
             
             form.reset(providerFormDefaults);
@@ -471,7 +497,7 @@ export function ProviderFormEnhanced({
             }
         } catch (error) {
             showError(error, {
-                context: editingProvider ? "更新 Provider" : "创建 Provider"
+                context: editingProvider ? t("providers.form_context_updating") : t("providers.form_context_creating")
             });
         } finally {
             setIsSubmitting(false);
@@ -492,12 +518,12 @@ export function ProviderFormEnhanced({
                 <DialogHeader>
                     <DialogTitle className="flex items-center gap-2">
                         <Sparkles className="h-5 w-5 text-primary" />
-                        {editingProvider ? "编辑 Private Provider" : "创建 Private Provider"}
+                        {editingProvider ? t("providers.form_edit_title") : t("providers.form_create_title")}
                     </DialogTitle>
                     <DialogDescription>
                         {editingProvider 
-                            ? "修改提供商配置信息" 
-                            : "选择预设快速创建，或完全自定义配置。支持基于预设的字段覆盖。"}
+                            ? t("providers.form_edit_description")
+                            : t("providers.form_create_description")}
                     </DialogDescription>
                 </DialogHeader>
 
@@ -517,7 +543,7 @@ export function ProviderFormEnhanced({
 
                             {editingProvider && isLoadingEditingProvider && (
                                 <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-                                    正在加载原始配置...
+                                    {t("providers.form_loading_config")}
                                 </div>
                             )}
 
@@ -548,7 +574,7 @@ export function ProviderFormEnhanced({
                                 onClick={handleCancel}
                                 disabled={isSubmitting}
                             >
-                                取消
+                                {t("providers.form_cancel")}
                             </Button>
                             <Button
                                 type="submit"
@@ -558,13 +584,13 @@ export function ProviderFormEnhanced({
                             >
                                 {isSubmitting
                                     ? editingProvider
-                                        ? "更新中..."
-                                        : "创建中..."
+                                        ? t("providers.form_updating")
+                                        : t("providers.form_creating")
                                     : editingProvider
                                         ? isLoadingEditingProvider
-                                            ? "等待配置加载..."
-                                            : "更新 Provider"
-                                        : "创建 Provider"}
+                                            ? t("providers.form_waiting_config")
+                                            : t("providers.form_update")
+                                        : t("providers.form_create")}
                             </Button>
                         </DialogFooter>
                     </form>

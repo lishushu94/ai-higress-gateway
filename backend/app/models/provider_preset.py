@@ -28,15 +28,8 @@ class ProviderPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
         doc="When transport='sdk', identifies which official SDK implementation to use (e.g. openai/google/claude).",
     )
     base_url: Mapped[str] = Column(String(255), nullable=False)
-    models_path: Mapped[str] = Column(
-        String(100), nullable=False, server_default=text("'/v1/models'"), default="/v1/models"
-    )
-    chat_completions_path: Mapped[str] = Column(
-        String(100),
-        nullable=False,
-        server_default=text("'/v1/chat/completions'"),
-        default="/v1/chat/completions",
-    )
+    models_path: Mapped[str | None] = Column(String(100), nullable=True)
+    chat_completions_path: Mapped[str | None] = Column(String(100), nullable=True)
     messages_path: Mapped[str | None] = Column(String(100), nullable=True)
     responses_path: Mapped[str | None] = Column(String(100), nullable=True)
     supported_api_styles = Column(JSONBCompat(), nullable=True)

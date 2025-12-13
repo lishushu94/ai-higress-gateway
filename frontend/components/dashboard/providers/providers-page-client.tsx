@@ -68,9 +68,6 @@ export function ProvidersPageClient({
 
   // 模型管理状态
   const [modelsPathByProvider, setModelsPathByProvider] = useState<Record<string, string>>({});
-  const [providerModels, setProviderModels] = useState<Record<string, string[]>>({});
-  const [selectedModelByProvider, setSelectedModelByProvider] = useState<Record<string, string | null>>({});
-  const [newModelNameByProvider, setNewModelNameByProvider] = useState<Record<string, string>>({});
 
   // 刷新提供商列表
   const refresh = useCallback(async () => {
@@ -230,51 +227,6 @@ export function ProvidersPageClient({
     setModelsDialogOpen(true);
   }, []);
 
-  const handleAddModel = useCallback(() => {
-    if (!modelsProviderId) return;
-    const name = newModelNameByProvider[modelsProviderId]?.trim() ?? "";
-    if (!name) return;
-
-    setProviderModels((prev) => {
-      const current = prev[modelsProviderId] ?? [];
-      if (current.includes(name)) return prev;
-      return {
-        ...prev,
-        [modelsProviderId]: [...current, name],
-      };
-    });
-
-    setNewModelNameByProvider((prev) => ({
-      ...prev,
-      [modelsProviderId]: "",
-    }));
-
-    setSelectedModelByProvider((prev) => ({
-      ...prev,
-      [modelsProviderId]: name,
-    }));
-  }, [modelsProviderId, newModelNameByProvider]);
-
-  const handleRemoveModel = useCallback(() => {
-    if (!modelsProviderId) return;
-    const selected = selectedModelByProvider[modelsProviderId];
-    if (!selected) return;
-
-    setProviderModels((prev) => {
-      const current = prev[modelsProviderId] ?? [];
-      const next = current.filter((model) => model !== selected);
-      return {
-        ...prev,
-        [modelsProviderId]: next,
-      };
-    });
-
-    setSelectedModelByProvider((prev) => ({
-      ...prev,
-      [modelsProviderId]: null,
-    }));
-  }, [modelsProviderId, selectedModelByProvider]);
-
   const handleModelsPathChange = useCallback((providerId: string, path: string) => {
     setModelsPathByProvider((prev) => ({
       ...prev,
@@ -282,30 +234,7 @@ export function ProvidersPageClient({
     }));
   }, []);
 
-  const handleSelectModel = useCallback((model: string) => {
-    if (!modelsProviderId) return;
-    setSelectedModelByProvider((prev) => ({
-      ...prev,
-      [modelsProviderId]: prev[modelsProviderId] === model ? null : model,
-    }));
-  }, [modelsProviderId]);
 
-  const handleModelNameChange = useCallback((name: string) => {
-    if (!modelsProviderId) return;
-    setNewModelNameByProvider((prev) => ({
-      ...prev,
-      [modelsProviderId]: name,
-    }));
-  }, [modelsProviderId]);
-
-  const handleSaveModelsConfig = useCallback(() => {
-    if (!modelsProviderId) return;
-    const models = providerModels[modelsProviderId] ?? [];
-    const path = modelsPathByProvider[modelsProviderId] ?? "/v1/models";
-    // TODO: 接入实际保存接口
-    console.log("Save provider models config", modelsProviderId, path, models);
-    setModelsDialogOpen(false);
-  }, [modelsProviderId, providerModels, modelsPathByProvider]);
 
   return (
     <div className="space-y-6 max-w-7xl">
@@ -385,15 +314,7 @@ export function ProvidersPageClient({
         onOpenChange={setModelsDialogOpen}
         providerId={modelsProviderId}
         modelsPathByProvider={modelsPathByProvider}
-        providerModels={providerModels}
-        selectedModelByProvider={selectedModelByProvider}
-        newModelNameByProvider={newModelNameByProvider}
         onModelsPathChange={handleModelsPathChange}
-        onAddModel={handleAddModel}
-        onRemoveModel={handleRemoveModel}
-        onSelectModel={handleSelectModel}
-        onModelNameChange={handleModelNameChange}
-        onSave={handleSaveModelsConfig}
       />
 
       {/* 删除确认对话框 */}

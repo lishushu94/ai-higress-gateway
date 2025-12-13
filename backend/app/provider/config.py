@@ -140,7 +140,6 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
         "base_url": provider.base_url,
         "transport": _normalise_transport(provider.transport),
         "provider_type": _normalise_provider_type(getattr(provider, "provider_type", None)),
-        "models_path": provider.models_path or "/v1/models",
         "weight": provider.weight or 1.0,
         "api_keys": api_keys,
     }
@@ -151,15 +150,20 @@ def _build_provider_config(provider: Provider) -> ProviderConfig | None:
     data["probe_model"] = getattr(provider, "probe_model", None)
     data["api_key"] = api_keys[0].key
 
+    # API 路径配置 - 保留数据库中的实际值，不添加默认值
+    if provider.models_path:
+        trimmed = provider.models_path.strip()
+        data["models_path"] = trimmed if trimmed else None
+    
     if provider.messages_path:
         trimmed = provider.messages_path.strip()
         data["messages_path"] = trimmed if trimmed else None
+    
     chat_path = getattr(provider, "chat_completions_path", None)
     if chat_path:
         trimmed = chat_path.strip()
-        data["chat_completions_path"] = trimmed if trimmed else "/v1/chat/completions"
-    else:
-        data["chat_completions_path"] = "/v1/chat/completions"
+        data["chat_completions_path"] = trimmed if trimmed else None
+    
     responses_path = getattr(provider, "responses_path", None)
     if responses_path:
         trimmed = responses_path.strip()

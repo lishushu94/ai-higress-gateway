@@ -41,11 +41,9 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     max_qps: Mapped[int | None] = Column(Integer, nullable=True)
     retryable_status_codes = Column(JSONBCompat(), nullable=True)
     custom_headers = Column(JSONBCompat(), nullable=True)
-    models_path: Mapped[str] = Column(String(100), nullable=False, server_default=text("'/v1/models'"))
+    models_path: Mapped[str | None] = Column(String(100), nullable=True)
     messages_path: Mapped[str | None] = Column(String(100), nullable=True)
-    chat_completions_path: Mapped[str] = Column(
-        String(100), nullable=False, server_default=text("'/v1/chat/completions'"), default="/v1/chat/completions"
-    )
+    chat_completions_path: Mapped[str | None] = Column(String(100), nullable=True)
     responses_path: Mapped[str | None] = Column(String(100), nullable=True)
     static_models = Column(JSONBCompat(), nullable=True)
     supported_api_styles = Column(JSONBCompat(), nullable=True)

@@ -16,7 +16,7 @@ import {
     TooltipContent,
     TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Info, Plus, Minus } from "lucide-react";
+import { Info } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { providerService } from "@/http/provider";
 import { useErrorDisplay } from "@/lib/errors";
@@ -26,15 +26,7 @@ interface ProviderModelsDialogProps {
     onOpenChange: (open: boolean) => void;
     providerId: string | null;
     modelsPathByProvider: Record<string, string>;
-    providerModels: Record<string, string[]>;
-    selectedModelByProvider: Record<string, string | null>;
-    newModelNameByProvider: Record<string, string>;
     onModelsPathChange: (providerId: string, path: string) => void;
-    onAddModel: () => void;
-    onRemoveModel: () => void;
-    onSelectModel: (model: string) => void;
-    onModelNameChange: (name: string) => void;
-    onSave: () => void;
 }
 
 export function ProviderModelsDialog({
@@ -42,15 +34,7 @@ export function ProviderModelsDialog({
     onOpenChange,
     providerId,
     modelsPathByProvider,
-    providerModels,
-    selectedModelByProvider,
-    newModelNameByProvider,
     onModelsPathChange,
-    onAddModel,
-    onRemoveModel,
-    onSelectModel,
-    onModelNameChange,
-    onSave,
 }: ProviderModelsDialogProps) {
     const { t } = useI18n();
     const { showError } = useErrorDisplay();
@@ -164,87 +148,11 @@ export function ProviderModelsDialog({
                         </div>
                     )}
 
-                    {providerId && (
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                            <span>{t("providers.models_list_label")}</span>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="outline"
-                                    onClick={onAddModel}
-                                    aria-label={t("providers.models_add_aria")}
-                                >
-                                    <Plus className="h-4 w-4" />
-                                </Button>
-                                <Button
-                                    type="button"
-                                    size="icon"
-                                    variant="outline"
-                                    onClick={onRemoveModel}
-                                    aria-label={t("providers.models_remove_aria")}
-                                    disabled={
-                                        !selectedModelByProvider[providerId]
-                                    }
-                                >
-                                    <Minus className="h-4 w-4" />
-                                </Button>
-                            </div>
-                        </div>
-                    )}
 
-                    <div className="rounded-md border bg-muted/40 p-4 max-h-[40vh] overflow-y-auto">
-                        <ul className="space-y-2 text-sm">
-                            {providerId &&
-                            providerModels[providerId] &&
-                            providerModels[providerId].length > 0 ? (
-                                providerModels[providerId].map((model) => (
-                                    <li
-                                        key={model}
-                                        className={`flex items-center justify-between rounded border bg-background px-3 py-2 cursor-pointer ${
-                                            selectedModelByProvider[providerId] ===
-                                            model
-                                                ? "border-primary bg-primary/10"
-                                                : ""
-                                        }`}
-                                        onClick={() => onSelectModel(model)}
-                                    >
-                                        <span className="font-mono text-xs sm:text-sm">
-                                            {model}
-                                        </span>
-                                        <span className="text-xs text-muted-foreground">
-                                            {t("providers.models_example_tag")}
-                                        </span>
-                                    </li>
-                                ))
-                            ) : (
-                                <li className="text-xs text-muted-foreground">
-                                    {t("providers.models_empty_hint")}
-                                </li>
-                            )}
-                        </ul>
-                    </div>
-                    {providerId && (
-                        <div className="mt-3 flex gap-2">
-                            <Input
-                                placeholder={t("providers.models_input_placeholder")}
-                                value={newModelNameByProvider[providerId] ?? ""}
-                                onChange={(event) =>
-                                    onModelNameChange(event.target.value)
-                                }
-                            />
-                        </div>
-                    )}
                 </div>
                 <DialogFooter>
-                    <Button
-                        variant="outline"
-                        onClick={() => onOpenChange(false)}
-                    >
-                        {t("providers.btn_cancel")}
-                    </Button>
-                    <Button onClick={onSave}>
-                        {t("providers.btn_save")}
+                    <Button onClick={() => onOpenChange(false)}>
+                        {t("common.close")}
                     </Button>
                 </DialogFooter>
             </DialogContent>

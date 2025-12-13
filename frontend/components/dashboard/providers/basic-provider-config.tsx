@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { FormField, FormLabel } from "@/components/ui/form";
+import { useI18n } from "@/lib/i18n-context";
 
 // 类型安全的FormField包装器
 const SafeFormField = FormField as any;
@@ -26,9 +27,11 @@ export function BasicProviderConfig({
     sdkVendorOptions,
     sdkVendorsLoading,
 }: BasicProviderConfigProps) {
+    const { t } = useI18n();
+    
     return (
         <div className="space-y-4">
-            <h3 className="text-sm font-semibold">基础配置</h3>
+            <h3 className="text-sm font-semibold">{t("providers.form_section_basic")}</h3>
 
             <SafeFormField
                 control={form.control}
@@ -37,17 +40,17 @@ export function BasicProviderConfig({
                     <div className="space-y-2">
                         <div className="flex items-center gap-2">
                             <FormLabel>
-                                Provider 名称 <span className="text-destructive">*</span>
+                                {t("providers.form_field_name")} <span className="text-destructive">*</span>
                             </FormLabel>
                             {isFieldOverridden("name") && (
                                 <Badge variant="outline" className="text-xs">
-                                    已覆盖
+                                    {t("providers.form_field_overridden")}
                                 </Badge>
                             )}
                         </div>
                         <Input
                             {...field}
-                            placeholder="例如：OpenAI Production"
+                            placeholder={t("providers.form_field_name_placeholder")}
                             onChange={(e) => {
                                 field.onChange(e);
                                 markFieldAsOverridden("name");
@@ -64,7 +67,7 @@ export function BasicProviderConfig({
                     render={({ field }: { field: any }) => (
                         <div className="space-y-2">
                             <FormLabel>
-                                Provider 类型 <span className="text-destructive">*</span>
+                                {t("providers.form_field_provider_type")} <span className="text-destructive">*</span>
                             </FormLabel>
                             <Tabs
                                 value={field.value}
@@ -74,12 +77,12 @@ export function BasicProviderConfig({
                                 }}
                             >
                                 <TabsList className="grid w-full grid-cols-2">
-                                    <TabsTrigger value="native">原生</TabsTrigger>
-                                    <TabsTrigger value="aggregator">聚合</TabsTrigger>
+                                    <TabsTrigger value="native">{t("providers.form_field_provider_type_native")}</TabsTrigger>
+                                    <TabsTrigger value="aggregator">{t("providers.form_field_provider_type_aggregator")}</TabsTrigger>
                                 </TabsList>
                             </Tabs>
                             <p className="text-xs text-muted-foreground">
-                                直连厂商选择原生，通过聚合平台选择聚合
+                                {t("providers.form_field_provider_type_help")}
                             </p>
                         </div>
                     )}
@@ -91,7 +94,7 @@ export function BasicProviderConfig({
                     render={({ field }: { field: any }) => (
                         <div className="space-y-2">
                             <FormLabel>
-                                传输方式 <span className="text-destructive">*</span>
+                                {t("providers.form_field_transport")} <span className="text-destructive">*</span>
                             </FormLabel>
                             <Tabs
                                 value={field.value}
@@ -101,12 +104,12 @@ export function BasicProviderConfig({
                                 }}
                             >
                                 <TabsList className="grid w-full grid-cols-2">
-                                    <TabsTrigger value="http">HTTP</TabsTrigger>
-                                    <TabsTrigger value="sdk">SDK</TabsTrigger>
+                                    <TabsTrigger value="http">{t("providers.form_field_transport_http")}</TabsTrigger>
+                                    <TabsTrigger value="sdk">{t("providers.form_field_transport_sdk")}</TabsTrigger>
                                 </TabsList>
                             </Tabs>
                             <p className="text-xs text-muted-foreground">
-                                HTTP 需要配置 URL，SDK 需要选择对应官方 SDK 并通常也需要配置 Base URL
+                                {t("providers.form_field_transport_help")}
                             </p>
                         </div>
                     )}
@@ -121,13 +124,13 @@ export function BasicProviderConfig({
                     render={({ field }: { field: any }) => (
                         <div className="space-y-2">
                             <FormLabel>
-                                SDK 类型 <span className="text-destructive">*</span>
+                                {t("providers.form_field_sdk_vendor")} <span className="text-destructive">*</span>
                             </FormLabel>
                             {sdkVendorsLoading ? (
-                                <p className="text-xs text-muted-foreground">正在加载 SDK 列表...</p>
+                                <p className="text-xs text-muted-foreground">{t("providers.form_field_sdk_vendor_loading")}</p>
                             ) : sdkVendorOptions.length === 0 ? (
                                 <p className="text-xs text-muted-foreground">
-                                    暂无可用的 SDK 类型，请稍后重试或联系管理员注册。
+                                    {t("providers.form_field_sdk_vendor_empty")}
                                 </p>
                             ) : (
                                 <>
@@ -149,7 +152,7 @@ export function BasicProviderConfig({
                                         ))}
                                     </div>
                                     <p className="text-xs text-muted-foreground">
-                                        选择与上游 API 兼容的官方 SDK 类型，例如 Kimi 这类 OpenAI 兼容服务选择 OpenAI。
+                                        {t("providers.form_field_sdk_vendor_help")}
                                     </p>
                                 </>
                             )}
@@ -165,17 +168,17 @@ export function BasicProviderConfig({
                     <div className="space-y-2">
                         <div className="flex items-center gap-2">
                             <FormLabel>
-                                Base URL <span className="text-destructive">*</span>
+                                {t("providers.form_field_base_url")} <span className="text-destructive">*</span>
                             </FormLabel>
                             {isFieldOverridden("baseUrl") && (
                                 <Badge variant="outline" className="text-xs">
-                                    已覆盖
+                                    {t("providers.form_field_overridden")}
                                 </Badge>
                             )}
                         </div>
                         <Input
                             {...field}
-                            placeholder="https://api.openai.com/v1 或自建网关地址"
+                            placeholder={t("providers.form_field_base_url_placeholder")}
                             onChange={(e) => {
                                 field.onChange(e);
                                 markFieldAsOverridden("baseUrl");
@@ -191,15 +194,15 @@ export function BasicProviderConfig({
                 render={({ field }: { field: any }) => (
                     <div className="space-y-2">
                         <FormLabel>
-                            API Key <span className="text-destructive">*</span>
+                            {t("providers.form_field_api_key")} <span className="text-destructive">*</span>
                         </FormLabel>
                         <Input
                             {...field}
                             type="password"
-                            placeholder="sk-..."
+                            placeholder={t("providers.form_field_api_key_placeholder")}
                         />
                         <p className="text-xs text-muted-foreground">
-                            上游厂商的 API 密钥，将以加密形式存储
+                            {t("providers.form_field_api_key_help")}
                         </p>
                     </div>
                 )}

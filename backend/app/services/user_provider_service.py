@@ -92,10 +92,9 @@ def create_private_provider(
         max_qps=payload.max_qps,
         retryable_status_codes=payload.retryable_status_codes,
         custom_headers=payload.custom_headers,
-        models_path=payload.models_path or "/v1/models",
+        models_path=payload.models_path,
         messages_path=payload.messages_path,
-        chat_completions_path=payload.chat_completions_path
-        or "/v1/chat/completions",
+        chat_completions_path=payload.chat_completions_path,
         responses_path=payload.responses_path,
         supported_api_styles=payload.supported_api_styles,
         static_models=payload.static_models,
@@ -196,17 +195,17 @@ def update_private_provider(
     if payload.custom_headers is not None:
         provider.custom_headers = payload.custom_headers
     if payload.chat_completions_path is not None:
-        provider.chat_completions_path = payload.chat_completions_path
+        provider.chat_completions_path = payload.chat_completions_path or None
     if payload.responses_path is not None:
-        provider.responses_path = payload.responses_path
+        provider.responses_path = payload.responses_path or None
     if payload.supported_api_styles is not None:
         # When explicitly provided, supported_api_styles becomes the
         # authoritative declaration of upstream API styles for this provider.
         provider.supported_api_styles = payload.supported_api_styles
     if payload.models_path is not None:
-        provider.models_path = payload.models_path
+        provider.models_path = payload.models_path or None
     if payload.messages_path is not None:
-        provider.messages_path = payload.messages_path
+        provider.messages_path = payload.messages_path or None
     if payload.static_models is not None:
         provider.static_models = payload.static_models
 

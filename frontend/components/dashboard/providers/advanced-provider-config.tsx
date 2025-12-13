@@ -6,6 +6,7 @@ import { JsonEditor } from "./json-editor";
 import { NumberArrayEditor } from "./array-editor";
 import { ApiStylesConfig } from "./api-styles-config";
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useI18n } from "@/lib/i18n-context";
 
 // 类型安全的FormField包装器
 const SafeFormField = FormField as any;
@@ -25,6 +26,7 @@ export function AdvancedProviderConfig({
     showAdvanced,
     onToggleAdvanced
 }: AdvancedProviderConfigProps) {
+    const { t } = useI18n();
 
     return (
         <div className="space-y-3">
@@ -33,7 +35,7 @@ export function AdvancedProviderConfig({
                 className="flex w-full items-center justify-between rounded-md border border-dashed border-muted-foreground/40 bg-muted/40 px-4 py-3 text-left"
                 onClick={onToggleAdvanced}
             >
-                <span className="font-medium text-sm">高级配置</span>
+                <span className="font-medium text-sm">{t("providers.form_section_advanced")}</span>
                 {showAdvanced ? (
                     <ChevronUp className="h-4 w-4" />
                 ) : (
@@ -44,102 +46,135 @@ export function AdvancedProviderConfig({
             {showAdvanced && (
                 <div className="space-y-4 rounded-md border bg-muted/20 p-4">
                     {/* API 路径配置 */}
-                    <div className="space-y-3">
-                        <h4 className="text-sm font-medium">API 路径</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                            <SafeFormField
-                                control={form.control}
-                                name="modelsPath"
-                                render={({ field }: { field: any }) => (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Models Path</label>
-                                        <Input
-                                            {...field}
-                                            placeholder="/v1/models"
-                                            className="text-sm"
-                                            onChange={(e) => {
-                                                field.onChange(e);
-                                                markFieldAsOverridden("modelsPath");
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            />
+                    <div className="space-y-4">
+                        <div>
+                            <h4 className="text-sm font-medium">{t("providers.form_section_api_paths")}</h4>
+                            <p className="text-xs text-muted-foreground mt-1">
+                                {t("providers.form_section_api_paths_help")}
+                            </p>
+                        </div>
 
-                            <SafeFormField
-                                control={form.control}
-                                name="chatCompletionsPath"
-                                render={({ field }: { field: any }) => (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Chat Completions Path</label>
-                                        <Input
-                                            {...field}
-                                            placeholder="/v1/chat/completions"
-                                            className="text-sm"
-                                            onChange={(e) => {
-                                                field.onChange(e);
-                                                markFieldAsOverridden("chatCompletionsPath");
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            />
+                        {/* Models Path - 可选 */}
+                        <SafeFormField
+                            control={form.control}
+                            name="modelsPath"
+                            render={({ field }: { field: any }) => (
+                                <div className="space-y-2">
+                                    <label className="text-xs font-medium">
+                                        {t("providers.form_field_models_path")} <span className="text-muted-foreground font-normal">{t("providers.form_field_optional")}</span>
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {t("providers.form_field_models_path_help")}
+                                    </p>
+                                    <Input
+                                        {...field}
+                                        placeholder={t("providers.form_field_models_path_placeholder")}
+                                        className="text-sm"
+                                        onChange={(e) => {
+                                            field.onChange(e);
+                                            markFieldAsOverridden("modelsPath");
+                                        }}
+                                    />
+                                </div>
+                            )}
+                        />
 
-                            <SafeFormField
-                                control={form.control}
-                                name="messagesPath"
-                                render={({ field }: { field: any }) => (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Messages Path（可选）</label>
-                                        <Input
-                                            {...field}
-                                            placeholder="/v1/messages"
-                                            className="text-sm"
-                                            onChange={(e) => {
-                                                field.onChange(e);
-                                                markFieldAsOverridden("messagesPath");
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            />
+                        {/* API 端点 - 至少选择一个 */}
+                        <div className="space-y-3 pt-2 border-t">
+                            <div>
+                                <h5 className="text-xs font-medium">
+                                    {t("providers.form_section_api_endpoints")} <span className="text-destructive">*</span>
+                                </h5>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                    {t("providers.form_section_api_endpoints_help")}
+                                </p>
+                            </div>
 
-                            <SafeFormField
-                                control={form.control}
-                                name="responsesPath"
-                                render={({ field }: { field: any }) => (
-                                    <div className="space-y-2">
-                                        <label className="text-xs font-medium">Responses Path（可选）</label>
-                                        <Input
-                                            {...field}
-                                            placeholder="/v1/responses"
-                                            className="text-sm"
-                                            onChange={(e) => {
-                                                field.onChange(e);
-                                                markFieldAsOverridden("responsesPath");
-                                            }}
-                                        />
-                                    </div>
-                                )}
-                            />
+                            <div className="grid grid-cols-1 gap-4">
+                                <SafeFormField
+                                    control={form.control}
+                                    name="messagesPath"
+                                    render={({ field }: { field: any }) => (
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">{t("providers.form_field_messages_path")}</label>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t("providers.form_field_messages_path_help")}
+                                            </p>
+                                            <Input
+                                                {...field}
+                                                placeholder={t("providers.form_field_messages_path_placeholder")}
+                                                className="text-sm"
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    markFieldAsOverridden("messagesPath");
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                />
+
+                                <SafeFormField
+                                    control={form.control}
+                                    name="chatCompletionsPath"
+                                    render={({ field }: { field: any }) => (
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">{t("providers.form_field_chat_completions_path")}</label>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t("providers.form_field_chat_completions_path_help")}
+                                            </p>
+                                            <Input
+                                                {...field}
+                                                placeholder={t("providers.form_field_chat_completions_path_placeholder")}
+                                                className="text-sm"
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    markFieldAsOverridden("chatCompletionsPath");
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                />
+
+                                <SafeFormField
+                                    control={form.control}
+                                    name="responsesPath"
+                                    render={({ field }: { field: any }) => (
+                                        <div className="space-y-2">
+                                            <label className="text-xs font-medium">{t("providers.form_field_responses_path")}</label>
+                                            <p className="text-xs text-muted-foreground">
+                                                {t("providers.form_field_responses_path_help")}
+                                            </p>
+                                            <Input
+                                                {...field}
+                                                placeholder={t("providers.form_field_responses_path_placeholder")}
+                                                className="text-sm"
+                                                onChange={(e) => {
+                                                    field.onChange(e);
+                                                    markFieldAsOverridden("responsesPath");
+                                                }}
+                                            />
+                                        </div>
+                                    )}
+                                />
+                            </div>
                         </div>
                     </div>
 
                     {/* 路由配置 */}
                     <div className="space-y-3">
-                        <h4 className="text-sm font-medium">路由配置</h4>
+                        <h4 className="text-sm font-medium">{t("providers.form_section_routing")}</h4>
                         <div className="grid grid-cols-3 gap-4">
                             <SafeFormField
                                 control={form.control}
                                 name="weight"
                                 render={({ field }: { field: any }) => (
                                     <div className="space-y-2">
-                                        <label className="text-xs font-medium">权重</label>
+                                        <label className="text-xs font-medium">{t("providers.form_field_weight")}</label>
                                         <Input
                                             {...field}
                                             type="number"
                                             step="0.1"
-                                            placeholder="1.0"
+                                            placeholder={t("providers.form_field_weight_placeholder")}
                                             className="text-sm"
                                         />
                                     </div>
@@ -151,11 +186,11 @@ export function AdvancedProviderConfig({
                                 name="maxQps"
                                 render={({ field }: { field: any }) => (
                                     <div className="space-y-2">
-                                        <label className="text-xs font-medium">Max QPS</label>
+                                        <label className="text-xs font-medium">{t("providers.form_field_max_qps")}</label>
                                         <Input
                                             {...field}
                                             type="number"
-                                            placeholder="50"
+                                            placeholder={t("providers.form_field_max_qps_placeholder")}
                                             className="text-sm"
                                         />
                                     </div>
@@ -167,10 +202,10 @@ export function AdvancedProviderConfig({
                                 name="region"
                                 render={({ field }: { field: any }) => (
                                     <div className="space-y-2">
-                                        <label className="text-xs font-medium">Region</label>
+                                        <label className="text-xs font-medium">{t("providers.form_field_region")}</label>
                                         <Input
                                             {...field}
-                                            placeholder="us-east-1"
+                                            placeholder={t("providers.form_field_region_placeholder")}
                                             className="text-sm"
                                         />
                                     </div>
@@ -181,19 +216,19 @@ export function AdvancedProviderConfig({
 
                     {/* 成本配置 */}
                     <div className="space-y-3">
-                        <h4 className="text-sm font-medium">成本配置（可选）</h4>
+                        <h4 className="text-sm font-medium">{t("providers.form_section_cost")}</h4>
                         <div className="grid grid-cols-2 gap-4">
                             <SafeFormField
                                 control={form.control}
                                 name="costInput"
                                 render={({ field }: { field: any }) => (
                                     <div className="space-y-2">
-                                        <label className="text-xs font-medium">输入成本（$/1M tokens）</label>
+                                        <label className="text-xs font-medium">{t("providers.form_field_cost_input")}</label>
                                         <Input
                                             {...field}
                                             type="number"
                                             step="0.01"
-                                            placeholder="0.50"
+                                            placeholder={t("providers.form_field_cost_input_placeholder")}
                                             className="text-sm"
                                         />
                                     </div>
@@ -205,12 +240,12 @@ export function AdvancedProviderConfig({
                                 name="costOutput"
                                 render={({ field }: { field: any }) => (
                                     <div className="space-y-2">
-                                        <label className="text-xs font-medium">输出成本（$/1M tokens）</label>
+                                        <label className="text-xs font-medium">{t("providers.form_field_cost_output")}</label>
                                         <Input
                                             {...field}
                                             type="number"
                                             step="0.01"
-                                            placeholder="1.50"
+                                            placeholder={t("providers.form_field_cost_output_placeholder")}
                                             className="text-sm"
                                         />
                                     </div>
@@ -232,14 +267,14 @@ export function AdvancedProviderConfig({
                         name="retryableStatusCodes"
                         render={({ field }: { field: any }) => (
                             <NumberArrayEditor
-                                label="可重试状态码"
+                                label={t("providers.form_field_retryable_status_codes")}
                                 value={field.value || []}
                                 onChange={(value) => {
                                     field.onChange(value);
                                     markFieldAsOverridden("retryableStatusCodes");
                                 }}
-                                placeholder="例如：429, 500, 502"
-                                description="遇到这些 HTTP 状态码时会自动重试"
+                                placeholder={t("providers.form_field_retryable_status_codes_placeholder")}
+                                description={t("providers.form_field_retryable_status_codes_help")}
                                 min={100}
                                 max={599}
                             />
@@ -252,14 +287,14 @@ export function AdvancedProviderConfig({
                         name="customHeaders"
                         render={({ field }: { field: any }) => (
                             <JsonEditor
-                                label="自定义请求头"
+                                label={t("providers.form_field_custom_headers")}
                                 value={field.value}
                                 onChange={(value) => {
                                     field.onChange(value);
                                     markFieldAsOverridden("customHeaders");
                                 }}
-                                placeholder='{"X-Custom-Header": "value"}'
-                                description="添加到每个请求的自定义 HTTP 头"
+                                placeholder={t("providers.form_field_custom_headers_placeholder")}
+                                description={t("providers.form_field_custom_headers_help")}
                                 rows={4}
                             />
                         )}
@@ -270,17 +305,46 @@ export function AdvancedProviderConfig({
                         control={form.control}
                         name="staticModels"
                         render={({ field }: { field: any }) => (
-                            <JsonEditor
-                                label="静态模型列表"
-                                value={field.value}
-                                onChange={(value) => {
-                                    field.onChange(value);
-                                    markFieldAsOverridden("staticModels");
-                                }}
-                                placeholder='[{"id": "model-1", "name": "Model 1"}]'
-                                description="当 Provider 不提供 /models 接口时使用"
-                                rows={4}
-                            />
+                            <div className="space-y-2">
+                                <JsonEditor
+                                    label={t("providers.form_field_static_models")}
+                                    value={field.value}
+                                    onChange={(value) => {
+                                        field.onChange(value);
+                                        markFieldAsOverridden("staticModels");
+                                    }}
+                                    placeholder={t("providers.form_field_static_models_placeholder")}
+                                    description={t("providers.form_field_static_models_help")}
+                                    rows={6}
+                                />
+                                <div className="rounded-md bg-muted/50 p-3 text-xs space-y-2">
+                                    <div className="font-medium">{t("providers.form_field_static_models_schema_title")}</div>
+                                    <ul className="space-y-1 list-disc list-inside text-muted-foreground">
+                                        <li><code className="bg-background px-1 rounded">id</code>{t("providers.form_field_static_models_schema_id")}</li>
+                                        <li><code className="bg-background px-1 rounded">display_name</code>{t("providers.form_field_static_models_schema_display_name")}</li>
+                                        <li><code className="bg-background px-1 rounded">context_length</code>{t("providers.form_field_static_models_schema_context_length")}</li>
+                                        <li><code className="bg-background px-1 rounded">family</code>{t("providers.form_field_static_models_schema_family")}</li>
+                                        <li><code className="bg-background px-1 rounded">pricing</code>{t("providers.form_field_static_models_schema_pricing")}{`{"input": 0.03, "output": 0.06}`}</li>
+                                    </ul>
+                                    <div className="pt-1 border-t border-border/50">
+                                        <span className="font-medium">{t("providers.form_field_static_models_schema_example")}</span>
+                                        <pre className="mt-1 bg-background p-2 rounded text-[10px] overflow-x-auto">{`[
+  {
+    "id": "gpt-4",
+    "display_name": "GPT-4",
+    "family": "gpt-4",
+    "context_length": 8192,
+    "pricing": {"input": 0.03, "output": 0.06}
+  },
+  {
+    "id": "claude-3-opus-20240229",
+    "display_name": "Claude 3 Opus",
+    "context_length": 200000
+  }
+]`}</pre>
+                                    </div>
+                                </div>
+                            </div>
                         )}
                     />
                 </div>

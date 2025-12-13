@@ -25,40 +25,50 @@ export function ApiStylesConfig({
             render={({ field }: { field: any }) => (
                 <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                        <label className="text-sm font-medium">支持的 API 样式</label>
+                        <label className="text-sm font-medium">API 请求格式</label>
                         {isFieldOverridden("supportedApiStyles") && (
                             <Badge variant="outline" className="text-xs">
                                 已覆盖
                             </Badge>
                         )}
                     </div>
+                    <p className="text-xs text-muted-foreground mb-2">
+                        选择提供商支持的请求/响应格式，用于正确解析和转换 API 调用
+                    </p>
                     <div className="flex flex-wrap gap-4 pt-2">
-                        {["openai", "responses", "claude"].map((style) => (
-                            <div key={style} className="flex items-center space-x-2">
+                        {[
+                            { value: "openai", label: "OpenAI", desc: "标准 OpenAI 格式" },
+                            { value: "claude", label: "Claude", desc: "Anthropic Claude 格式" },
+                            { value: "responses", label: "Responses", desc: "自定义响应格式" }
+                        ].map((style) => (
+                            <div key={style.value} className="flex items-start space-x-2">
                                 <Checkbox
-                                    id={`style-${style}`}
-                                    checked={field.value?.includes(style) || false}
+                                    id={`style-${style.value}`}
+                                    checked={field.value?.includes(style.value) || false}
                                     onCheckedChange={(checked) => {
                                         const currentValue = field.value || [];
                                         const newValue = checked
-                                            ? [...currentValue, style]
-                                            : currentValue.filter((s: string) => s !== style);
+                                            ? [...currentValue, style.value]
+                                            : currentValue.filter((s: string) => s !== style.value);
                                         field.onChange(newValue);
                                         markFieldAsOverridden("supportedApiStyles");
                                     }}
+                                    className="mt-1"
                                 />
-                                <label
-                                    htmlFor={`style-${style}`}
-                                    className="text-sm font-normal cursor-pointer"
-                                >
-                                    {style}
-                                </label>
+                                <div className="grid gap-1">
+                                    <label
+                                        htmlFor={`style-${style.value}`}
+                                        className="text-sm font-medium cursor-pointer"
+                                    >
+                                        {style.label}
+                                    </label>
+                                    <p className="text-xs text-muted-foreground">
+                                        {style.desc}
+                                    </p>
+                                </div>
                             </div>
                         ))}
                     </div>
-                    <p className="text-xs text-muted-foreground">
-                        选择 Provider 支持的 API 格式
-                    </p>
                 </div>
             )}
         />

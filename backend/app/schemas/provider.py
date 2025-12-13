@@ -69,18 +69,18 @@ class ProviderConfig(BaseModel):
         default=None,
         description="Weighted pool of API keys for this provider",
     )
-    models_path: str = Field(
-        default="/v1/models", description="Path for listing models"
+    models_path: str | None = Field(
+        default=None, description="Path for listing models (optional)"
     )
     messages_path: str | None = Field(
-        default="/v1/message",
+        default=None,
         description=(
             "Preferred Claude Messages API path. Set to empty/None when the "
             "provider only supports chat completions and requires fallback."
         ),
     )
-    chat_completions_path: str = Field(
-        default="/v1/chat/completions",
+    chat_completions_path: str | None = Field(
+        default=None,
         description="Preferred Chat Completions endpoint path",
     )
     responses_path: str | None = Field(
