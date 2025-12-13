@@ -157,6 +157,32 @@ class Settings(BaseSettings):
         description="厂商健康状态写入 Redis 时的缓存 TTL（秒）",
         ge=30,
     )
+
+    # Upstream proxy pool (DB/Redis managed) - scheduler knobs
+    upstream_proxy_refresh_scheduler_interval_seconds: int = Field(
+        60,
+        alias="UPSTREAM_PROXY_REFRESH_SCHEDULER_INTERVAL_SECONDS",
+        description="Celery beat 触发远程代理列表刷新的调度间隔（秒）",
+        ge=10,
+    )
+    upstream_proxy_healthcheck_scheduler_interval_seconds: int = Field(
+        60,
+        alias="UPSTREAM_PROXY_HEALTHCHECK_SCHEDULER_INTERVAL_SECONDS",
+        description="Celery beat 触发代理测活的调度间隔（秒）",
+        ge=10,
+    )
+    upstream_proxy_default_refresh_interval_seconds: int = Field(
+        300,
+        alias="UPSTREAM_PROXY_DEFAULT_REFRESH_INTERVAL_SECONDS",
+        description="当代理来源未配置 refresh_interval_seconds 时使用的默认刷新间隔（秒）",
+        ge=30,
+    )
+    upstream_proxy_healthcheck_concurrency: int = Field(
+        20,
+        alias="UPSTREAM_PROXY_HEALTHCHECK_CONCURRENCY",
+        description="代理测活并发数（避免一次性创建过多连接）",
+        ge=1,
+    )
     probe_prompt: str = Field(
         "请回答一个简单问题用于健康检查。",
         alias="PROBE_PROMPT",
@@ -353,22 +379,6 @@ class Settings(BaseSettings):
 
     # HTTP timeouts
     upstream_timeout: float = 600.0
-
-    # Upstream proxy pool (optional). Comma/newline separated proxy URLs.
-    # Example: "http://user:pass@1.2.3.4:8080, socks5://5.6.7.8:1080"
-    upstream_proxy_pool: str = Field(
-        "",
-        alias="UPSTREAM_PROXY_POOL",
-        description=(
-            "上游请求代理池，多个代理 URL 用英文逗号或换行分隔。"
-            "为空则不启用。支持 http(s):// 与 socks5(h)://。"
-        ),
-    )
-    upstream_proxy_strategy: str = Field(
-        "random",
-        alias="UPSTREAM_PROXY_STRATEGY",
-        description="代理池选择策略：random / round_robin。",
-    )
     upstream_proxy_max_retries: int = Field(
         1,
         alias="UPSTREAM_PROXY_MAX_RETRIES",
@@ -428,6 +438,22 @@ class Settings(BaseSettings):
         default=None,
         alias="LOG_TIMEZONE",
         description="Timezone name for log timestamps, e.g. 'Asia/Shanghai'. Defaults to system local time.",
+    )
+    log_dir: str = Field(
+        "logs",
+        alias="LOG_DIR",
+        description="日志目录（相对路径以项目根目录为基准）；默认 logs",
+    )
+    log_backup_days: int = Field(
+        7,
+        alias="LOG_BACKUP_DAYS",
+        description="保留最近 N 天的日志目录；0 表示不清理",
+        ge=0,
+    )
+    log_split_by_business: bool = Field(
+        True,
+        alias="LOG_SPLIT_BY_BUSINESS",
+        description="是否按业务/模块拆分日志文件（按调用文件路径推断）；默认开启",
     )
 
     # Secret key for hashing/encrypting sensitive data (e.g. key preference hash).

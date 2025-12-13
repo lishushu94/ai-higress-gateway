@@ -3,6 +3,7 @@
 import { GatewayConfigCard } from './gateway-config-card';
 import { ProviderLimitsCard } from './provider-limits-card';
 import { CacheMaintenanceCard } from './cache-maintenance-card';
+import { UpstreamProxyCard } from './upstream-proxy-card';
 
 /**
  * 系统管理页面客户端包装器
@@ -13,6 +14,7 @@ export function AdminClient() {
     <div className="space-y-6">
       <GatewayConfigCard />
       <ProviderLimitsCard />
+      <UpstreamProxyCard />
       <CacheMaintenanceCard />
     </div>
   );

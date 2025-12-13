@@ -31,8 +31,13 @@ async def get_redis() -> Redis:
 async def get_http_client() -> AsyncIterator[httpx.AsyncClient]:
     """
     Short-lived AsyncClient for upstream HTTP calls.
+    支持通过环境变量 HTTP_PROXY/HTTPS_PROXY 配置代理。
     """
-    async with httpx.AsyncClient(timeout=settings.upstream_timeout) as client:
+    # httpx 默认不读取环境变量，需要显式传入 trust_env=True
+    async with httpx.AsyncClient(
+        timeout=settings.upstream_timeout,
+        trust_env=True,  # 启用环境变量代理支持
+    ) as client:
         yield client
 
 

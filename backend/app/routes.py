@@ -26,6 +26,7 @@ from .api.v1.admin_user_permission_routes import (
 from .api.v1.admin_registration_routes import router as admin_registration_router
 from .api.v1.admin_user_routes import router as admin_user_router
 from .api.v1.admin_notification_routes import router as admin_notification_router
+from .api.v1.admin_upstream_proxy_routes import router as admin_upstream_proxy_router
 from .api.v1.api_key_routes import router as api_key_router
 from .api.v1.chat_routes import router as chat_router
 from .api.v1.credit_routes import router as credit_router
@@ -212,6 +213,7 @@ def create_app() -> FastAPI:
     app.include_router(admin_provider_preset_router)
     app.include_router(admin_registration_router)
     app.include_router(admin_notification_router)
+    app.include_router(admin_upstream_proxy_router)
 
     # 基础网关路由（health/models/context 等）
     app.include_router(gateway_router)

@@ -37,4 +37,9 @@ ENV PORT=8000 \
 
 EXPOSE 8000
 
+
+# Set up the entrypoint script
+RUN chmod +x ./entrypoint.sh
+ENTRYPOINT ["./entrypoint.sh"]
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

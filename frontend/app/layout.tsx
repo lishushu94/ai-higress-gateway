@@ -8,6 +8,7 @@ import { AuthDialog } from "@/components/auth/auth-dialog";
 import { SWRProvider } from "@/lib/swr";
 import { Toaster } from "@/components/ui/sonner";
 import { PWAInstallPrompt } from "@/components/pwa-install-prompt";
+import { PWARegister } from "@/components/pwa-register";
 import { PerformanceMonitor } from "@/components/performance-monitor";
 import { generateJsonLd } from "@/lib/seo";
 
@@ -123,6 +124,8 @@ export default function RootLayout({
                 <Suspense fallback={null}>
                   <AuthDialog />
                 </Suspense>
+                {/* PWA 注册 Service Worker */}
+                <PWARegister />
                 {/* PWA 安装提示 */}
                 <PWAInstallPrompt />
                 {/* 性能监控 */}

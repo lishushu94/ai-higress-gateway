@@ -251,6 +251,14 @@ def apply_manual_delta(
     )
     db.commit()
     db.refresh(account)
+    logger.info(
+        "Applied manual credit delta for user=%s: amount=%s reason=%r description=%r balance_after=%s",
+        user_id,
+        amount,
+        reason,
+        description,
+        account.balance,
+    )
     return account
 
 

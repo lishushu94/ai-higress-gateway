@@ -511,3 +511,127 @@ export interface OverviewEventsResponse {
   events: OverviewEvent[];
   total_count: number;
 }
+
+// ============= 上游代理池管理 =============
+
+export type UpstreamProxySourceType = 'static_list' | 'remote_text_list';
+export type UpstreamProxyScheme = 'http' | 'https' | 'socks5' | 'socks5h';
+export type UpstreamProxySelectionStrategy = 'random' | 'round_robin';
+export type UpstreamProxyHealthcheckMethod = 'GET' | 'HEAD';
+
+export interface UpstreamProxyConfig {
+  id: string;
+  enabled: boolean;
+  selection_strategy: UpstreamProxySelectionStrategy;
+  failure_cooldown_seconds: number;
+  healthcheck_url: string;
+  healthcheck_timeout_ms: number;
+  healthcheck_method: UpstreamProxyHealthcheckMethod;
+  healthcheck_interval_seconds: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpdateUpstreamProxyConfigRequest {
+  enabled?: boolean;
+  failure_cooldown_seconds?: number;
+  healthcheck_url?: string;
+  healthcheck_timeout_ms?: number;
+  healthcheck_method?: UpstreamProxyHealthcheckMethod;
+  healthcheck_interval_seconds?: number;
+}
+
+export interface UpstreamProxyStatus {
+  config_enabled: boolean;
+  total_sources: number;
+  total_endpoints: number;
+  available_endpoints: number;
+}
+
+export interface UpstreamProxySource {
+  id: string;
+  name: string;
+  source_type: UpstreamProxySourceType;
+  enabled: boolean;
+  default_scheme: UpstreamProxyScheme;
+  refresh_interval_seconds: number | null;
+  remote_url_masked: string | null;
+  last_refresh_at: string | null;
+  last_refresh_error: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUpstreamProxySourceRequest {
+  name: string;
+  source_type: UpstreamProxySourceType;
+  enabled?: boolean;
+  default_scheme?: UpstreamProxyScheme;
+  refresh_interval_seconds?: number;
+  remote_url?: string;
+  remote_headers?: Record<string, string>;
+}
+
+export interface UpdateUpstreamProxySourceRequest {
+  name?: string;
+  enabled?: boolean;
+  default_scheme?: UpstreamProxyScheme;
+  refresh_interval_seconds?: number;
+  remote_url?: string;
+  remote_headers?: Record<string, string>;
+}
+
+export interface UpstreamProxyEndpoint {
+  id: string;
+  source_id: string;
+  scheme: UpstreamProxyScheme;
+  host: string;
+  port: number;
+  username: string | null;
+  enabled: boolean;
+  last_ok: boolean | null;
+  last_latency_ms: number | null;
+  consecutive_failures: number;
+  last_error: string | null;
+  last_checked_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateUpstreamProxyEndpointRequest {
+  source_id: string;
+  scheme: UpstreamProxyScheme;
+  host: string;
+  port: number;
+  username?: string;
+  password?: string;
+  enabled?: boolean;
+}
+
+export interface UpdateUpstreamProxyEndpointRequest {
+  enabled?: boolean;
+}
+
+export interface UpstreamProxyImportRequest {
+  source_id: string;
+  default_scheme: UpstreamProxyScheme;
+  text: string;
+}
+
+export interface UpstreamProxyImportResponse {
+  inserted_or_updated: number;
+}
+
+export interface UpstreamProxyTaskResponse {
+  task_id: string;
+}
+
+export interface UpstreamProxySourcesResponse {
+  sources: UpstreamProxySource[];
+  total: number;
+}
+
+export interface UpstreamProxyEndpointsResponse {
+  endpoints: UpstreamProxyEndpoint[];
+  total: number;
+}

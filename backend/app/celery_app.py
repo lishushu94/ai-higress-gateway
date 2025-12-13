@@ -45,6 +45,7 @@ celery_app.conf.update(
         "app.tasks.session_maintenance",
         "app.tasks.credit_auto_topup",
         "app.tasks.provider_audit",
+        "app.tasks.upstream_proxy_pool",
     ),
 )
 

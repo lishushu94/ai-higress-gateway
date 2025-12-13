@@ -3226,6 +3226,112 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 
 ---
 
+## 上游代理管理（管理员）
+
+用于管理“上游请求代理池”（HTTP/HTTPS/SOCKS5），支持：
+- 管理员在后台配置静态代理或远程代理列表；
+- Celery 定时刷新远程列表并对代理测活；
+- 聊天/上游请求从 Redis 中随机挑选“已测活可用”的代理；失败会触发冷却，避免短时间内反复使用坏节点。
+
+说明：
+- 所有接口均需要 JWT 且仅超级管理员可访问；
+- 代理密码、远程列表 URL/headers 等敏感字段会加密存储，接口响应不会返回明文。
+
+### 1. 获取上游代理全局配置
+
+**接口**: `GET /admin/upstream-proxy/config`
+
+**响应**（示例）:
+```json
+{
+  "id": "00000000-0000-0000-0000-000000000000",
+  "enabled": true,
+  "selection_strategy": "random",
+  "failure_cooldown_seconds": 120,
+  "healthcheck_url": "https://ipv4.webshare.io/",
+  "healthcheck_timeout_ms": 5000,
+  "healthcheck_method": "GET",
+  "healthcheck_interval_seconds": 300,
+  "created_at": "2025-12-12T00:00:00Z",
+  "updated_at": "2025-12-12T00:00:00Z"
+}
+```
+
+### 2. 更新上游代理全局配置
+
+**接口**: `PUT /admin/upstream-proxy/config`
+
+**请求体**（字段均可选）:
+```json
+{
+  "enabled": true,
+  "failure_cooldown_seconds": 120,
+  "healthcheck_url": "https://ipv4.webshare.io/",
+  "healthcheck_timeout_ms": 5000,
+  "healthcheck_method": "GET",
+  "healthcheck_interval_seconds": 300
+}
+```
+
+**响应**: 同“获取上游代理全局配置”。
+
+### 3. 代理来源（sources）管理
+
+- **接口**: `GET /admin/upstream-proxy/sources`：列出所有来源
+- **接口**: `POST /admin/upstream-proxy/sources`：创建来源（`static_list`/`remote_text_list`）
+- **接口**: `PUT /admin/upstream-proxy/sources/{source_id}`：更新来源
+- **接口**: `DELETE /admin/upstream-proxy/sources/{source_id}`：删除来源（会级联删除其代理条目）
+
+创建远程来源示例（Webshare 下载列表）：
+```json
+{
+  "name": "webshare",
+  "source_type": "remote_text_list",
+  "enabled": true,
+  "default_scheme": "http",
+  "refresh_interval_seconds": 300,
+  "remote_url": "https://proxy.webshare.io/api/v2/proxy/list/download/xxxx/-/any/username/direct/-/?plan_id=123"
+}
+```
+
+### 4. 代理条目（endpoints）管理
+
+- **接口**: `GET /admin/upstream-proxy/endpoints?source_id=...`：列出条目
+- **接口**: `POST /admin/upstream-proxy/endpoints`：新增单条代理
+- **接口**: `PUT /admin/upstream-proxy/endpoints/{endpoint_id}`：启用/禁用
+- **接口**: `DELETE /admin/upstream-proxy/endpoints/{endpoint_id}`：删除
+- **接口**: `POST /admin/upstream-proxy/endpoints/import`：批量导入（支持 `ip:port`、`ip:port:user:pass`、完整 URL）
+
+批量导入示例：
+```json
+{
+  "source_id": "00000000-0000-0000-0000-000000000000",
+  "default_scheme": "http",
+  "text": "142.111.48.253:7030:user:pass\\nhttp://1.2.3.4:8080\\nsocks5://5.6.7.8:1080"
+}
+```
+
+### 5. 手动触发刷新/测活
+
+- **接口**: `POST /admin/upstream-proxy/tasks/refresh`：触发远程列表刷新（返回 Celery task_id）
+- **接口**: `POST /admin/upstream-proxy/tasks/check`：触发代理测活与 Redis 可用池重建（返回 Celery task_id）
+
+### 6. 查看代理池状态
+
+**接口**: `GET /admin/upstream-proxy/status`
+
+**响应**（示例）:
+```json
+{
+  "config_enabled": true,
+  "total_sources": 1,
+  "total_endpoints": 10,
+  "available_endpoints": 8
+}
+```
+
+---
+
 ## 认证方式
 
 ### JWT 令牌认证

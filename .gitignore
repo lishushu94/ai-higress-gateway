@@ -20,6 +20,7 @@ backend/.pytest_*
 
 # Backend logs
 backend/logs/
+logs/
 *.log
 
 # Backend environment

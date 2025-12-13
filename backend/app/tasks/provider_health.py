@@ -37,7 +37,10 @@ async def _run_checks(
 ) -> int:
     owns_client = False
     if client is None:
-        client = httpx.AsyncClient(timeout=settings.upstream_timeout)
+        client = httpx.AsyncClient(
+            timeout=settings.upstream_timeout,
+            trust_env=True,  # 启用环境变量代理支持
+        )
         owns_client = True
 
     redis = get_redis_client()

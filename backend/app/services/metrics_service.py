@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from app.logging_config import logger
 from app.proxy_pool import pick_upstream_proxy
+from app.proxy_pool import report_upstream_proxy_failure
+from app.services.upstream_proxy_utils import mask_proxy_url
 from app.upstream import UpstreamStreamError, stream_upstream
 from app.settings import settings
 from app.services.metrics_buffer import (
@@ -255,26 +257,36 @@ async def call_upstream_http_with_metrics(
                 if not current_proxy:
                     break
                 tried.add(current_proxy)
-                logger.debug(
-                    "call_upstream_http_with_metrics: 使用代理 %s 请求上游 %s (attempt %d/%d)",
-                    current_proxy,
+                logger.info(
+                    "call_upstream_http_with_metrics: 使用代理 %s 请求上游 %s (provider=%s logical_model=%s attempt=%d/%d)",
+                    mask_proxy_url(current_proxy),
                     url,
+                    provider_id,
+                    logical_model,
                     attempt + 1,
                     max_attempts,
                 )
                 try:
-                    async with httpx.AsyncClient(timeout=timeout_cfg, proxy=current_proxy) as proxy_client:
+                    async with httpx.AsyncClient(timeout=timeout_cfg, proxy=current_proxy, trust_env=True) as proxy_client:
                         resp = await proxy_client.post(
                             url, headers=headers, json=json_body
                         )
                     success = resp.status_code < 400
+                    logger.info(
+                        "call_upstream_http_with_metrics: 代理 %s 请求成功 (provider=%s logical_model=%s status=%d)",
+                        mask_proxy_url(current_proxy),
+                        provider_id,
+                        logical_model,
+                        resp.status_code,
+                    )
                     return resp
                 except httpx.HTTPError as exc:
                     last_exc = exc
+                    await report_upstream_proxy_failure(current_proxy)
                     if attempt + 1 < max_attempts:
                         logger.warning(
                             "call_upstream_http_with_metrics: 代理 %s 请求失败，将换代理重试 (%d/%d): %s",
-                            current_proxy,
+                            mask_proxy_url(current_proxy),
                             attempt + 2,
                             max_attempts,
                             exc,
@@ -284,10 +296,28 @@ async def call_upstream_http_with_metrics(
             if last_exc:
                 raise last_exc
             # 代理池为空或不可用时回退直连
+            logger.info(
+                "call_upstream_http_with_metrics: 代理池不可用,使用直连请求上游 %s (provider=%s logical_model=%s)",
+                url,
+                provider_id,
+                logical_model,
+            )
             resp = await client.post(url, headers=headers, json=json_body)
         else:
+            logger.info(
+                "call_upstream_http_with_metrics: 未启用代理,使用直连请求上游 %s (provider=%s logical_model=%s)",
+                url,
+                provider_id,
+                logical_model,
+            )
             resp = await client.post(url, headers=headers, json=json_body)
         success = resp.status_code < 400
+        logger.info(
+            "call_upstream_http_with_metrics: 直连请求成功 (provider=%s logical_model=%s status=%d)",
+            provider_id,
+            logical_model,
+            resp.status_code,
+        )
         return resp
     except httpx.HTTPError as exc:
         logger.warning(
@@ -360,15 +390,17 @@ async def stream_upstream_with_metrics(
                 if not current_proxy:
                     break
                 tried.add(current_proxy)
-                logger.debug(
-                    "stream_upstream_with_metrics: 使用代理 %s 连接上游 %s (attempt %d/%d)",
-                    current_proxy,
+                logger.info(
+                    "stream_upstream_with_metrics: 使用代理 %s 连接上游 %s (provider=%s logical_model=%s attempt=%d/%d)",
+                    mask_proxy_url(current_proxy),
                     url,
+                    provider_id,
+                    logical_model,
                     attempt + 1,
                     max_attempts,
                 )
                 try:
-                    async with httpx.AsyncClient(timeout=timeout_cfg, proxy=current_proxy) as proxy_client:
+                    async with httpx.AsyncClient(timeout=timeout_cfg, proxy=current_proxy, trust_env=True) as proxy_client:
                         async for chunk in stream_upstream(
                             client=proxy_client,
                             method=method,
@@ -381,6 +413,13 @@ async def stream_upstream_with_metrics(
                             if not first_chunk_seen:
                                 first_chunk_seen = True
                                 latency_ms = (time.perf_counter() - start) * 1000.0
+                                logger.info(
+                                    "stream_upstream_with_metrics: 代理 %s 首包到达 (provider=%s logical_model=%s ttfb=%.2fms)",
+                                    mask_proxy_url(current_proxy),
+                                    provider_id,
+                                    logical_model,
+                                    latency_ms,
+                                )
                                 try:
                                     record_provider_call_metric(
                                         db,
@@ -406,9 +445,10 @@ async def stream_upstream_with_metrics(
                     last_err = err
                     # 仅在“连接/代理传输错误（status_code=None）”时换代理重试
                     if err.status_code is None and attempt + 1 < max_attempts:
+                        await report_upstream_proxy_failure(current_proxy)
                         logger.warning(
                             "stream_upstream_with_metrics: 代理 %s 连接失败，将换代理重试 (%d/%d): %s",
-                            current_proxy,
+                            mask_proxy_url(current_proxy),
                             attempt + 2,
                             max_attempts,
                             err.text,
@@ -418,6 +458,12 @@ async def stream_upstream_with_metrics(
             if last_err:
                 raise last_err
             # 代理池不可用时回退直连
+            logger.info(
+                "stream_upstream_with_metrics: 代理池不可用,使用直连连接上游 %s (provider=%s logical_model=%s)",
+                url,
+                provider_id,
+                logical_model,
+            )
             async for chunk in stream_upstream(
                 client=client,
                 method=method,
@@ -430,6 +476,12 @@ async def stream_upstream_with_metrics(
                 if not first_chunk_seen:
                     first_chunk_seen = True
                     latency_ms = (time.perf_counter() - start) * 1000.0
+                    logger.info(
+                        "stream_upstream_with_metrics: 直连首包到达 (provider=%s logical_model=%s ttfb=%.2fms)",
+                        provider_id,
+                        logical_model,
+                        latency_ms,
+                    )
                     try:
                         record_provider_call_metric(
                             db,
@@ -452,6 +504,12 @@ async def stream_upstream_with_metrics(
                 yield chunk
             return
         else:
+            logger.info(
+                "stream_upstream_with_metrics: 未启用代理,使用直连连接上游 %s (provider=%s logical_model=%s)",
+                url,
+                provider_id,
+                logical_model,
+            )
             async for chunk in stream_upstream(
                 client=client,
                 method=method,
@@ -464,6 +522,12 @@ async def stream_upstream_with_metrics(
                 if not first_chunk_seen:
                     first_chunk_seen = True
                     latency_ms = (time.perf_counter() - start) * 1000.0
+                    logger.info(
+                        "stream_upstream_with_metrics: 直连首包到达 (provider=%s logical_model=%s ttfb=%.2fms)",
+                        provider_id,
+                        logical_model,
+                        latency_ms,
+                    )
                     try:
                         record_provider_call_metric(
                             db,

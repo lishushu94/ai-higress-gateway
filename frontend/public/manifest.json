@@ -1,23 +1,27 @@
 {
   "name": "AI HIGRESS GATEWAY",
   "short_name": "AI HIGRESS GATEWAY",
-  "description": "AI Higress API Gateway frontend",
+  "description": "AI Higress API Gateway - 智能 AI 路由网关管理系统",
+  "start_url": "/",
   "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
   "icons": [
     {
       "src": "/web-app-manifest-192x192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     },
     {
       "src": "/web-app-manifest-512x512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "maskable"
+      "purpose": "any maskable"
     }
   ],
   "theme_color": "#0066cc",
   "background_color": "#ffffff",
-  "display": "standalone"
+  "categories": ["productivity", "business"],
+  "lang": "zh-CN"
 }

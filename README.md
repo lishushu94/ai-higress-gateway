@@ -234,11 +234,20 @@ uv run main.py  # 或 uvicorn main:app --reload
 
 ### 🖥️ 快速开始（前端）
 ```bash
+# 1. 同步环境变量（从根目录 .env 自动生成前端配置）
+bash scripts/sync-frontend-env.sh
+
+# 2. 安装依赖并启动
 cd frontend
 bun install   # 或 pnpm / npm
 bun dev       # 启动 Next.js 管理台
 ```
-前端环境变量示例见 `frontend/.env.example`（`NEXT_PUBLIC_API_BASE_URL` 指向后端）。
+
+**环境变量说明**:
+- 前后端共享根目录 `.env` 文件
+- 运行 `scripts/sync-frontend-env.sh` 自动生成 `frontend/.env.local`
+- 脚本会从 `CORS_ALLOW_ORIGINS` 推断 API 地址
+- 详见 [环境配置文档](docs/development/environment-setup.md)
 
 ### ⚙️ 配置要点
 - 核心配置在 `backend/app/settings.py`，推荐使用环境变量。

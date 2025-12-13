@@ -51,20 +51,47 @@ const nextConfig: NextConfig = {
     imageSizes: [16, 32, 48, 64, 96, 128, 256, 384],
     // 最小化缓存时间（秒）
     minimumCacheTTL: 60,
-    // 远程图片模式
-    remotePatterns: [
-      {
-        protocol: 'http',
-        hostname: 'localhost',
-        port: '8000',
-        pathname: '/media/**',
-      },
-      {
+    // 远程图片模式 - 从环境变量动态配置
+    remotePatterns: (() => {
+      const patterns: Array<{
+        protocol: 'http' | 'https';
+        hostname: string;
+        port?: string;
+        pathname: string;
+      }> = [];
+      
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+      
+      try {
+        const url = new URL(apiBaseUrl);
+        const protocol = url.protocol.replace(':', '') as 'http' | 'https';
+        const port = url.port || (protocol === 'https' ? '' : '');
+        
+        patterns.push({
+          protocol,
+          hostname: url.hostname,
+          ...(port && { port }),
+          pathname: '/media/**',
+        });
+      } catch (e) {
+        console.warn('Invalid NEXT_PUBLIC_API_BASE_URL, using default localhost:8000');
+        patterns.push({
+          protocol: 'http',
+          hostname: 'localhost',
+          port: '8000',
+          pathname: '/media/**',
+        });
+      }
+      
+      // 添加通配符 HTTPS 支持（用于其他 CDN 或外部图片）
+      patterns.push({
         protocol: 'https',
         hostname: '**',
         pathname: '/media/**',
-      },
-    ],
+      });
+      
+      return patterns;
+    })(),
   },
   
   // 安全头部配置

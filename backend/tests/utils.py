@@ -115,6 +115,7 @@ def jwt_auth_headers(user_id: str) -> dict[str, str]:
 class InMemoryRedis:
     def __init__(self) -> None:
         self._data: dict[str, str] = {}
+        self._sets: dict[str, set[str]] = {}
 
     async def get(self, key: str):
         return self._data.get(key)
@@ -136,7 +137,40 @@ class InMemoryRedis:
             if key in self._data:
                 removed += 1
                 self._data.pop(key, None)
+            if key in self._sets:
+                removed += 1
+                self._sets.pop(key, None)
         return removed
+
+    # --- Set operations (minimal subset used by proxy pool) ---
+
+    async def sadd(self, key: str, *members: str) -> int:
+        s = self._sets.setdefault(key, set())
+        before = len(s)
+        s.update(members)
+        return len(s) - before
+
+    async def srem(self, key: str, *members: str) -> int:
+        s = self._sets.get(key, set())
+        before = len(s)
+        for m in members:
+            s.discard(m)
+        self._sets[key] = s
+        return before - len(s)
+
+    async def smembers(self, key: str) -> set[str]:
+        return set(self._sets.get(key, set()))
+
+    async def scard(self, key: str) -> int:
+        return len(self._sets.get(key, set()))
+
+    async def srandmember(self, key: str):
+        import random
+
+        s = list(self._sets.get(key, set()))
+        if not s:
+            return None
+        return random.choice(s)
 
 
 __all__ = ["InMemoryRedis", "auth_headers", "jwt_auth_headers", "install_inmemory_db", "seed_user_and_key"]

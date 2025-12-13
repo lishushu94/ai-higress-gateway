@@ -3,7 +3,6 @@
 实用脚本：测试上游代理池的有效性与连通性。
 
 支持：
-- 从 .env 的 UPSTREAM_PROXY_POOL 读取代理列表（默认）；
 - 通过 --proxies 或 --file 传入代理列表；
 - 并发测试、统计延迟、输出可用代理列表。
 
@@ -32,8 +31,7 @@ _backend_root = Path(__file__).resolve().parents[1]
 if str(_backend_root) not in sys.path:
     sys.path.insert(0, str(_backend_root))
 
-from app.proxy_pool import _parse_proxy_pool  # noqa: E402
-from app.settings import settings  # noqa: E402
+from app.services.upstream_proxy_utils import build_proxy_url, parse_proxy_line, split_proxy_text  # noqa: E402
 
 
 @dataclass
@@ -81,8 +79,7 @@ def _load_proxies_from_file(path: str) -> list[str]:
         if not s or s.startswith("#"):
             continue
         items.append(s)
-    # 复用同一解析/过滤规则
-    return _parse_proxy_pool(",".join(items))
+    return items
 
 
 def _unique_keep_order(items: list[str]) -> list[str]:
@@ -101,12 +98,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--proxies",
         default="",
-        help="代理列表字符串（逗号/换行分隔）。不填则从 UPSTREAM_PROXY_POOL 读取。",
+        help="代理列表字符串（逗号/换行分隔）。",
     )
     parser.add_argument(
         "--file",
         default="",
         help="包含代理的文件路径（每行一个，可含 # 注释）。",
+    )
+    parser.add_argument(
+        "--default-scheme",
+        default="http",
+        help="解析简写代理（如 ip:port 或 ip:port:user:pass）时使用的默认 scheme（默认 http）。",
     )
     parser.add_argument(
         "--url",
@@ -190,19 +192,25 @@ async def _check_one(
 async def main() -> None:
     args = parse_args()
 
-    proxies: list[str] = []
+    raw_items: list[str] = []
     if args.file:
-        proxies.extend(_load_proxies_from_file(args.file))
+        raw_items.extend(_load_proxies_from_file(args.file))
     if args.proxies:
-        proxies.extend(_parse_proxy_pool(args.proxies))
-    if not proxies:
-        proxies = _parse_proxy_pool(settings.upstream_proxy_pool)
+        raw_items.extend(split_proxy_text(args.proxies))
+
+    proxies: list[str] = []
+    for item in raw_items:
+        try:
+            parsed = parse_proxy_line(item, default_scheme=args.default_scheme)
+            proxies.append(build_proxy_url(parsed))
+        except Exception:
+            continue
 
     proxies = _unique_keep_order(proxies)
     _ensure_socks_support(proxies)
 
     if not proxies:
-        print("未找到任何代理，请检查 UPSTREAM_PROXY_POOL / --proxies / --file。")
+        print("未找到任何代理，请检查 --proxies / --file / --default-scheme。")
         return
 
     print(f"将测试 {len(proxies)} 个代理，目标 URL: {args.url}")
@@ -241,7 +249,7 @@ async def main() -> None:
     print(f"可用 {len(ok_list)} / {len(results)}")
     if ok_list:
         pool_str = ", ".join(r.proxy for r in ok_list)
-        print("可直接写回 .env 的 UPSTREAM_PROXY_POOL：")
+        print("可用代理列表：")
         print(pool_str)
 
 

@@ -60,3 +60,4 @@ export {
   type CreateProviderKeyRequest,
   type UpdateProviderKeyRequest
 } from './provider-keys';
+export { upstreamProxyService } from './upstream-proxy';

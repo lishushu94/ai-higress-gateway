@@ -21,7 +21,8 @@ import {
     Lock,
     Send,
     Bell,
-    Megaphone
+    Megaphone,
+    Globe
 } from "lucide-react";
 
 const navItems = [
@@ -87,6 +88,11 @@ const adminItems = [
         titleKey: "nav.system",
         href: "/system/admin",
         icon: Settings,
+    },
+    {
+        titleKey: "nav.upstream_proxy",
+        href: "/system/admin/upstream-proxy",
+        icon: Globe,
     },
     {
         titleKey: "nav.users",

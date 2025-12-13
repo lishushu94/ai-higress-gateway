@@ -22,6 +22,7 @@ import {
     Send,
     Bell,
     Megaphone,
+    Globe,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -89,6 +90,11 @@ const adminItems = [
         titleKey: "nav.system",
         href: "/system/admin",
         icon: Settings,
+    },
+    {
+        titleKey: "nav.upstream_proxy",
+        href: "/system/admin/upstream-proxy",
+        icon: Globe,
     },
     {
         titleKey: "nav.users",

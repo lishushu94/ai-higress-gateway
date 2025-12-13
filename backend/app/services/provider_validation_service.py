@@ -35,7 +35,7 @@ class ProviderValidationService:
 
         headers = {"Authorization": f"Bearer {api_key}", "Accept": "application/json"}
 
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, trust_env=True) as client:
             last_error: str | None = None
             for url in candidates:
                 try:
@@ -136,7 +136,7 @@ class ProviderValidationService:
             return results
 
         target_models = model_ids[:sample_size]
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=timeout, trust_env=True) as client:
             for model_id in target_models:
                 url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
                 payload = {

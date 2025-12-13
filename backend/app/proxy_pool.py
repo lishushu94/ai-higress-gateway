@@ -1,124 +1,97 @@
 from __future__ import annotations
 
-import asyncio
-import random
-import re
-from urllib.parse import urlparse
+import time
 
 from app.logging_config import logger
-from app.settings import settings
+from app.services.upstream_proxy_redis import (
+    get_endpoint_proxy_url,
+    get_runtime_config,
+    pick_available_proxy_id,
+    report_failure_by_proxy_url,
+)
 
-_VALID_PROXY_SCHEMES = {"http", "https", "socks5", "socks5h"}
-
-
-def _parse_proxy_pool(raw: str) -> list[str]:
-    """
-    Parse UPSTREAM_PROXY_POOL from env.
-
-    Accept comma/newline/semicolon separated URLs. Invalid entries are ignored.
-    """
-    if not raw:
-        return []
-    items = [s.strip() for s in re.split(r"[,\n;]+", raw) if s.strip()]
-    proxies: list[str] = []
-    for item in items:
-        try:
-            parsed = urlparse(item)
-        except Exception:  # pragma: no cover - 极端输入
-            parsed = None
-        if not parsed or not parsed.scheme or not parsed.netloc:
-            logger.warning("upstream_proxy_pool: 忽略无效代理 URL: %r", item)
-            continue
-        if parsed.scheme.lower() not in _VALID_PROXY_SCHEMES:
-            logger.warning(
-                "upstream_proxy_pool: 忽略不支持的代理协议 %r (url=%s)",
-                parsed.scheme,
-                item,
-            )
-            continue
-        proxies.append(item)
-    return proxies
-
-
-class ProxyPool:
-    """
-    Lightweight proxy pool for upstream requests.
-
-    Strategy:
-    - random: every pick is random choice.
-    - round_robin: sequential picks across the pool.
-    """
-
-    def __init__(self, proxies: list[str], strategy: str = "random") -> None:
-        self._proxies = proxies
-        self._strategy = (strategy or "random").lower()
-        self._idx = 0
-        self._lock = asyncio.Lock()
-
-    @property
-    def enabled(self) -> bool:
-        return bool(self._proxies)
-
-    async def pick(self, *, exclude: set[str] | None = None) -> str | None:
-        if not self._proxies:
-            return None
-        exclude = exclude or set()
-        if self._strategy == "round_robin":
-            async with self._lock:
-                if not exclude:
-                    proxy = self._proxies[self._idx % len(self._proxies)]
-                    self._idx += 1
-                    return proxy
-                start = self._idx
-                n = len(self._proxies)
-                for i in range(n):
-                    proxy = self._proxies[(start + i) % n]
-                    if proxy not in exclude:
-                        self._idx = start + i + 1
-                        return proxy
-                # All excluded: just return next in order.
-                proxy = self._proxies[start % n]
-                self._idx = start + 1
-                return proxy
-        # Default to random to spread requests across IPs.
-        eligible = [p for p in self._proxies if p not in exclude]
-        if not eligible:
-            eligible = self._proxies
-        return random.choice(eligible)
-
-
-_proxy_pool: ProxyPool | None = None
-_proxy_pool_lock = asyncio.Lock()
-
-
-async def get_upstream_proxy_pool() -> ProxyPool | None:
-    """
-    Get a singleton ProxyPool built from settings.
-    """
-    global _proxy_pool
-    if _proxy_pool is not None:
-        return _proxy_pool if _proxy_pool.enabled else None
-
-    async with _proxy_pool_lock:
-        if _proxy_pool is None:
-            proxies = _parse_proxy_pool(settings.upstream_proxy_pool)
-            _proxy_pool = ProxyPool(proxies, settings.upstream_proxy_strategy)
-            if proxies:
-                logger.info(
-                    "upstream_proxy_pool: 已启用代理池，数量=%d，策略=%s",
-                    len(proxies),
-                    settings.upstream_proxy_strategy,
-                )
-            else:
-                logger.info("upstream_proxy_pool: 未配置代理池，保持直连")
-    return _proxy_pool if _proxy_pool.enabled else None
+_managed_runtime_enabled: bool | None = None
+_managed_failure_cooldown_seconds: int = 120
+_managed_cfg_cache_until: float = 0.0
+_managed_cfg_cache_ttl_seconds: float = 5.0
 
 
 async def pick_upstream_proxy(*, exclude: set[str] | None = None) -> str | None:
-    pool = await get_upstream_proxy_pool()
-    if not pool:
+    """
+    Pick a proxy URL for upstream calls.
+
+    Notes:
+    - 仅支持“管理式代理池”（DB 配置 + Celery 测活 + Redis 可用集合）。
+    - 不再从环境变量读取代理。
+    """
+    exclude = exclude or set()
+
+    # Managed pool (Redis). Any runtime error results in "no proxy" (direct).
+    try:
+        from app.redis_client import get_redis_client
+
+        redis = get_redis_client()
+        now = time.monotonic()
+
+        global _managed_cfg_cache_until, _managed_failure_cooldown_seconds, _managed_runtime_enabled
+
+        # Refresh runtime flags periodically (or after cache expiry).
+        if now >= _managed_cfg_cache_until:
+            try:
+                cfg = await get_runtime_config(redis)
+                enabled = (cfg.get("enabled") or "0") == "1"
+                _managed_runtime_enabled = enabled
+                cooldown_raw = cfg.get("failure_cooldown_seconds")
+                if cooldown_raw and cooldown_raw.isdigit():
+                    _managed_failure_cooldown_seconds = int(cooldown_raw)
+                _managed_cfg_cache_until = now + _managed_cfg_cache_ttl_seconds
+            except Exception as exc:
+                # If Redis is down, avoid spamming connection attempts for a short period.
+                _managed_runtime_enabled = False
+                _managed_cfg_cache_until = now + _managed_cfg_cache_ttl_seconds
+                logger.debug("upstream_proxy: runtime config read failed: %s", exc)
+
+        if not _managed_runtime_enabled:
+            return None
+
+        exclude_ids: set[str] = set()
+        for _ in range(8):
+            endpoint_id = await pick_available_proxy_id(redis, exclude_ids=exclude_ids)
+            if not endpoint_id:
+                return None
+            proxy_url = await get_endpoint_proxy_url(redis, endpoint_id)
+            if not proxy_url:
+                exclude_ids.add(endpoint_id)
+                continue
+            if proxy_url in exclude:
+                exclude_ids.add(endpoint_id)
+                continue
+            return proxy_url
         return None
-    return await pool.pick(exclude=exclude)
+    except Exception as exc:
+        logger.debug("upstream_proxy: managed pool pick failed, use direct: %s", exc)
+        return None
 
 
-__all__ = ["ProxyPool", "get_upstream_proxy_pool", "pick_upstream_proxy"]
+async def report_upstream_proxy_failure(proxy_url: str) -> None:
+    """
+    Request-side proxy failure feedback (best-effort).
+
+    This is intentionally non-blocking/forgiving: any internal error is swallowed
+    so that upstream requests do not fail because Redis is unavailable.
+    """
+    # Most requests won't use managed proxies; avoid hitting Redis on failures unless enabled.
+    if _managed_runtime_enabled is not True:
+        return
+    cooldown_seconds = _managed_failure_cooldown_seconds
+
+    await report_failure_by_proxy_url(
+        proxy_url=proxy_url,
+        cooldown_seconds=cooldown_seconds,
+    )
+
+
+__all__ = [
+    "pick_upstream_proxy",
+    "report_upstream_proxy_failure",
+]

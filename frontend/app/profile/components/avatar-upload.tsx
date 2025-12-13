@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import Image from "next/image";
 import { Button } from "@/components/ui/button";
 import { User } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
@@ -79,13 +78,11 @@ export function AvatarUpload({ isEditing }: AvatarUploadProps) {
     <div className="flex items-center space-x-4">
       <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center overflow-hidden relative">
         {avatarSrc ? (
-          <Image
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
             src={avatarSrc}
             alt={authUser.display_name || authUser.email}
-            fill
-            className="object-cover"
-            sizes="80px"
-            priority
+            className="h-full w-full object-cover"
           />
         ) : (
           <User className="w-10 h-10 text-foreground" />

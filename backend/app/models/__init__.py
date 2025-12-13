@@ -23,6 +23,7 @@ from .user import User
 from .system_gateway_config import GatewayConfig
 from .provider_audit_log import ProviderAuditLog
 from .provider_test_record import ProviderTestRecord
+from .upstream_proxy import UpstreamProxyConfig, UpstreamProxyEndpoint, UpstreamProxySource
 
 __all__ = [
     "APIKey",
@@ -53,6 +54,9 @@ __all__ = [
     "RegistrationWindow",
     "RegistrationWindowStatus",
     "TimestampMixin",
+    "UpstreamProxyConfig",
+    "UpstreamProxyEndpoint",
+    "UpstreamProxySource",
     "UUIDPrimaryKeyMixin",
     "UserPermission",
     "UserRole",

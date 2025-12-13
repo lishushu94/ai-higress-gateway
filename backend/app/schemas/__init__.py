@@ -127,6 +127,22 @@ from .system import (
     SystemAdminInitRequest,
     SystemAdminInitResponse,
 )
+from .upstream_proxy import (
+    UpstreamProxyConfigResponse,
+    UpstreamProxyConfigUpdateRequest,
+    UpstreamProxyEndpointCreateRequest,
+    UpstreamProxyEndpointResponse,
+    UpstreamProxyEndpointUpdateRequest,
+    UpstreamProxyEndpointsResponse,
+    UpstreamProxyImportRequest,
+    UpstreamProxyImportResponse,
+    UpstreamProxySourceCreateRequest,
+    UpstreamProxySourceResponse,
+    UpstreamProxySourceUpdateRequest,
+    UpstreamProxySourcesResponse,
+    UpstreamProxyStatusResponse,
+    UpstreamProxyTaskResponse,
+)
 from .session import Session
 from .user import (
     UserCreateRequest,
