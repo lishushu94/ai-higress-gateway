@@ -26,6 +26,8 @@ dependencies = [
     "passlib[bcrypt]>=1.7.4", # For password hashing
     "celery[redis]>=5.4.0", # Async task queue
     "python-multipart>=0.0.20",
+    "httpx-curl-cffi>=0.1.5",
+    "curl-cffi>=0.7.0",
 ]
 
 [project.scripts]

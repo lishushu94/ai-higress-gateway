@@ -222,6 +222,13 @@ class Settings(BaseSettings):
         ge=1,
     )
 
+    # Provider health check and routing
+    enable_provider_health_check: bool = Field(
+        True,
+        alias="ENABLE_PROVIDER_HEALTH_CHECK",
+        description="是否启用 Provider 健康状态检查和路由过滤（关闭后将忽略 Provider 状态和最低分数过滤）",
+    )
+
     # Metrics buffer & sampling
     metrics_buffer_enabled: bool = Field(
         True,

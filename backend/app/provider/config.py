@@ -109,7 +109,7 @@ def _normalise_transport(value: str | None) -> str:
     if not value:
         return "http"
     normalized = value.lower()
-    if normalized not in {"http", "sdk"}:
+    if normalized not in {"http", "sdk", "claude_cli"}:
         logger.warning("Provider transport %r is invalid, defaulting to http", value)
         return "http"
     return normalized

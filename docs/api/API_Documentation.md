@@ -1601,7 +1601,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
     "custom_headers": {},
     "retryable_status_codes": [429, 500, 502, 503, 504],
     "static_models": [],
-    "transport": "http/sdk",
+    "transport": "http/sdk/claude_cli",
     "provider_type": "native/aggregator",
     "sdk_vendor": "string | null（参见 /providers/sdk-vendors）",
     "supported_api_styles": ["openai", "responses", "claude"] 或 null
@@ -1613,7 +1613,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 
 > 说明：
 > - 当 `transport = "sdk"` 时，必须在后台配置 `sdk_vendor`，其值需来自 `/providers/sdk-vendors` 返回列表，网关才会走对应官方 SDK；
-> - 当 `transport = "http"` 时，`sdk_vendor` 一律为 `null`，表示纯 HTTP 代理模式。
+> - 当 `transport = "http"` 时，`sdk_vendor` 一律为 `null`，表示纯 HTTP 代理模式；
+> - 当 `transport = "claude_cli"` 时，网关会伪装成 Claude Code CLI 客户端，自动添加 CLI 特有的请求头、生成 user_id、转换消息格式，并使用 TLS 指纹伪装技术。适用于需要 Claude CLI 特征的 API 端点。
 
 ---
 
@@ -1671,7 +1672,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "custom_headers": {},
   "retryable_status_codes": [429, 500, 502, 503, 504],
   "static_models": [],
-  "transport": "http/sdk",
+  "transport": "http/sdk/claude_cli",
   "provider_type": "native/aggregator",
   "sdk_vendor": "openai/google/claude 或 null",
   "supported_api_styles": ["openai", "responses", "claude"] 或 null
@@ -2092,7 +2093,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
     "name": "string",
     "base_url": "url",
     "provider_type": "native/aggregator",
-    "transport": "http/sdk",
+    "transport": "http/sdk/claude_cli",
     "sdk_vendor": "openai/google/claude 或 null",
     "preset_id": "string | null",
     "visibility": "private",
@@ -2125,7 +2126,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "base_url": "url",
   "api_key": "string",
   "provider_type": "native 或 aggregator (可选, 默认native)",
-  "transport": "http 或 sdk (可选, 默认http)",
+  "transport": "http 或 sdk 或 claude_cli (可选, 默认http)",
   "sdk_vendor": "openai/google/claude (当 transport=sdk 时必填)"
   // 其余可选字段: weight, region, cost_input, cost_output, max_qps,
   // retryable_status_codes, custom_headers,
@@ -2143,7 +2144,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "name": "string",
   "base_url": "url",
   "provider_type": "native/aggregator",
-  "transport": "http/sdk",
+  "transport": "http/sdk/claude_cli",
    "sdk_vendor": "openai/google/claude 或 null",
    "preset_id": "string | null",
   "visibility": "private",
@@ -2175,7 +2176,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "name": "string (可选)",
   "base_url": "url (可选)",
   "provider_type": "native/aggregator (可选)",
-  "transport": "http/sdk (可选)",
+  "transport": "http/sdk/claude_cli (可选)",
   "sdk_vendor": "openai/google/claude (可选；当 transport 变更为 sdk 时建议显式设置)",
   "weight": 1.0,
   "region": "string | null",
@@ -2487,7 +2488,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
       "name": "string",
       "base_url": "url",
       "provider_type": "native/aggregator",
-      "transport": "http/sdk",
+      "transport": "http/sdk/claude_cli",
       "visibility": "public/private/restricted",
       "owner_id": "uuid | null",
       "status": "healthy/degraded/down",

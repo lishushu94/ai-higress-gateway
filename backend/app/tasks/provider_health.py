@@ -10,12 +10,12 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Sequence, TYPE_CHECKING
 
-import httpx
 from celery import shared_task
 from sqlalchemy.orm import Session
 
 from app.celery_app import celery_app
 from app.db import SessionLocal
+from app.http_client import CurlCffiClient
 from app.provider.config import load_providers_with_configs
 from app.provider.health import check_provider_health
 from app.redis_client import get_redis_client
@@ -33,11 +33,11 @@ async def _run_checks(
     *,
     provider_ids: Sequence[str] | None = None,
     cache_ttl_seconds: int | None = None,
-    client: httpx.AsyncClient | None = None,
+    client: CurlCffiClient | None = None,
 ) -> int:
     owns_client = False
     if client is None:
-        client = httpx.AsyncClient(
+        client = CurlCffiClient(
             timeout=settings.upstream_timeout,
             trust_env=True,  # 启用环境变量代理支持
         )
@@ -46,25 +46,46 @@ async def _run_checks(
     redis = get_redis_client()
 
     try:
-        pairs = load_providers_with_configs(session=session)
-        count = 0
-        for provider, cfg in pairs:
-            if provider_ids is not None and provider.provider_id not in provider_ids:
-                continue
-            status = await check_provider_health(client, cfg, redis)
-            await persist_provider_health(
-                redis,
-                session,
-                provider,
-                status,
-                cache_ttl_seconds=cache_ttl_seconds,
-            )
-            count += 1
-        session.commit()
-        return count
-    finally:
+        # 如果是自己创建的 client，需要进入 context manager
         if owns_client:
-            await client.aclose()
+            async with client:
+                pairs = load_providers_with_configs(session=session)
+                count = 0
+                for provider, cfg in pairs:
+                    if provider_ids is not None and provider.provider_id not in provider_ids:
+                        continue
+                    status = await check_provider_health(client, cfg, redis)
+                    await persist_provider_health(
+                        redis,
+                        session,
+                        provider,
+                        status,
+                        cache_ttl_seconds=cache_ttl_seconds,
+                    )
+                    count += 1
+                session.commit()
+                return count
+        else:
+            # 如果是外部传入的 client，直接使用
+            pairs = load_providers_with_configs(session=session)
+            count = 0
+            for provider, cfg in pairs:
+                if provider_ids is not None and provider.provider_id not in provider_ids:
+                    continue
+                status = await check_provider_health(client, cfg, redis)
+                await persist_provider_health(
+                    redis,
+                    session,
+                    provider,
+                    status,
+                    cache_ttl_seconds=cache_ttl_seconds,
+                )
+                count += 1
+            session.commit()
+            return count
+    except Exception:
+        # 确保异常时也能正常退出
+        raise
 
 
 @shared_task(name="tasks.provider_health.check_all")

@@ -103,9 +103,10 @@ export function BasicProviderConfig({
                                     markFieldAsOverridden("transport");
                                 }}
                             >
-                                <TabsList className="grid w-full grid-cols-2">
+                                <TabsList className="grid w-full grid-cols-3">
                                     <TabsTrigger value="http">{t("providers.form_field_transport_http")}</TabsTrigger>
                                     <TabsTrigger value="sdk">{t("providers.form_field_transport_sdk")}</TabsTrigger>
+                                    <TabsTrigger value="claude_cli">{t("providers.form_field_transport_claude_cli")}</TabsTrigger>
                                 </TabsList>
                             </Tabs>
                             <p className="text-xs text-muted-foreground">

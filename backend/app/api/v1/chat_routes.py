@@ -71,6 +71,11 @@ from app.storage.redis_service import get_logical_model
 from app.upstream import UpstreamStreamError, detect_request_format
 
 from app.services.chat_routing_service import *  # noqa: F401,F403
+from app.services.claude_cli_transformer import (
+    build_claude_cli_headers,
+    transform_to_claude_cli_format,
+    transform_claude_response_to_openai,
+)
 
 router = APIRouter(tags=["chat"])
 
@@ -424,6 +429,7 @@ async def chat_completions(
                 strategy,
                 session=session_obj,
                 dynamic_weights=dynamic_weights,
+                enable_health_check=settings.enable_provider_health_check,
             )
         except RuntimeError as exc:
             # This is a common source of "silent" 503s: we map to 503 but
@@ -523,6 +529,289 @@ async def chat_completions(
                     last_status = status.HTTP_503_SERVICE_UNAVAILABLE
                     last_error_text = f"Provider '{provider_id}' is not configured"
                     continue
+                
+                # Check for Claude CLI transport mode
+                if getattr(provider_cfg, "transport", "http") == "claude_cli":
+                    logger.info(
+                        "chat_completions: using Claude CLI transport for provider=%s model=%s",
+                        provider_id,
+                        model_id,
+                    )
+                    
+                    try:
+                        key_selection = await acquire_provider_key(
+                            provider_cfg, redis
+                        )
+                    except NoAvailableProviderKey as exc:
+                        last_status = status.HTTP_503_SERVICE_UNAVAILABLE
+                        last_error_text = str(exc)
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Build Claude CLI headers
+                    try:
+                        claude_cli_headers = build_claude_cli_headers(key_selection.key)
+                    except Exception as exc:
+                        logger.error(
+                            "claude_cli: failed to build headers provider=%s model=%s error=%s",
+                            provider_id,
+                            model_id,
+                            str(exc),
+                            exc_info=True,
+                        )
+                        last_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                        last_error_text = f"Failed to build Claude CLI headers: {exc}"
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Transform payload to Claude CLI format
+                    try:
+                        claude_payload = transform_to_claude_cli_format(
+                            payload,
+                            api_key=key_selection.key,
+                            session_id=x_session_id,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "claude_cli: failed to transform request provider=%s model=%s "
+                            "original_payload_keys=%s error=%s",
+                            provider_id,
+                            model_id,
+                            list(payload.keys()),
+                            str(exc),
+                            exc_info=True,
+                        )
+                        last_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                        last_error_text = f"Failed to transform request to Claude CLI format: {exc}"
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Use provider's base_url + /v1/messages endpoint with beta parameter
+                    # Claude CLI always adds ?beta=true to enable beta features
+                    claude_url = f"{str(provider_cfg.base_url).rstrip('/')}/v1/messages?beta=true"
+                    
+                    logger.info(
+                        "chat_completions: sending Claude CLI request to url=%s user_id=%s",
+                        claude_url,
+                        claude_payload.get("metadata", {}).get("user_id", "")[:30] + "...",
+                    )
+                    
+                    try:
+                        r = await call_upstream_http_with_metrics(
+                            client=client,
+                            url=claude_url,
+                            headers=claude_cli_headers,
+                            json_body=claude_payload,
+                            db=db,
+                            provider_id=provider_id,
+                            logical_model=logical_model.logical_id,
+                            user_id=current_key.user_id,
+                            api_key_id=current_key.id,
+                        )
+                    except httpx.HTTPError as exc:
+                        record_key_failure(
+                            key_selection,
+                            retryable=True,
+                            status_code=None,
+                            redis=redis,
+                        )
+                        _mark_provider_failure(provider_id, retryable=True)
+                        logger.error(
+                            "claude_cli: network error during request url=%s provider=%s model=%s "
+                            "error_type=%s error=%s user_id_prefix=%s",
+                            claude_url,
+                            provider_id,
+                            model_id,
+                            type(exc).__name__,
+                            str(exc),
+                            claude_payload.get("metadata", {}).get("user_id", "")[:20] + "...",
+                            exc_info=True,
+                        )
+                        last_status = None
+                        last_error_text = str(exc)
+                        continue
+                    
+                    status_code = r.status_code
+                    text = r.text
+                    
+                    logger.info(
+                        "chat_completions: Claude CLI response status=%s provider=%s model=%s body_length=%d",
+                        status_code,
+                        provider_id,
+                        model_id,
+                        len(text or ""),
+                    )
+                    
+                    # Check for retryable errors
+                    if status_code >= 400 and _is_retryable_upstream_status(
+                        provider_id, status_code
+                    ):
+                        record_key_failure(
+                            key_selection,
+                            retryable=True,
+                            status_code=status_code,
+                            redis=redis,
+                        )
+                        logger.warning(
+                            "claude_cli: retryable upstream error status=%s url=%s provider=%s model=%s "
+                            "user_id_prefix=%s response_length=%d response_preview=%s",
+                            status_code,
+                            claude_url,
+                            provider_id,
+                            model_id,
+                            claude_payload.get("metadata", {}).get("user_id", "")[:20] + "...",
+                            len(text or ""),
+                            (text or "")[:200],  # First 200 chars of error response
+                        )
+                        last_status = status_code
+                        last_error_text = text
+                        _mark_provider_failure(provider_id, retryable=True)
+                        continue
+                    
+                    # Bind session and save context
+                    await _bind_session_for_upstream(provider_id, model_id)
+                    await save_context(redis, x_session_id, payload, text)
+                    
+                    # Handle non-retryable errors
+                    if status_code >= 400:
+                        record_key_failure(
+                            key_selection,
+                            retryable=False,
+                            status_code=status_code,
+                            redis=redis,
+                        )
+                        _mark_provider_failure(provider_id, retryable=False)
+                        
+                        # Parse error response for detailed logging
+                        error_detail = None
+                        try:
+                            error_json = r.json()
+                            error_detail = error_json.get("error", {})
+                        except Exception:
+                            error_detail = None
+                        
+                        logger.error(
+                            "claude_cli: non-retryable upstream error status=%s url=%s provider=%s model=%s "
+                            "user_id_prefix=%s error_type=%s error_message=%s response_length=%d full_response=%s",
+                            status_code,
+                            claude_url,
+                            provider_id,
+                            model_id,
+                            claude_payload.get("metadata", {}).get("user_id", "")[:20] + "...",
+                            error_detail.get("type") if error_detail else "unknown",
+                            error_detail.get("message") if error_detail else "unknown",
+                            len(text or ""),
+                            text,
+                        )
+                        raise HTTPException(
+                            status_code=status.HTTP_502_BAD_GATEWAY,
+                            detail=f"Upstream error {status_code}: {text}",
+                        )
+                    
+                    # Success - parse response
+                    record_key_success(key_selection, redis=redis)
+                    _mark_provider_success(provider_id)
+                    
+                    try:
+                        claude_response = r.json()
+                    except ValueError:
+                        claude_response = None
+                    
+                    if claude_response is not None:
+                        # Transform to OpenAI format if needed
+                        if api_style == "openai":
+                            try:
+                                converted_payload = transform_claude_response_to_openai(
+                                    claude_response,
+                                    original_model=payload.get("model") or model_id,
+                                )
+                            except Exception as exc:
+                                logger.error(
+                                    "claude_cli: failed to transform response provider=%s model=%s "
+                                    "response_keys=%s error=%s",
+                                    provider_id,
+                                    model_id,
+                                    list(claude_response.keys()) if isinstance(claude_response, dict) else "not_dict",
+                                    str(exc),
+                                    exc_info=True,
+                                )
+                                raise HTTPException(
+                                    status_code=status.HTTP_502_BAD_GATEWAY,
+                                    detail=f"Failed to transform Claude response: {exc}",
+                                )
+                        else:
+                            converted_payload = claude_response
+                        
+                        # Record credit usage
+                        try:
+                            record_chat_completion_usage(
+                                db,
+                                user_id=current_key.user_id,
+                                api_key_id=current_key.id,
+                                logical_model_name=logical_model.logical_id,
+                                provider_id=provider_id,
+                                provider_model_id=model_id,
+                                response_payload=(
+                                    converted_payload
+                                    if isinstance(converted_payload, dict)
+                                    else None
+                                ),
+                                request_payload=payload if isinstance(payload, dict) else None,
+                                is_stream=False,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to record credit usage for Claude CLI completion "
+                                "(user=%s logical_model=%s)",
+                                current_key.user_id,
+                                logical_model.logical_id,
+                            )
+                        
+                        return JSONResponse(
+                            content=_apply_response_moderation(
+                                converted_payload,
+                                session_id=x_session_id,
+                                api_key=current_key,
+                                logical_model=logical_model.logical_id,
+                                provider_id=provider_id,
+                                status_code=status_code,
+                            ),
+                            status_code=status_code,
+                        )
+                    
+                    # Fallback for unparseable response
+                    try:
+                        record_chat_completion_usage(
+                            db,
+                            user_id=current_key.user_id,
+                            api_key_id=current_key.id,
+                            logical_model_name=logical_model.logical_id,
+                            provider_id=provider_id,
+                            provider_model_id=model_id,
+                            response_payload=None,
+                            request_payload=payload if isinstance(payload, dict) else None,
+                            is_stream=False,
+                        )
+                    except Exception:
+                        logger.exception(
+                            "Failed to record credit usage for raw Claude CLI completion "
+                            "(user=%s logical_model=%s)",
+                            current_key.user_id,
+                            logical_model.logical_id,
+                        )
+                    
+                    return JSONResponse(
+                        content=_apply_response_moderation(
+                            {"raw": text},
+                            session_id=x_session_id,
+                            api_key=current_key,
+                            logical_model=logical_model.logical_id,
+                            provider_id=provider_id,
+                            status_code=status_code,
+                        ),
+                        status_code=status_code,
+                    )
+                
                 if getattr(provider_cfg, "transport", "http") == "sdk":
                     driver = get_sdk_driver(provider_cfg)
                     if driver is None:
@@ -619,7 +908,7 @@ async def chat_completions(
                     )
                 try:
                     headers, key_selection = await _build_provider_headers(
-                        provider_cfg, redis
+                        provider_cfg, redis, api_style=api_style
                     )
                 except NoAvailableProviderKey as exc:
                     logger.warning(
@@ -1211,9 +1500,197 @@ async def chat_completions(
                         )
                         _mark_provider_failure(provider_id, retryable=True)
                         continue
+                
+                # Check for Claude CLI transport mode (streaming)
+                if getattr(provider_cfg, "transport", "http") == "claude_cli":
+                    logger.info(
+                        "chat_completions: using Claude CLI transport (streaming) for provider=%s model=%s",
+                        provider_id,
+                        model_id,
+                    )
+                    
+                    try:
+                        key_selection = await acquire_provider_key(
+                            provider_cfg, redis
+                        )
+                    except NoAvailableProviderKey as exc:
+                        last_status = status.HTTP_503_SERVICE_UNAVAILABLE
+                        last_error_text = str(exc)
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Build Claude CLI headers
+                    try:
+                        claude_cli_headers = build_claude_cli_headers(key_selection.key)
+                    except Exception as exc:
+                        logger.error(
+                            "claude_cli: failed to build headers (streaming) provider=%s model=%s error=%s",
+                            provider_id,
+                            model_id,
+                            str(exc),
+                            exc_info=True,
+                        )
+                        last_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                        last_error_text = f"Failed to build Claude CLI headers: {exc}"
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Transform payload to Claude CLI format
+                    try:
+                        claude_payload = transform_to_claude_cli_format(
+                            payload,
+                            api_key=key_selection.key,
+                            session_id=x_session_id,
+                        )
+                    except Exception as exc:
+                        logger.error(
+                            "claude_cli: failed to transform request (streaming) provider=%s model=%s "
+                            "original_payload_keys=%s error=%s",
+                            provider_id,
+                            model_id,
+                            list(payload.keys()),
+                            str(exc),
+                            exc_info=True,
+                        )
+                        last_status = status.HTTP_500_INTERNAL_SERVER_ERROR
+                        last_error_text = f"Failed to transform request to Claude CLI format: {exc}"
+                        _mark_provider_failure(provider_id, retryable=False)
+                        continue
+                    
+                    # Ensure streaming is enabled
+                    claude_payload["stream"] = True
+                    
+                    # Use provider's base_url + /v1/messages endpoint with beta parameter
+                    # Claude CLI always adds ?beta=true to enable beta features
+                    claude_url = f"{str(provider_cfg.base_url).rstrip('/')}/v1/messages?beta=true"
+                    
+                    logger.info(
+                        "chat_completions: starting Claude CLI streaming request to url=%s user_id=%s",
+                        claude_url,
+                        claude_payload.get("metadata", {}).get("user_id", "")[:30] + "...",
+                    )
+                    
+                    first_chunk = True
+                    try:
+                        async for chunk in stream_upstream_with_metrics(
+                            client=client,
+                            method="POST",
+                            url=claude_url,
+                            headers=claude_cli_headers,
+                            json_body=claude_payload,
+                            redis=redis,
+                            session_id=x_session_id,
+                            db=db,
+                            provider_id=provider_id,
+                            logical_model=logical_model.logical_id,
+                            user_id=current_key.user_id,
+                            api_key_id=current_key.id,
+                        ):
+                            if first_chunk:
+                                first_chunk = False
+                                await _bind_session_for_upstream(
+                                    provider_id, model_id
+                                )
+                                logger.info(
+                                    "chat_completions: received first Claude CLI streaming "
+                                    "chunk from provider=%s model=%s",
+                                    provider_id,
+                                    model_id,
+                                )
+                            yield chunk
+                        
+                        # Stream finished successfully
+                        logger.info(
+                            "chat_completions: Claude CLI streaming finished successfully "
+                            "for provider=%s model=%s",
+                            provider_id,
+                            model_id,
+                        )
+                        if key_selection:
+                            record_key_success(key_selection, redis=redis)
+                        _mark_provider_success(provider_id)
+                        return
+                    except UpstreamStreamError as err:
+                        last_status = err.status_code
+                        last_error_text = err.text
+                        retryable = _is_retryable_upstream_status(
+                            provider_id, err.status_code
+                        )
+                        
+                        # Parse error response for detailed logging
+                        error_detail = None
+                        try:
+                            error_json = json.loads(err.text)
+                            error_detail = error_json.get("error", {})
+                        except Exception:
+                            error_detail = None
+                        
+                        logger.error(
+                            "claude_cli: streaming error url=%s provider=%s model=%s status=%s "
+                            "retryable=%s user_id_prefix=%s error_type=%s error_message=%s "
+                            "response_length=%d response_preview=%s",
+                            claude_url,
+                            provider_id,
+                            model_id,
+                            err.status_code,
+                            retryable,
+                            claude_payload.get("metadata", {}).get("user_id", "")[:20] + "...",
+                            error_detail.get("type") if error_detail else "unknown",
+                            error_detail.get("message") if error_detail else "unknown",
+                            len(err.text or ""),
+                            (err.text or "")[:200],  # First 200 chars
+                        )
+                        
+                        is_last = idx == len(ordered_candidates) - 1
+                        if retryable and not is_last:
+                            if key_selection:
+                                record_key_failure(
+                                    key_selection,
+                                    retryable=True,
+                                    status_code=err.status_code,
+                                    redis=redis,
+                                )
+                            _mark_provider_failure(provider_id, retryable=True)
+                            continue
+                        
+                        # Either not retryable or no more candidates
+                        if key_selection:
+                            record_key_failure(
+                                key_selection,
+                                retryable=retryable,
+                                status_code=err.status_code,
+                                redis=redis,
+                            )
+                        _mark_provider_failure(provider_id, retryable=retryable)
+                        
+                        try:
+                            payload_json = json.loads(err.text)
+                        except json.JSONDecodeError:
+                            payload_json = {
+                                "error": {
+                                    "type": "claude_cli_error",
+                                    "status": err.status_code,
+                                    "message": err.text,
+                                }
+                            }
+                        
+                        error_chunk = (
+                            f"data: {json.dumps(payload_json, ensure_ascii=False)}\n\n"
+                        ).encode()
+                        
+                        await save_context(
+                            redis,
+                            x_session_id,
+                            payload,
+                            error_chunk.decode("utf-8", errors="ignore"),
+                        )
+                        
+                        yield error_chunk
+                        return
+                
                 try:
                     headers, key_selection = await _build_provider_headers(
-                        provider_cfg, redis
+                        provider_cfg, redis, api_style=api_style
                     )
                 except NoAvailableProviderKey as exc:
                     last_status = status.HTTP_503_SERVICE_UNAVAILABLE
@@ -1551,6 +2028,35 @@ async def claude_messages_endpoint(
     Claude/Anthropic Messages API 兼容端点。
     不再硬编码 messages_path，而是使用 Provider 配置中的路径。
     """
+    # ========== 详细请求日志：捕获真实 Claude Code CLI 请求信息 ==========
+    # 仅在开发模式下输出详细日志，生产模式下关闭以减少日志噪音
+    if settings.environment.lower() == "development":
+        logger.info("=" * 80)
+        logger.info("🔍 Claude Messages API 请求详情")
+        logger.info("=" * 80)
+        
+        # 记录所有请求头
+        logger.info("📋 请求头 (Headers):")
+        for header_name, header_value in request.headers.items():
+            # 隐藏敏感信息
+            if "key" in header_name.lower() or "auth" in header_name.lower():
+                logger.info(f"  {header_name}: ***REDACTED***")
+            else:
+                logger.info(f"  {header_name}: {header_value}")
+        
+        # 记录请求体
+        logger.info("📦 请求体 (Body):")
+        logger.info(json.dumps(raw_body, indent=2, ensure_ascii=False))
+        
+        # 记录其他元信息
+        logger.info("🌐 请求元信息:")
+        logger.info(f"  Method: {request.method}")
+        logger.info(f"  URL: {request.url}")
+        logger.info(f"  Client: {request.client.host if request.client else 'unknown'}")
+        logger.info(f"  X-Session-Id: {x_session_id}")
+        logger.info("=" * 80)
+    # ========== 日志记录结束 ==========
+    
     forward_body = dict(raw_body)
     forward_body["_apiproxy_api_style"] = "claude"
     forward_body["_apiproxy_skip_normalize"] = True

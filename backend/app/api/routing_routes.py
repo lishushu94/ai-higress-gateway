@@ -19,6 +19,7 @@ from app.routing.mapper import select_candidate_upstreams
 from app.routing.provider_weight import load_dynamic_weights
 from app.routing.scheduler import choose_upstream
 from app.routing.session_manager import bind_session, get_session
+from app.settings import settings
 from app.storage.redis_service import get_logical_model, get_routing_metrics
 
 router = APIRouter(
@@ -122,6 +123,7 @@ async def decide_route(
             strategy,
             session=session,
             dynamic_weights=dynamic_weights,
+            enable_health_check=settings.enable_provider_health_check,
         )
     except RuntimeError as exc:
         raise service_unavailable(str(exc))

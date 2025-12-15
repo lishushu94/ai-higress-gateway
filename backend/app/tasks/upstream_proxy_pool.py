@@ -13,13 +13,13 @@ import asyncio
 import time
 from typing import Any
 
-import httpx
 from celery import shared_task
 from sqlalchemy import Select, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.celery_app import celery_app
 from app.db import SessionLocal
+from app.http_client import CurlCffiClient
 from app.logging_config import logger
 from app.models import UpstreamProxyConfig, UpstreamProxyEndpoint, UpstreamProxySource
 from app.redis_client import get_redis_client
@@ -88,9 +88,10 @@ async def _refresh_remote_sources(session: Session) -> int:
                 continue
 
         try:
-            async with httpx.AsyncClient(timeout=10.0, trust_env=True) as client:
+            async with CurlCffiClient(timeout=10.0, trust_env=True) as client:
                 resp = await client.get(remote_url, headers=headers)
-                resp.raise_for_status()
+                if resp.status_code >= 400:
+                    raise Exception(f"HTTP {resp.status_code}: {resp.reason}")
                 text = resp.text
             lines = split_proxy_text(text)
             parsed = []
@@ -128,9 +129,19 @@ async def _check_endpoint(
     proxy_url = build_endpoint_proxy_url(endpoint)
     start = time.perf_counter()
     try:
-        timeout = httpx.Timeout(timeout_ms / 1000.0)
-        async with httpx.AsyncClient(timeout=timeout, proxy=proxy_url, trust_env=True) as client:
-            resp = await client.request(method.upper(), check_url)
+        timeout_seconds = timeout_ms / 1000.0
+        # 使用 proxies 参数来测试特定代理
+        # curl-cffi 支持 proxies 字典或单个 proxy 字符串
+        proxies = {"http": proxy_url, "https": proxy_url}
+        async with CurlCffiClient(
+            timeout=timeout_seconds,
+            trust_env=False,  # 测试代理时不使用环境变量
+            proxies=proxies,
+        ) as client:
+            if method.upper() == "GET":
+                resp = await client.get(check_url)
+            else:
+                resp = await client.post(check_url)
         ok = resp.status_code < 400
         latency_ms = (time.perf_counter() - start) * 1000.0
         if ok:

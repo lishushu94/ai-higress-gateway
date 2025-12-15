@@ -34,6 +34,8 @@ backend/.env.local
 docker-compose-deploy.yml
 docker-compose.override.yml
 
+scripts/test_*
+
 # Celery Beat scheduler database
 backend/celerybeat-schedule
 backend/celerybeat-schedule-shm

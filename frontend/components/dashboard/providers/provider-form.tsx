@@ -42,7 +42,7 @@ const createProviderFormSchema = (sdkVendorOptions: string[], t: (key: string) =
         
         // Provider 配置
         providerType: z.enum(["native", "aggregator"]),
-        transport: z.enum(["http", "sdk"]),
+        transport: z.enum(["http", "sdk", "claude_cli"]),
         sdkVendor: z.string().optional().or(z.literal("")),
         baseUrl: z.string().trim().default(""),
         
@@ -224,40 +224,50 @@ const providerFormDefaults: ProviderFormValues = {
     apiKey: "",
 };
 
-const buildFormValuesFromProvider = (provider: any): ProviderFormValues => ({
-    presetId: provider?.preset_id || "",
-    name: provider?.name || "",
-    providerType: provider?.provider_type || "native",
-    transport: provider?.transport || "http",
-    sdkVendor: provider?.sdk_vendor || "",
-    baseUrl: provider?.base_url || "",
-    modelsPath: provider?.models_path ?? "",
-    messagesPath: provider?.messages_path ?? "",
-    chatCompletionsPath: provider?.chat_completions_path ?? "",
-    responsesPath: provider?.responses_path ?? "",
-    weight:
-        provider?.weight !== undefined && provider?.weight !== null
-            ? String(provider.weight)
-            : providerFormDefaults.weight,
-    maxQps:
-        provider?.max_qps !== undefined && provider?.max_qps !== null
-            ? String(provider.max_qps)
-            : providerFormDefaults.maxQps,
-    region: provider?.region || "",
-    costInput:
-        provider?.cost_input !== undefined && provider?.cost_input !== null
-            ? String(provider.cost_input)
-            : providerFormDefaults.costInput,
-    costOutput:
-        provider?.cost_output !== undefined && provider?.cost_output !== null
-            ? String(provider.cost_output)
-            : providerFormDefaults.costOutput,
-    retryableStatusCodes: provider?.retryable_status_codes || [],
-    customHeaders: provider?.custom_headers || {},
-    staticModels: provider?.static_models || [],
-    supportedApiStyles: provider?.supported_api_styles || [],
-    apiKey: provider?.api_keys?.[0]?.key || provider?.api_key || "",
-});
+const buildFormValuesFromProvider = (provider: any, isEditing: boolean = false): ProviderFormValues => {
+    console.log('[ProviderForm] buildFormValuesFromProvider - provider data:', {
+        transport: provider?.transport,
+        provider_type: provider?.provider_type,
+        name: provider?.name,
+        isEditing
+    });
+    
+    return {
+        presetId: provider?.preset_id ?? "",
+        name: provider?.name ?? "",
+        providerType: provider?.provider_type ?? "native",
+        transport: provider?.transport ?? "http",
+        sdkVendor: provider?.sdk_vendor ?? "",
+        baseUrl: provider?.base_url ?? "",
+        modelsPath: provider?.models_path ?? "",
+        messagesPath: provider?.messages_path ?? "",
+        chatCompletionsPath: provider?.chat_completions_path ?? "",
+        responsesPath: provider?.responses_path ?? "",
+        weight:
+            provider?.weight !== undefined && provider?.weight !== null
+                ? String(provider.weight)
+                : providerFormDefaults.weight,
+        maxQps:
+            provider?.max_qps !== undefined && provider?.max_qps !== null
+                ? String(provider.max_qps)
+                : providerFormDefaults.maxQps,
+        region: provider?.region || "",
+        costInput:
+            provider?.cost_input !== undefined && provider?.cost_input !== null
+                ? String(provider.cost_input)
+                : providerFormDefaults.costInput,
+        costOutput:
+            provider?.cost_output !== undefined && provider?.cost_output !== null
+                ? String(provider.cost_output)
+                : providerFormDefaults.costOutput,
+        retryableStatusCodes: provider?.retryable_status_codes || [],
+        customHeaders: provider?.custom_headers || {},
+        staticModels: provider?.static_models || [],
+        supportedApiStyles: provider?.supported_api_styles || [],
+        // 编辑模式下不回填 API Key（后端不返回完整密钥）
+        apiKey: isEditing ? "" : (provider?.api_keys?.[0]?.key || provider?.api_key || ""),
+    };
+};
 
 interface ProviderFormEnhancedProps {
     open: boolean;
@@ -342,8 +352,22 @@ export function ProviderFormEnhanced({
 
         const sourceData = editingProviderDetail || editingProvider;
 
+        console.log('[ProviderForm] useEffect - resetting form', {
+            hasEditingProviderDetail: !!editingProviderDetail,
+            hasEditingProvider: !!editingProvider,
+            sourceData: sourceData ? {
+                provider_id: sourceData.provider_id,
+                transport: sourceData.transport
+            } : null
+        });
+
         if (sourceData) {
-            form.reset(buildFormValuesFromProvider(sourceData));
+            const formValues = buildFormValuesFromProvider(sourceData);
+            console.log('[ProviderForm] useEffect - form values to reset:', {
+                transport: formValues.transport,
+                name: formValues.name
+            });
+            form.reset(formValues);
             setOverriddenFields(new Set());
             if (editingProvider) {
                 setSelectedPreset(null);

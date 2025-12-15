@@ -68,7 +68,7 @@ def _build_overview_stmt(
     *,
     start_at: dt.datetime | None,
     end_at: dt.datetime | None,
-    transport: Literal["http", "sdk", "all"],
+    transport: Literal["http", "sdk", "claude_cli", "all"],
     is_stream: Literal["true", "false", "all"],
 ):
     """
@@ -115,7 +115,7 @@ def _build_user_overview_stmt(
     user_id: UUID,
     start_at: dt.datetime | None,
     end_at: dt.datetime | None,
-    transport: Literal["http", "sdk", "all"],
+    transport: Literal["http", "sdk", "claude_cli", "all"],
     is_stream: Literal["true", "false", "all"],
 ):
     stmt = select(
@@ -183,7 +183,7 @@ def get_provider_timeseries(
         "minute",
         description="时间粒度，目前仅支持 minute（按分钟聚合）",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -281,7 +281,7 @@ async def get_overview_summary(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -423,7 +423,7 @@ async def get_overview_summary(
 async def get_user_overview_timeseries(
     time_range: Literal["today", "7d", "30d", "all"] = Query("7d"),
     bucket: Literal["minute"] = Query("minute"),
-    transport: Literal["http", "sdk", "all"] = Query("all"),
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query("all"),
     is_stream: Literal["true", "false", "all"] = Query("all"),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
     db: Session = Depends(get_db_session),
@@ -571,7 +571,7 @@ async def get_user_overview_timeseries(
 )
 async def get_user_overview_providers(
     time_range: Literal["today", "7d", "30d", "all"] = Query("7d"),
-    transport: Literal["http", "sdk", "all"] = Query("all"),
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query("all"),
     is_stream: Literal["true", "false", "all"] = Query("all"),
     limit: int = Query(4, ge=1, le=50),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
@@ -700,7 +700,7 @@ async def get_overview_active_providers(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -862,7 +862,7 @@ async def get_overview_timeseries(
         "minute",
         description="时间粒度，目前仅支持 minute（按分钟聚合）",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -1033,7 +1033,7 @@ async def get_user_overview_summary(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query("all"),
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query("all"),
     is_stream: Literal["true", "false", "all"] = Query("all"),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
     db: Session = Depends(get_db_session),
@@ -1161,7 +1161,7 @@ def get_provider_summary(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -1274,7 +1274,7 @@ def get_user_summary(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),
@@ -1365,7 +1365,7 @@ def get_api_key_summary(
         "7d",
         description="时间范围：today=今天, 7d=过去 7 天, 30d=过去 30 天, all=全部",
     ),
-    transport: Literal["http", "sdk", "all"] = Query(
+    transport: Literal["http", "sdk", "claude_cli", "all"] = Query(
         "all",
         description="传输模式过滤：http/sdk/all",
     ),

@@ -167,9 +167,12 @@ export function ProvidersTableEnhanced({
       </TableCell>
       <TableCell className="px-4 py-3 text-sm">
         <Badge
-          variant={provider.transport === "http" ? "outline" : "secondary"}
+          variant={
+            provider.transport === "http" ? "outline" :
+            provider.transport === "sdk" ? "secondary" : "default"
+          }
         >
-          {provider.transport.toUpperCase()}
+          {provider.transport === "claude_cli" ? "Claude CLI" : provider.transport.toUpperCase()}
         </Badge>
       </TableCell>
       <TableCell className="px-4 py-3 text-sm">

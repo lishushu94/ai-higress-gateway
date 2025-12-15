@@ -214,19 +214,41 @@ def _select_provider_endpoint(
 
 
 async def _build_provider_headers(
-    provider_cfg: ProviderConfig, redis
+    provider_cfg: ProviderConfig, redis, api_style: str = "openai"
 ) -> tuple[dict[str, str], SelectedProviderKey]:
     """
     Build headers for calling a concrete provider upstream.
 
     This reuses the browser-mimic settings (User-Agent / Origin / Referer)
     but replaces the Authorization header with a selected provider-specific API key.
+    
+    Args:
+        provider_cfg: Provider configuration
+        redis: Redis connection
+        api_style: API style ("openai", "claude", etc.) to determine auth header format
+    
+    Returns:
+        Tuple of (headers dict, key selection)
     """
     key_selection = await acquire_provider_key(provider_cfg, redis)
-    headers: dict[str, str] = {
-        "Authorization": f"Bearer {key_selection.key}",
-        "Accept": "application/json",
-    }
+    
+    # Choose authentication header format based on API style
+    headers: dict[str, str] = {"Accept": "application/json"}
+    
+    if api_style == "claude":
+        # Claude API uses x-api-key header
+        headers["x-api-key"] = key_selection.key
+        logger.debug(
+            "build_provider_headers: using Claude auth format (x-api-key) for provider=%s",
+            provider_cfg.provider_id,
+        )
+    else:
+        # OpenAI and most other APIs use Authorization: Bearer
+        headers["Authorization"] = f"Bearer {key_selection.key}"
+        logger.debug(
+            "build_provider_headers: using OpenAI auth format (Authorization: Bearer) for provider=%s",
+            provider_cfg.provider_id,
+        )
 
     # Optional browser-mimic behaviour.
     if settings.mask_as_browser:

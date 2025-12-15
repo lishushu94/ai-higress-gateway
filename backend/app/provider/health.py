@@ -72,10 +72,24 @@ async def check_provider_health(
     path = provider.models_path or "/v1/models"
     url = f"{base}/{path.lstrip('/')}"
 
-    headers = {
-        "Authorization": f"Bearer {selection.key}",
-        "Accept": "application/json",
-    }
+    # 根据 Provider 的 supported_api_styles 推断认证头格式
+    # 如果支持 Claude 风格，优先使用 x-api-key；否则使用 Authorization: Bearer
+    headers: dict[str, str] = {"Accept": "application/json"}
+    
+    supported_styles = provider.supported_api_styles or []
+    if "claude" in supported_styles:
+        headers["x-api-key"] = selection.key
+        logger.debug(
+            "health_check: using Claude auth format (x-api-key) for provider=%s",
+            provider.id,
+        )
+    else:
+        headers["Authorization"] = f"Bearer {selection.key}"
+        logger.debug(
+            "health_check: using OpenAI auth format (Authorization: Bearer) for provider=%s",
+            provider.id,
+        )
+    
     if provider.custom_headers:
         headers.update(provider.custom_headers)
 

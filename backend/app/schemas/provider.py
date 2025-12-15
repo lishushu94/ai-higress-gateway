@@ -10,6 +10,15 @@ from app.provider.sdk_selector import list_registered_sdk_vendors
 SdkVendorValue = str
 
 
+class TransportType(str, Enum):
+    """
+    Provider transport type for upstream communication.
+    """
+    HTTP = "http"
+    SDK = "sdk"
+    CLAUDE_CLI = "claude_cli"
+
+
 class ProviderStatus(str, Enum):
     """
     Runtime health state for a provider.
@@ -120,9 +129,9 @@ class ProviderConfig(BaseModel):
             "model metadata shape (at minimum include an 'id')."
         ),
     )
-    transport: Literal["http", "sdk"] = Field(
-        default="http",
-        description="Transport type: default HTTP proxying or provider-native SDK",
+    transport: TransportType = Field(
+        default=TransportType.HTTP,
+        description="传输类型：http（标准HTTP代理）、sdk（官方SDK）、claude_cli（Claude CLI伪装）",
     )
     provider_type: Literal["native", "aggregator"] = Field(
         default="native",
@@ -159,14 +168,14 @@ class ProviderConfig(BaseModel):
     @model_validator(mode="after")
     def validate_sdk_vendor(self) -> "ProviderConfig":
         supported_vendors = list_registered_sdk_vendors()
-        if self.transport == "sdk":
+        if self.transport == TransportType.SDK:
             if self.sdk_vendor is None:
                 raise ValueError("当 transport=sdk 时，必须指定 sdk_vendor")
             if supported_vendors and self.sdk_vendor not in supported_vendors:
                 raise ValueError(
                     f"sdk_vendor 不在已注册列表中: {', '.join(supported_vendors)}"
                 )
-        if self.transport == "http":
+        if self.transport in (TransportType.HTTP, TransportType.CLAUDE_CLI):
             self.sdk_vendor = None
         return self
 
@@ -274,7 +283,7 @@ class ProviderResponse(BaseModel):
     provider_id: str = Field(..., description="提供商的唯一标识符")
     name: str = Field(..., description="提供商名称")
     base_url: str = Field(..., description="API基础URL")
-    transport: str = Field(default="http", description="传输类型：http或sdk")
+    transport: str = Field(default="http", description="传输类型：http、sdk或claude_cli")
     provider_type: str = Field(default="native", description="提供商类型：native或aggregator")
     sdk_vendor: str | None = Field(default=None, description="SDK供应商标识")
     weight: float = Field(default=1.0, description="路由权重")
@@ -313,4 +322,5 @@ __all__ = [
     "ProviderAPIKeyUpdateRequest",
     "ProviderAPIKeyResponse",
     "ProviderResponse",
+    "TransportType",
 ]

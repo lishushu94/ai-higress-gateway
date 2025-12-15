@@ -20,7 +20,13 @@ class Provider(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     provider_id: Mapped[str] = Column(String(50), unique=True, nullable=False, index=True)
     name: Mapped[str] = Column(String(100), nullable=False)
     base_url: Mapped[str] = Column(String(255), nullable=False)
-    transport: Mapped[str] = Column(String(16), nullable=False, server_default=text("'http'"))
+    transport: Mapped[str] = Column(
+        String(16),
+        nullable=False,
+        server_default=text("'http'"),
+        default="http",
+        doc="传输类型：http（标准HTTP）、sdk（官方SDK）、claude_cli（Claude CLI伪装）",
+    )
     provider_type: Mapped[str] = Column(
         String(16), nullable=False, server_default=text("'native'"), default="native"
     )

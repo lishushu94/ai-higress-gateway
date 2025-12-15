@@ -38,7 +38,20 @@ def _normalise_latency(ms: float) -> float:
     return min(1.0, ms / cap)
 
 
-def _status_penalty(metrics: RoutingMetrics | None) -> float:
+def _status_penalty(metrics: RoutingMetrics | None, enable_check: bool = True) -> float:
+    """
+    计算基于 Provider 健康状态的惩罚分数。
+    
+    Args:
+        metrics: Provider 的路由指标
+        enable_check: 是否启用健康检查（由环境变量控制）
+    
+    Returns:
+        惩罚分数：down=1.0, degraded=0.5, healthy=0.0
+    """
+    if not enable_check:
+        return 0.0  # 健康检查关闭时不施加任何惩罚
+    
     if metrics is None:
         return 0.0
     if metrics.status.value == "down":
@@ -54,10 +67,21 @@ def score_upstreams(
     metrics_by_provider: dict[str, RoutingMetrics],
     strategy: SchedulingStrategy,
     dynamic_weights: dict[str, float] | None = None,
+    enable_health_check: bool = True,
 ) -> list[CandidateScore]:
     """
     Compute scores for upstream candidates.
+    
+    Args:
+        logical_model: 逻辑模型
+        upstreams: 物理模型候选列表
+        metrics_by_provider: Provider 指标字典
+        strategy: 调度策略
+        dynamic_weights: 动态权重（可选）
+        enable_health_check: 是否启用健康检查和最低分数过滤
     """
+    from app.logging_config import logger
+    
     results: list[CandidateScore] = []
     for up in upstreams:
         metrics = metrics_by_provider.get(up.provider_id)
@@ -79,7 +103,7 @@ def score_upstreams(
         # Cost and quota components are left as zero for now; they can be
         # plugged in later when we track them explicitly.
         cost_score = 0.0
-        quota_penalty = _status_penalty(metrics)
+        quota_penalty = _status_penalty(metrics, enable_check=enable_health_check)
 
         score = (
             base
@@ -89,13 +113,26 @@ def score_upstreams(
             - strategy.delta * quota_penalty
         )
 
-        if score < strategy.min_score:
+        logger.info(
+            f"🔍 Scoring upstream: provider={up.provider_id} model={up.model_id} "
+            f"base={base:.2f} norm_lat={norm_lat:.2f} err={err:.2f} "
+            f"quota_penalty={quota_penalty:.2f} score={score:.2f} min_score={strategy.min_score:.2f} "
+            f"health_check={'enabled' if enable_health_check else 'disabled'}"
+        )
+
+        # 根据配置决定是否应用 min_score 过滤
+        if enable_health_check and score < strategy.min_score:
+            logger.warning(
+                f"❌ Filtered out {up.provider_id}/{up.model_id}: "
+                f"score {score:.2f} < min_score {strategy.min_score:.2f}"
+            )
             continue
 
         results.append(CandidateScore(upstream=up, metrics=metrics, score=score))
 
     # Highest score first.
     results.sort(key=lambda c: c.score, reverse=True)
+    logger.info(f"✅ Total scored candidates: {len(results)}")
     return results
 
 
@@ -135,13 +172,23 @@ def choose_upstream(
     strategy: SchedulingStrategy,
     session: Session | None = None,
     dynamic_weights: dict[str, float] | None = None,
+    enable_health_check: bool = True,
 ) -> tuple[CandidateScore, list[CandidateScore]]:
     """
     Choose a single upstream using scoring and optional session stickiness.
     Returns (selected, all_scored_candidates).
+    
+    Args:
+        logical_model: 逻辑模型
+        upstreams: 物理模型候选列表
+        metrics_by_provider: Provider 指标字典
+        strategy: 调度策略
+        session: 会话信息（用于粘性路由）
+        dynamic_weights: 动态权重（可选）
+        enable_health_check: 是否启用健康检查和最低分数过滤
     """
     scored = score_upstreams(
-        logical_model, upstreams, metrics_by_provider, strategy, dynamic_weights
+        logical_model, upstreams, metrics_by_provider, strategy, dynamic_weights, enable_health_check
     )
     if not scored:
         raise RuntimeError("No eligible upstream candidates")

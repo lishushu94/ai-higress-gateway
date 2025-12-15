@@ -1831,3 +1831,92 @@ def test_claude_sdk_models_list(monkeypatch):
         data = resp.json()
         assert any(item.get("id") == "claude-sdk-model" for item in data.get("data", []))
         assert calls.get("list") == 1
+
+
+@pytest.mark.asyncio
+async def test_build_provider_headers_openai_style():
+    """
+    测试 _build_provider_headers 对 OpenAI 风格使用 Authorization: Bearer 头
+    """
+    from app.provider.key_pool import ProviderKeyPool
+    from tests.utils import InMemoryRedis
+    
+    fake_redis = InMemoryRedis()
+    provider_cfg = ProviderConfig(
+        provider_id="test-openai",
+        base_url="https://api.openai.com",
+        api_keys=["sk-test-key-123"],
+    )
+    
+    # 初始化 key pool
+    pool = ProviderKeyPool(provider_cfg.provider_id, provider_cfg.api_keys)
+    await pool.initialize(fake_redis)
+    
+    # 测试 OpenAI 风格（默认）
+    headers, key_selection = await _build_provider_headers(
+        provider_cfg, fake_redis, api_style="openai"
+    )
+    
+    assert "Authorization" in headers
+    assert headers["Authorization"] == "Bearer sk-test-key-123"
+    assert "x-api-key" not in headers
+    assert headers["Accept"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_build_provider_headers_claude_style():
+    """
+    测试 _build_provider_headers 对 Claude 风格使用 x-api-key 头
+    """
+    from app.provider.key_pool import ProviderKeyPool
+    from tests.utils import InMemoryRedis
+    
+    fake_redis = InMemoryRedis()
+    provider_cfg = ProviderConfig(
+        provider_id="test-claude",
+        base_url="https://api.anthropic.com",
+        api_keys=["sk-ant-test-key-456"],
+    )
+    
+    # 初始化 key pool
+    pool = ProviderKeyPool(provider_cfg.provider_id, provider_cfg.api_keys)
+    await pool.initialize(fake_redis)
+    
+    # 测试 Claude 风格
+    headers, key_selection = await _build_provider_headers(
+        provider_cfg, fake_redis, api_style="claude"
+    )
+    
+    assert "x-api-key" in headers
+    assert headers["x-api-key"] == "sk-ant-test-key-456"
+    assert "Authorization" not in headers
+    assert headers["Accept"] == "application/json"
+
+
+@pytest.mark.asyncio
+async def test_build_provider_headers_default_to_openai():
+    """
+    测试 _build_provider_headers 默认使用 OpenAI 风格
+    """
+    from app.provider.key_pool import ProviderKeyPool
+    from tests.utils import InMemoryRedis
+    
+    fake_redis = InMemoryRedis()
+    provider_cfg = ProviderConfig(
+        provider_id="test-default",
+        base_url="https://api.example.com",
+        api_keys=["sk-default-key-789"],
+    )
+    
+    # 初始化 key pool
+    pool = ProviderKeyPool(provider_cfg.provider_id, provider_cfg.api_keys)
+    await pool.initialize(fake_redis)
+    
+    # 不传 api_style，应该默认为 openai
+    headers, key_selection = await _build_provider_headers(
+        provider_cfg, fake_redis
+    )
+    
+    assert "Authorization" in headers
+    assert headers["Authorization"] == "Bearer sk-default-key-789"
+    assert "x-api-key" not in headers

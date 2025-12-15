@@ -33,9 +33,9 @@ class UserProviderCreateRequest(BaseModel):
         default="native",
         description="提供商类型，native=直连厂商，aggregator=聚合平台",
     )
-    transport: Literal["http", "sdk"] = Field(
+    transport: Literal["http", "sdk", "claude_cli"] = Field(
         default="http",
-        description="调用方式：HTTP 代理或 SDK",
+        description="调用方式：HTTP 代理、SDK 或 Claude CLI 伪装",
     )
     sdk_vendor: SdkVendorValue | None = Field(
         default=None,
@@ -113,8 +113,8 @@ class UserProviderCreateRequest(BaseModel):
             if self.sdk_vendor is None:
                 raise ValueError("当 transport=sdk 时，必须指定 sdk_vendor")
             self.sdk_vendor = _validate_sdk_vendor_value(self.sdk_vendor)
-        if self.transport == "http":
-            # HTTP 模式下忽略 sdk_vendor，避免产生误导
+        if self.transport in ("http", "claude_cli"):
+            # HTTP 和 Claude CLI 模式下忽略 sdk_vendor，避免产生误导
             self.sdk_vendor = None
         return self
 
@@ -144,7 +144,7 @@ class UserProviderUpdateRequest(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     base_url: HttpUrl | None = None
     provider_type: Literal["native", "aggregator"] | None = None
-    transport: Literal["http", "sdk"] | None = None
+    transport: Literal["http", "sdk", "claude_cli"] | None = None
     sdk_vendor: SdkVendorValue | None = None
     weight: float | None = Field(default=None, gt=0)
     region: str | None = None
@@ -213,8 +213,8 @@ class UserProviderUpdateRequest(BaseModel):
     def validate_sdk_vendor(self) -> "UserProviderUpdateRequest":
         if self.sdk_vendor is not None:
             self.sdk_vendor = _validate_sdk_vendor_value(self.sdk_vendor)
-        # 如果显式切换到 HTTP，则清空 sdk_vendor
-        if self.transport == "http":
+        # 如果显式切换到 HTTP 或 Claude CLI，则清空 sdk_vendor
+        if self.transport in ("http", "claude_cli"):
             self.sdk_vendor = None
         return self
 
@@ -481,7 +481,7 @@ class ProviderPresetBase(BaseModel):
     display_name: str = Field(..., max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     provider_type: Literal["native", "aggregator"] = Field(default="native")
-    transport: Literal["http", "sdk"] = Field(default="http")
+    transport: Literal["http", "sdk", "claude_cli"] = Field(default="http")
     sdk_vendor: SdkVendorValue | None = Field(
         default=None,
         description="当 transport=sdk 时必须指定的 SDK 厂商标识，例如 openai/google/claude",
@@ -533,7 +533,7 @@ class ProviderPresetBase(BaseModel):
             if self.sdk_vendor is None:
                 raise ValueError("当 transport=sdk 时，必须指定 sdk_vendor")
             self.sdk_vendor = _validate_sdk_vendor_value(self.sdk_vendor)
-        if self.transport == "http":
+        if self.transport in ("http", "claude_cli"):
             self.sdk_vendor = None
         return self
 
@@ -548,7 +548,7 @@ class ProviderPresetUpdateRequest(BaseModel):
     display_name: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=2000)
     provider_type: Literal["native", "aggregator"] | None = None
-    transport: Literal["http", "sdk"] | None = None
+    transport: Literal["http", "sdk", "claude_cli"] | None = None
     sdk_vendor: SdkVendorValue | None = None
     base_url: HttpUrl | None = None
     models_path: str | None = None
@@ -605,7 +605,7 @@ class ProviderPresetUpdateRequest(BaseModel):
     def validate_sdk_vendor(self) -> "ProviderPresetUpdateRequest":
         if self.sdk_vendor is not None:
             self.sdk_vendor = _validate_sdk_vendor_value(self.sdk_vendor)
-        if self.transport == "http":
+        if self.transport in ("http", "claude_cli"):
             self.sdk_vendor = None
         return self
 

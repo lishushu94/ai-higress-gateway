@@ -4,7 +4,7 @@ import type { SubmissionStatus } from './provider-submission';
 // 提供商类型定义
 export type ProviderVisibility = 'public' | 'private' | 'restricted';
 export type ProviderType = 'native' | 'aggregator';
-export type TransportType = 'http' | 'sdk';
+export type TransportType = 'http' | 'sdk' | 'claude_cli';
 export type SdkVendor = string;
 export type ProviderStatus = 'healthy' | 'degraded' | 'down';
 export type ProviderAuditStatus = 'pending' | 'testing' | 'approved' | 'approved_limited' | 'rejected';
