@@ -1,6 +1,6 @@
 "use client";
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Layers } from "lucide-react";
 import type { ModelsResponse } from "@/http/provider";
 import { ModelCard } from "./model-card";
