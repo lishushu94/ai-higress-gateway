@@ -58,6 +58,7 @@ async def stream_upstream(
     json_body: dict[str, Any],
     redis,
     session_id: str | None,
+    sse_style: str | None = None,
 ) -> AsyncIterator[bytes]:
     """
     Stream data from upstream and forward chunks immediately to the caller.
@@ -79,6 +80,7 @@ async def stream_upstream(
         session_id,
     )
     buffer = bytearray()
+    output_style = (sse_style or "openai").strip().lower()
     try:
         async with client.stream(method, url, headers=headers, json=json_body) as resp:
             # HTTP status errors before streaming starts: let the caller
@@ -145,18 +147,44 @@ async def stream_upstream(
 
                 # We have already yielded some data; emit a final SSE
                 # error frame instead of bubbling the exception.
-                payload = {
-                    "error": {
-                        "type": "upstream_error",
-                        "status": None,
-                        "message": str(exc),
+                if output_style == "claude":
+                    payload = {
+                        "type": "error",
+                        "error": {
+                            "type": "upstream_error",
+                            "message": str(exc),
+                        },
                     }
-                }
-                error_chunk = (
-                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
-                ).encode()
+                    error_chunk = (
+                        f"event: error\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    ).encode("utf-8")
+                else:
+                    payload = {
+                        "id": None,
+                        "object": "chat.completion.chunk",
+                        "model": None,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "delta": {"content": ""},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "error": {
+                            "type": "upstream_error",
+                            "status": None,
+                            "message": str(exc),
+                        },
+                    }
+                    error_chunk = (
+                        f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                    ).encode("utf-8")
                 buffer.extend(error_chunk)
                 yield error_chunk
+                if output_style != "claude":
+                    done_chunk = b"data: [DONE]\n\n"
+                    buffer.extend(done_chunk)
+                    yield done_chunk
     except httpx.HTTPError as exc:
         # Transport error before any response/chunk is available (e.g. proxy/connect error).
         logger.warning("Upstream streaming open error for %s: %s", url, exc)

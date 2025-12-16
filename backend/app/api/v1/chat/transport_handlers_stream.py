@@ -1,10 +1,11 @@
 """
-流式传输层处理辅助函数
+流式传输层处理（v2）
 
-提供 HTTP/SDK/Claude CLI 三种传输方式的流式处理
+输出约定：返回的 bytes 直接作为网关响应 body（SSE/事件流），保持与请求 api_style 一致。
 """
 
-import json
+from __future__ import annotations
+
 from collections.abc import AsyncIterator
 from typing import Any
 
@@ -12,13 +13,17 @@ import httpx
 
 try:
     from redis.asyncio import Redis
-except ModuleNotFoundError:
+except ModuleNotFoundError:  # pragma: no cover
     Redis = object  # type: ignore
 
 from sqlalchemy.orm import Session as DbSession
 
 from app.auth import AuthenticatedAPIKey
-from app.logging_config import logger
+from app.api.v1.chat.header_builder import build_upstream_headers
+from app.api.v1.chat.protocol_adapter import adapt_request_payload
+from app.api.v1.chat.protocol_stream_adapter import adapt_stream
+from app.api.v1.chat.upstream_error_classifier import classify_capability_mismatch
+from app.api.v1.chat.provider_endpoint_resolver import resolve_http_upstream_target
 from app.provider.config import get_provider_config
 from app.provider.key_pool import (
     NoAvailableProviderKey,
@@ -27,16 +32,19 @@ from app.provider.key_pool import (
     record_key_success,
 )
 from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
-from app.services.claude_cli_transformer import (
-    build_claude_cli_headers,
-    transform_to_claude_cli_format,
+from app.services.chat_routing_service import (
+    _GEMINI_MODEL_REGEX,
+    _is_retryable_upstream_status,
 )
-from app.services.metrics_service import (
-    stream_sdk_with_metrics,
-    stream_upstream_with_metrics,
-)
+from app.services.claude_cli_transformer import build_claude_cli_headers, transform_to_claude_cli_format
+from app.services.metrics_service import stream_sdk_with_metrics, stream_upstream_with_metrics
 from app.upstream import UpstreamStreamError
-from app.api.v1.chat.transport_handlers import _build_headers
+from app.api.v1.chat.sdk_stream_encoder import (
+    GeminiDictToOpenAISSEAdapter,
+    encode_claude_sdk_event_dict,
+    encode_openai_done,
+    encode_openai_sdk_chunk_dict,
+)
 
 
 async def execute_http_stream(
@@ -49,54 +57,62 @@ async def execute_http_stream(
     url: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
+    upstream_api_style: str = "openai",
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
+    messages_path_override: str | None = None,
+    fallback_path_override: str | None = None,
 ) -> AsyncIterator[bytes]:
-    """
-    执行 HTTP 流式传输
-    
-    Yields:
-        流式响应的 chunk
-    
-    Raises:
-        UpstreamStreamError: 上游错误
-        Exception: 其他错误
-    """
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         raise Exception(f"Provider '{provider_id}' is not configured")
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
         raise Exception(str(exc))
-    
-    # 构建请求头
-    headers = _build_headers(key_selection.key, provider_cfg)
-    
-    # 准备 payload（使用 provider 的 model_id）
-    upstream_payload = dict(payload)
-    upstream_payload["model"] = model_id
-    upstream_payload["stream"] = True
-    
-    logger.info(
-        "HTTP stream: starting request to provider=%s model=%s url=%s",
-        provider_id,
-        model_id,
-        url,
+
+    async def _noop_bind_session(_provider_id: str, _model_id: str) -> None:
+        return
+
+    target = resolve_http_upstream_target(
+        provider_cfg,
+        requested_api_style=api_style,
+        default_url=url,
+        default_upstream_style=upstream_api_style,
+        messages_path_override=messages_path_override,
+        fallback_path_override=fallback_path_override,
     )
-    
-    # 发送流式请求
+    call_style = target.api_style
+    call_url = target.url
+
+    headers = build_upstream_headers(key_selection.key, provider_cfg, call_style=call_style, is_stream=True)
+
     try:
+        upstream_payload = adapt_request_payload(
+            payload,
+            from_style=api_style,
+            to_style=call_style,
+            upstream_model_id=model_id,
+        )
+    except Exception as exc:
+        record_key_failure(key_selection, retryable=False, status_code=400, redis=redis)
+        raise Exception(f"Failed to adapt request payload: {exc}")
+
+    upstream_payload["stream"] = True
+
+    async def _upstream_iter() -> AsyncIterator[bytes]:
+        sse_style = call_style if call_style in ("openai", "claude") else "openai"
         async for chunk in stream_upstream_with_metrics(
             client=client,
             method="POST",
-            url=url,
+            url=call_url,
             headers=headers,
             json_body=upstream_payload,
             redis=redis,
             session_id=session_id,
+            sse_style=sse_style,
             db=db,
             provider_id=provider_id,
             logical_model=logical_model_id,
@@ -104,48 +120,35 @@ async def execute_http_stream(
             api_key_id=api_key.id,
         ):
             yield chunk
-        
-        # 流式传输成功
+
+    try:
+        iterator: AsyncIterator[bytes] = _upstream_iter()
+        if call_style != api_style:
+            iterator = adapt_stream(
+                iterator,
+                from_style=call_style,
+                to_style=api_style,
+                request_model=str(payload.get("model") or model_id),
+            )
+        async for chunk in iterator:
+            yield chunk
         record_key_success(key_selection, redis=redis)
-        logger.info(
-            "HTTP stream: completed successfully provider=%s model=%s",
-            provider_id,
-            model_id,
-        )
-        
     except UpstreamStreamError as err:
-        # 记录 Key 失败
-        retryable = _is_retryable_status(err.status_code)
+        mismatch = classify_capability_mismatch(err.status_code, getattr(err, "text", None))
+        retryable = True if mismatch else _is_retryable_upstream_status(provider_id, err.status_code)
+        if mismatch:
+            setattr(err, "retryable", True)
+            setattr(err, "penalize", False)
+            raise
         record_key_failure(
             key_selection,
             retryable=retryable,
             status_code=err.status_code,
             redis=redis,
         )
-        logger.error(
-            "HTTP stream: error provider=%s model=%s status=%s retryable=%s",
-            provider_id,
-            model_id,
-            err.status_code,
-            retryable,
-        )
         raise
-    
-    except Exception as exc:
-        # 其他错误
-        record_key_failure(
-            key_selection,
-            retryable=True,
-            status_code=None,
-            redis=redis,
-        )
-        logger.error(
-            "HTTP stream: unexpected error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
+    except Exception:
+        record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
         raise
 
 
@@ -157,46 +160,69 @@ async def execute_sdk_stream(
     model_id: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
 ) -> AsyncIterator[bytes]:
-    """
-    执行 SDK 流式传输
-    
-    Yields:
-        流式响应的 chunk（JSON 格式）
-    
-    Raises:
-        Exception: 错误
-    """
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         raise Exception(f"Provider '{provider_id}' is not configured")
-    
+
     driver = get_sdk_driver(provider_cfg)
     if driver is None:
         raise Exception(f"Provider '{provider_id}' 不支持 transport=sdk")
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
         raise Exception(str(exc))
-    
-    logger.info(
-        "SDK stream: starting request to provider=%s model=%s driver=%s",
-        provider_id,
-        model_id,
-        driver.name,
+
+    driver_name = str(getattr(driver, "name", "") or "").lower()
+
+    upstream_style: str = "openai"
+    if driver_name in ("anthropic", "claude"):
+        upstream_style = "claude"
+
+    upstream_payload = adapt_request_payload(
+        payload,
+        from_style=api_style,
+        to_style=upstream_style,
+        upstream_model_id=model_id,
     )
-    
-    # 调用 SDK 流式接口
-    try:
+    upstream_payload["stream"] = True
+
+    async def _encoded_upstream_iter() -> AsyncIterator[bytes]:
+        if upstream_style == "claude":
+            async for event_dict in stream_sdk_with_metrics(
+                driver=driver,
+                api_key=key_selection.key,
+                model_id=model_id,
+                payload=upstream_payload,
+                base_url=normalize_base_url(provider_cfg.base_url),
+                redis=redis,
+                session_id=session_id,
+                db=db,
+                provider_id=provider_id,
+                logical_model=logical_model_id,
+                user_id=api_key.user_id,
+                api_key_id=api_key.id,
+            ):
+                if isinstance(event_dict, dict):
+                    yield encode_claude_sdk_event_dict(event_dict)
+            return
+
+        # upstream_style == openai
+        gemini_adapter: GeminiDictToOpenAISSEAdapter | None = None
+        if driver_name == "google" and _GEMINI_MODEL_REGEX.search(
+            str(payload.get("model") or model_id or "")
+        ):
+            gemini_adapter = GeminiDictToOpenAISSEAdapter(payload.get("model") or model_id)
+
         async for chunk_dict in stream_sdk_with_metrics(
             driver=driver,
             api_key=key_selection.key,
             model_id=model_id,
-            payload=payload,
+            payload=upstream_payload,
             base_url=normalize_base_url(provider_cfg.base_url),
             redis=redis,
             session_id=session_id,
@@ -206,32 +232,34 @@ async def execute_sdk_stream(
             user_id=api_key.user_id,
             api_key_id=api_key.id,
         ):
-            # 将 dict 转换为 JSON bytes
-            yield json.dumps(chunk_dict).encode("utf-8") + b"\n"
-        
-        # 流式传输成功
+            if not isinstance(chunk_dict, dict):
+                continue
+            if gemini_adapter is not None:
+                for out in gemini_adapter.process_chunk(chunk_dict):
+                    yield out
+            else:
+                yield encode_openai_sdk_chunk_dict(chunk_dict)
+
+        if gemini_adapter is not None:
+            for tail in gemini_adapter.finalize():
+                yield tail
+        else:
+            yield encode_openai_done()
+
+    try:
+        iterator: AsyncIterator[bytes] = _encoded_upstream_iter()
+        if upstream_style != api_style:
+            iterator = adapt_stream(
+                iterator,
+                from_style=upstream_style,
+                to_style=api_style,
+                request_model=str(payload.get("model") or model_id),
+            )
+        async for chunk in iterator:
+            yield chunk
         record_key_success(key_selection, redis=redis)
-        logger.info(
-            "SDK stream: completed successfully provider=%s model=%s",
-            provider_id,
-            model_id,
-        )
-        
-    except Exception as exc:
-        # 记录 Key 失败
-        record_key_failure(
-            key_selection,
-            retryable=True,
-            status_code=None,
-            redis=redis,
-        )
-        logger.error(
-            "SDK stream: error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
+    except Exception:
+        record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
         raise
 
 
@@ -244,62 +272,39 @@ async def execute_claude_cli_stream(
     model_id: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
 ) -> AsyncIterator[bytes]:
-    """
-    执行 Claude CLI 流式传输
-    
-    Yields:
-        流式响应的 chunk
-    
-    Raises:
-        UpstreamStreamError: 上游错误
-        Exception: 其他错误
-    """
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         raise Exception(f"Provider '{provider_id}' is not configured")
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
         raise Exception(str(exc))
-    
-    # 构建 Claude CLI 请求
+
     try:
         claude_cli_headers = build_claude_cli_headers(key_selection.key)
-        claude_payload = transform_to_claude_cli_format(
+        openai_payload = adapt_request_payload(
             payload,
+            from_style=api_style,
+            to_style="openai",
+            upstream_model_id=model_id,
+        )
+        claude_payload = transform_to_claude_cli_format(
+            openai_payload,
             api_key=key_selection.key,
             session_id=session_id,
         )
     except Exception as exc:
-        logger.error(
-            "Claude CLI stream: failed to build request provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
         raise Exception(f"Failed to build Claude CLI request: {exc}")
-    
-    # 确保流式模式
+
     claude_payload["stream"] = True
-    
-    # 构建 URL
     claude_url = f"{str(provider_cfg.base_url).rstrip('/')}/v1/messages?beta=true"
-    
-    logger.info(
-        "Claude CLI stream: starting request to provider=%s model=%s url=%s",
-        provider_id,
-        model_id,
-        claude_url,
-    )
-    
-    # 发送流式请求
-    try:
+
+    async def _claude_iter() -> AsyncIterator[bytes]:
         async for chunk in stream_upstream_with_metrics(
             client=client,
             method="POST",
@@ -308,6 +313,7 @@ async def execute_claude_cli_stream(
             json_body=claude_payload,
             redis=redis,
             session_id=session_id,
+            sse_style="claude",
             db=db,
             provider_id=provider_id,
             logical_model=logical_model_id,
@@ -315,68 +321,40 @@ async def execute_claude_cli_stream(
             api_key_id=api_key.id,
         ):
             yield chunk
-        
-        # 流式传输成功
+
+    try:
+        iterator: AsyncIterator[bytes] = _claude_iter()
+        if api_style != "claude":
+            iterator = adapt_stream(
+                iterator,
+                from_style="claude",
+                to_style=api_style,
+                request_model=str(payload.get("model") or model_id),
+            )
+        async for chunk in iterator:
+            yield chunk
         record_key_success(key_selection, redis=redis)
-        logger.info(
-            "Claude CLI stream: completed successfully provider=%s model=%s",
-            provider_id,
-            model_id,
-        )
-        
     except UpstreamStreamError as err:
-        # 记录 Key 失败
-        retryable = _is_retryable_status(err.status_code)
+        mismatch = classify_capability_mismatch(err.status_code, getattr(err, "text", None))
+        retryable = True if mismatch else _is_retryable_upstream_status(provider_id, err.status_code)
+        if mismatch:
+            setattr(err, "retryable", True)
+            setattr(err, "penalize", False)
+            raise
         record_key_failure(
             key_selection,
             retryable=retryable,
             status_code=err.status_code,
             redis=redis,
         )
-        logger.error(
-            "Claude CLI stream: error provider=%s model=%s status=%s retryable=%s",
-            provider_id,
-            model_id,
-            err.status_code,
-            retryable,
-        )
         raise
-    
-    except Exception as exc:
-        # 其他错误
-        record_key_failure(
-            key_selection,
-            retryable=True,
-            status_code=None,
-            redis=redis,
-        )
-        logger.error(
-            "Claude CLI stream: unexpected error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
+    except Exception:
+        record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
         raise
-
-
-def _is_retryable_status(status_code: int) -> bool:
-    """判断状态码是否可重试"""
-    # 5xx 服务器错误通常可重试
-    if 500 <= status_code < 600:
-        return True
-    # 429 限流可重试
-    if status_code == 429:
-        return True
-    # 408 请求超时可重试
-    if status_code == 408:
-        return True
-    # 其他 4xx 客户端错误不可重试
-    return False
 
 
 __all__ = [
+    "execute_claude_cli_stream",
     "execute_http_stream",
     "execute_sdk_stream",
-    "execute_claude_cli_stream",
 ]

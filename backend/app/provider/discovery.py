@@ -126,6 +126,22 @@ def _normalise_single_model(
             except (TypeError, ValueError):
                 continue
 
+    # 避免 metadata 字段出现“metadata 套 metadata”的递归式膨胀：
+    # - 若 raw_model 本身包含 metadata(dict)，优先使用该 metadata（并展开到最内层）
+    # - 否则保留 raw_model 作为 metadata（用于保留上游原始响应）
+    metadata: Any = raw_model
+    inner_meta = raw_model.get("metadata")
+    if isinstance(inner_meta, dict):
+        metadata = inner_meta
+        depth = 0
+        while (
+            isinstance(metadata, dict)
+            and isinstance(metadata.get("metadata"), dict)
+            and depth < 10
+        ):
+            metadata = metadata["metadata"]
+            depth += 1
+
     return Model(
         model_id=model_id,
         provider_id=provider.id,
@@ -134,7 +150,7 @@ def _normalise_single_model(
         context_length=context_len_int,
         capabilities=capabilities,
         pricing=pricing,
-        metadata=raw_model,
+        metadata=metadata,
     )
 
 

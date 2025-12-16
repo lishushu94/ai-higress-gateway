@@ -18,11 +18,16 @@
 在候选 Provider 重试过程中：
 
 ```python
-# 检查 Provider 是否在故障冷却期
-failure_count = await _get_provider_failure_count(redis, provider_id)
-if failure_count >= settings.provider_failure_threshold:
-    # 跳过该 Provider
-    logger.warning("Skipping provider %s: in failure cooldown", provider_id)
+state = RoutingStateService(redis=redis)
+cooldown = await state.get_failure_cooldown_status(provider_id)
+if cooldown.should_skip:
+    logger.warning(
+        "Skipping provider %s: in failure cooldown (failures=%d/%d, cooldown=%ds)",
+        provider_id,
+        cooldown.count,
+        cooldown.threshold,
+        cooldown.cooldown_seconds,
+    )
     continue
 ```
 
@@ -32,14 +37,7 @@ if failure_count >= settings.provider_failure_threshold:
 
 ```python
 if result.retryable and result.status_code in (500, 502, 503, 504, 429):
-    # 增加故障计数
-    new_count = await _increment_provider_failure(redis, provider_id)
-    logger.warning(
-        "Provider %s failed, failure count: %d/%d",
-        provider_id,
-        new_count,
-        settings.provider_failure_threshold,
-    )
+    await state.increment_provider_failure(provider_id)
 ```
 
 ### 3. 故障恢复
@@ -48,9 +46,7 @@ if result.retryable and result.status_code in (500, 502, 503, 504, 429):
 
 ```python
 if result.success:
-    # 清除故障标记
-    await _clear_provider_failure(redis, provider_id)
-    logger.info("Provider %s succeeded, failure flag cleared", provider_id)
+    await state.clear_provider_failure(provider_id)
 ```
 
 ## ⚙️ 配置项

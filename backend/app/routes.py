@@ -29,7 +29,6 @@ from .api.v1.admin_notification_routes import router as admin_notification_route
 from .api.v1.admin_upstream_proxy_routes import router as admin_upstream_proxy_router
 from .api.v1.api_key_routes import router as api_key_router
 from .api.v1.chat_routes import router as chat_router
-from .api.v1.chat_routes_refactored import router as chat_v2_router
 from .api.v1.credit_routes import router as credit_router
 from .api.v1.gateway_routes import router as gateway_router
 from .api.v1.notification_routes import router as notification_router
@@ -44,6 +43,7 @@ from .api.v1.user_routes import router as user_router
 from .api.v1.cli_config import router as cli_config_router
 from .db import SessionLocal
 from .logging_config import logger
+from .log_sanitizer import sanitize_headers_for_log
 from .services.bootstrap_admin import ensure_initial_admin
 from .services.avatar_service import ensure_avatar_storage_dir
 
@@ -206,10 +206,8 @@ def create_app() -> FastAPI:
     app.include_router(routing_router)
     app.include_router(session_router)
 
-    # Chat 相关网关路由（/v1/chat/completions 等）
+    # Chat 相关网关路由（/v1/chat/completions、/v1/responses、/v1/messages）
     app.include_router(chat_router)
-    # Chat v2 相关网关路由（/v2/chat/completions），与 v1 并存
-    app.include_router(chat_v2_router)
 
     # Metrics
     app.include_router(metrics_router)
@@ -246,16 +244,11 @@ def create_app() -> FastAPI:
     async def log_requests(request: Request, call_next):
         """
         基础请求日志中间件，记录请求和响应状态。
-        会对 Authorization 头做脱敏处理。
+        会对 Authorization / x-api-key / cookie 等敏感头做脱敏处理。
         """
 
         client_host = request.client.host if request.client else "-"
-        headers_for_log: dict[str, str] = {}
-        for k, v in request.headers.items():
-            if k.lower() == "authorization":
-                headers_for_log[k] = "***REDACTED***"
-            else:
-                headers_for_log[k] = v
+        headers_for_log = sanitize_headers_for_log(request.headers)
 
         logger.info(
             "HTTP %s %s from %s, headers=%s",

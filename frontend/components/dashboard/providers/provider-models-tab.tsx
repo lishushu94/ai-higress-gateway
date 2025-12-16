@@ -1,6 +1,7 @@
 "use client";
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Layers } from "lucide-react";
 import type { ModelsResponse } from "@/http/provider";
 import { ModelCard } from "./model-card";
 
@@ -16,36 +17,62 @@ interface ProviderModelsTabProps {
   };
 }
 
-export const ProviderModelsTab = ({ 
-  models, 
-  canEdit, 
-  onEditPricing, 
-  onEditAlias, 
-  translations 
+export const ProviderModelsTab = ({
+  models,
+  canEdit,
+  onEditPricing,
+  onEditAlias,
+  translations
 }: ProviderModelsTabProps) => {
+  const modelCount = models?.models?.length || 0;
+  
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>{translations.title}</CardTitle>
-        <CardDescription>{translations.description}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {!models?.models || models.models.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">{translations.noModels}</div>
-        ) : (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {models.models.map((model) => (
-              <ModelCard
-                key={model.model_id}
-                model={model}
-                canEdit={canEdit}
-                onEditPricing={() => onEditPricing(model.model_id)}
-                onEditAlias={() => onEditAlias(model.model_id)}
-              />
-            ))}
-          </div>
-        )}
-      </CardContent>
-    </Card>
+    <div className="space-y-6">
+      {/* 标题区域 */}
+      <div className="flex items-start gap-4">
+        <div className="p-3 rounded-xl bg-primary/10 text-primary">
+          <Layers className="h-6 w-6" />
+        </div>
+        <div className="flex-1">
+          <h2 className="text-2xl font-bold tracking-tight mb-1">
+            {translations.title}
+          </h2>
+          <p className="text-muted-foreground">
+            {translations.description}
+            {modelCount > 0 && (
+              <span className="ml-2 text-primary font-medium">
+                • {modelCount} {modelCount === 1 ? 'model' : 'models'}
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+
+      {/* 模型卡片网格 */}
+      {!models?.models || models.models.length === 0 ? (
+        <Card className="border-dashed">
+          <CardContent className="flex flex-col items-center justify-center py-16">
+            <div className="p-4 rounded-full bg-muted mb-4">
+              <Layers className="h-8 w-8 text-muted-foreground" />
+            </div>
+            <p className="text-muted-foreground text-center">
+              {translations.noModels}
+            </p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+          {models.models.map((model) => (
+            <ModelCard
+              key={model.model_id}
+              model={model}
+              canEdit={canEdit}
+              onEditPricing={() => onEditPricing(model.model_id)}
+              onEditAlias={() => onEditAlias(model.model_id)}
+            />
+          ))}
+        </div>
+      )}
+    </div>
   );
 };

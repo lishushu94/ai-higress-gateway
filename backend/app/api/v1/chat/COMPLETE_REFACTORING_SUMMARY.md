@@ -77,7 +77,7 @@
 **目标**: 使用模块化组件重构路由层
 
 **完成的工作**:
-1. `chat_routes_refactored.py` - 重构后的路由文件
+1. `chat_routes.py` - 重构后的路由文件
 2. 性能优化（批量 Redis 查询）
 3. 实时故障标记机制
 
@@ -123,7 +123,7 @@ chat_routes.py (2147 行)
 
 ### 重构后（模块化架构）
 ```
-chat_routes_refactored.py (350 行)
+chat_routes.py (350 行)
 ├── chat_completions_v2() (150 行)
 │   ├── 参数解析 (40 行)
 │   ├── 权限校验 (30 行)
@@ -286,7 +286,7 @@ PROVIDER_FAILURE_COOLDOWN_SECONDS = 60  # 冷却时间
 
 ### 路由层
 1. `chat_routes.py` - 原版本（保留备份）
-2. `chat_routes_refactored.py` - 重构版本
+2. `chat_routes.py` - 重构版本
 
 ### 测试文件
 1. `test_session_manager.py` - Session 管理测试

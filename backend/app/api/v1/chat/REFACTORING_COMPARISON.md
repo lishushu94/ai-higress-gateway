@@ -12,7 +12,7 @@
   - 日志输出冗余
   - 难以测试
 
-### 重构版本 (chat_routes_refactored.py)
+### 重构版本 (chat_routes.py)
 - **总行数**: ~350 行
 - **chat_completions_v2 函数**: ~150 行
 - **代码减少**: **85%+**
@@ -45,7 +45,7 @@ chat_routes.py (2147 行)
 
 ### 重构版本架构
 ```
-chat_routes_refactored.py (350 行)
+chat_routes.py (350 行)
 ├── chat_completions_v2() - 150 行
 │   ├── 参数解析 (40 行)
 │   ├── 权限校验 (30 行)
@@ -194,7 +194,7 @@ CandidateRetry (500 行)
 
 ### Phase 1: 并行运行 (当前)
 - 保留原 `/v1/chat/completions`
-- 新增 `/v2/chat/completions`
+- 将 `/v1/chat/completions` 切换到重构版实现
 - 运行测试，确保功能一致
 
 ### Phase 2: 灰度切换

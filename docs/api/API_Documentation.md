@@ -1129,7 +1129,6 @@
 
 当 `ENABLE_CREDIT_CHECK=true` 且用户余额小于等于 0 时：
 - `POST /v1/chat/completions`
-- `POST /v2/chat/completions`（实验性版本，与 v1 并存）
 - `POST /v1/responses`
 - `POST /v1/messages`
 
@@ -1144,6 +1143,10 @@
   }
 }
 ```
+
+> 额外说明：若某个逻辑模型的上游仅配置为 `responses` 风格（即仅支持 Responses API），
+> 则通过 `POST /v1/chat/completions` 调用该模型可能返回 `400 Bad Request`，
+> 提示“该模型仅支持 Responses API，请使用 /responses 入口调用”。此时请改用 `POST /v1/responses`。
 
 ### 计费规则
 
@@ -1590,7 +1593,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
       }
     ],
     "models_path": "/v1/models",
-    "messages_path": "/v1/message",
+    "messages_path": "/v1/messages",
     "chat_completions_path": "/v1/chat/completions",
     "responses_path": "/v1/responses 或 null",
     "weight": 1.0,
@@ -1661,7 +1664,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
     }
   ],
   "models_path": "/v1/models",
-  "messages_path": "/v1/message",
+  "messages_path": "/v1/messages",
   "chat_completions_path": "/v1/chat/completions",
   "responses_path": "/v1/responses 或 null",
   "weight": 1.0,
@@ -2207,7 +2210,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "retryable_status_codes": [429, 500, 502, 503, 504],
   "custom_headers": { "Header-Name": "value" },
   "models_path": "/v1/models",
-  "messages_path": "/v1/message",
+  "messages_path": "/v1/messages",
   "chat_completions_path": "/v1/chat/completions",
   "responses_path": "/v1/responses",
   "static_models": [ /* 可选的静态模型配置 */ ],
@@ -2700,7 +2703,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
       "sdk_vendor": null,
       "base_url": "https://api.openai.com",
       "models_path": "/v1/models",
-      "messages_path": "/v1/message",
+      "messages_path": "/v1/messages",
       "chat_completions_path": "/v1/chat/completions",
       "responses_path": null,
       "supported_api_styles": ["openai"],
@@ -2799,7 +2802,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
       "transport": "http",
       "base_url": "https://api.openai.com",
       "models_path": "/v1/models",
-      "messages_path": "/v1/message",
+      "messages_path": "/v1/messages",
       "chat_completions_path": "/v1/chat/completions",
       "responses_path": null,
       "supported_api_styles": ["openai"],

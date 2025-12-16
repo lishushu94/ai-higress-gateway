@@ -1,65 +1,87 @@
 """
-传输层处理辅助函数
+非流式传输层处理（v2）
 
-提取 HTTP/SDK/Claude CLI 三种传输方式的通用逻辑，减少代码重复
+负责按 provider.transport 执行一次上游调用，并返回：
+- success + JSONResponse（保持与请求 api_style 一致的响应形态）
+- 或失败信息（status_code/error_text/retryable）供候选重试逻辑使用
 """
 
+from __future__ import annotations
+
 import json
-from typing import Any, AsyncIterator
-from uuid import UUID
+from typing import Any
 
 import httpx
-from fastapi import HTTPException, status
 from fastapi.responses import JSONResponse
 
 try:
     from redis.asyncio import Redis
-except ModuleNotFoundError:
+except ModuleNotFoundError:  # pragma: no cover
     Redis = object  # type: ignore
 
 from sqlalchemy.orm import Session as DbSession
 
 from app.auth import AuthenticatedAPIKey
 from app.context_store import save_context
-from app.logging_config import logger
 from app.provider.config import ProviderConfig, get_provider_config
 from app.provider.key_pool import (
     NoAvailableProviderKey,
-    SelectedProviderKey,
     acquire_provider_key,
     record_key_failure,
     record_key_success,
 )
 from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
+from app.api.v1.chat.header_builder import build_upstream_headers
+from app.api.v1.chat.provider_endpoint_resolver import resolve_http_upstream_target
+from app.api.v1.chat.protocol_adapter import (
+    adapt_request_payload,
+    adapt_response_payload,
+    stringify_payload,
+)
+from app.api.v1.chat.upstream_error_classifier import classify_capability_mismatch
+from app.services.chat_routing_service import (
+    _GEMINI_MODEL_REGEX,
+    _is_retryable_upstream_status,
+)
 from app.services.claude_cli_transformer import (
     build_claude_cli_headers,
     transform_to_claude_cli_format,
 )
-from app.services.metrics_service import (
-    call_sdk_generate_with_metrics,
-    call_upstream_http_with_metrics,
-    stream_sdk_with_metrics,
-    stream_upstream_with_metrics,
-)
-from app.upstream import UpstreamStreamError
+from app.services.metrics_service import call_sdk_generate_with_metrics, call_upstream_http_with_metrics
 
 
 class TransportResult:
-    """传输层执行结果"""
-    
     def __init__(
         self,
+        *,
         success: bool,
         response: JSONResponse | None = None,
         status_code: int | None = None,
         error_text: str | None = None,
         retryable: bool = False,
-    ):
+        penalize: bool = True,
+        error_category: str | None = None,
+    ) -> None:
         self.success = success
         self.response = response
         self.status_code = status_code
         self.error_text = error_text
         self.retryable = retryable
+        self.penalize = penalize
+        self.error_category = error_category
+
+
+def _build_headers(api_key: str, provider_cfg: ProviderConfig) -> dict[str, str]:
+    """
+    向后兼容的 header 构建函数（仅用于历史测试与少量调用方）。
+
+    生产路径请使用 `_build_headers_for_style` 以支持 Claude 的 `x-api-key`
+    及浏览器伪装相关 header。
+    """
+    headers = {"Authorization": f"Bearer {api_key}"}
+    if provider_cfg.custom_headers:
+        headers.update(provider_cfg.custom_headers)
+    return headers
 
 
 async def execute_http_transport(
@@ -72,53 +94,67 @@ async def execute_http_transport(
     url: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
+    upstream_api_style: str = "openai",
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
+    messages_path_override: str | None = None,
+    fallback_path_override: str | None = None,
 ) -> TransportResult:
-    """
-    执行 HTTP 传输（非流式）
-    
-    返回 TransportResult，调用方根据 success 决定是否重试下一个 Provider
-    """
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         return TransportResult(
             success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             error_text=f"Provider '{provider_id}' is not configured",
             retryable=False,
         )
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
         return TransportResult(
             success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             error_text=str(exc),
             retryable=False,
         )
-    
-    # 构建请求头
-    headers = _build_headers(key_selection.key, provider_cfg)
-    
-    # 准备 payload（使用 provider 的 model_id）
-    upstream_payload = dict(payload)
-    upstream_payload["model"] = model_id
-    
-    logger.info(
-        "HTTP transport: sending request to provider=%s model=%s url=%s",
-        provider_id,
-        model_id,
-        url,
+
+    target = resolve_http_upstream_target(
+        provider_cfg,
+        requested_api_style=api_style,
+        default_url=url,
+        default_upstream_style=upstream_api_style,
+        messages_path_override=messages_path_override,
+        fallback_path_override=fallback_path_override,
     )
-    
-    # 发送请求
+    call_style = target.api_style
+    call_url = target.url
+
+    headers = build_upstream_headers(
+        key_selection.key, provider_cfg, call_style=call_style, is_stream=False
+    )
+
+    try:
+        upstream_payload = adapt_request_payload(
+            payload,
+            from_style=api_style,
+            to_style=call_style,
+            upstream_model_id=model_id,
+        )
+    except Exception as exc:
+        record_key_failure(key_selection, retryable=False, status_code=400, redis=redis)
+        return TransportResult(
+            success=False,
+            status_code=400,
+            error_text=f"Failed to adapt request payload: {exc}",
+            retryable=False,
+        )
+
     try:
         r = await call_upstream_http_with_metrics(
             client=client,
-            url=url,
+            url=call_url,
             headers=headers,
             json_body=upstream_payload,
             db=db,
@@ -129,78 +165,57 @@ async def execute_http_transport(
         )
     except httpx.HTTPError as exc:
         record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
-        logger.warning(
-            "HTTP transport: network error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-        )
-        return TransportResult(
-            success=False,
-            error_text=str(exc),
-            retryable=True,
-        )
-    
+        return TransportResult(success=False, error_text=str(exc), retryable=True)
+
     status_code = r.status_code
     text = r.text
-    
-    logger.info(
-        "HTTP transport: response status=%s provider=%s model=%s body_length=%d",
-        status_code,
-        provider_id,
-        model_id,
-        len(text or ""),
-    )
-    
-    # 检查是否可重试
     if status_code >= 400:
-        retryable = _is_retryable_status(status_code)
+        mismatch = classify_capability_mismatch(status_code, text)
+        if mismatch:
+            # 该 provider/模型不支持某能力：对路由来说是“换 provider 重试”，但不应惩罚该 provider/key。
+            return TransportResult(
+                success=False,
+                status_code=status_code,
+                error_text=text,
+                retryable=True,
+                penalize=False,
+                error_category=f"capability_mismatch:{mismatch}",
+            )
+
+        retryable = _is_retryable_upstream_status(provider_id, status_code)
         record_key_failure(
             key_selection,
             retryable=retryable,
             status_code=status_code,
             redis=redis,
         )
-        
-        if retryable:
-            logger.warning(
-                "HTTP transport: retryable error status=%s provider=%s model=%s",
-                status_code,
-                provider_id,
-                model_id,
-            )
-            return TransportResult(
-                success=False,
-                status_code=status_code,
-                error_text=text,
-                retryable=True,
-            )
-        else:
-            logger.error(
-                "HTTP transport: non-retryable error status=%s provider=%s model=%s",
-                status_code,
-                provider_id,
-                model_id,
-            )
-            return TransportResult(
-                success=False,
-                status_code=status_code,
-                error_text=text,
-                retryable=False,
-            )
-    
-    # 成功
+        return TransportResult(
+            success=False,
+            status_code=status_code,
+            error_text=text,
+            retryable=retryable,
+        )
+
     record_key_success(key_selection, redis=redis)
     await save_context(redis, session_id, payload, text)
-    
     try:
         content = r.json()
     except ValueError:
         content = {"raw": text}
-    
+
+    try:
+        adapted = adapt_response_payload(
+            content,
+            from_style=call_style,
+            to_style=api_style,
+            request_model=str(payload.get("model") or model_id),
+        )
+    except Exception:
+        adapted = content
+
     return TransportResult(
         success=True,
-        response=JSONResponse(content=content, status_code=status_code),
+        response=JSONResponse(content=adapted, status_code=status_code),
     )
 
 
@@ -212,53 +227,50 @@ async def execute_sdk_transport(
     model_id: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
 ) -> TransportResult:
-    """执行 SDK 传输（非流式）"""
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         return TransportResult(
             success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             error_text=f"Provider '{provider_id}' is not configured",
             retryable=False,
         )
-    
+
     driver = get_sdk_driver(provider_cfg)
     if driver is None:
         return TransportResult(
             success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             error_text=f"Provider '{provider_id}' 不支持 transport=sdk",
             retryable=False,
         )
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
-        return TransportResult(
-            success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            error_text=str(exc),
-            retryable=False,
-        )
-    
-    logger.info(
-        "SDK transport: calling provider=%s model=%s driver=%s",
-        provider_id,
-        model_id,
-        driver.name,
-    )
-    
-    # 调用 SDK
+        return TransportResult(success=False, status_code=503, error_text=str(exc), retryable=False)
+
+    driver_name = str(getattr(driver, "name", "") or "").lower()
+    upstream_style: str = "openai"
+    if driver_name in ("anthropic", "claude"):
+        upstream_style = "claude"
+
     try:
+        upstream_payload = adapt_request_payload(
+            payload,
+            from_style=api_style,
+            to_style=upstream_style,
+            upstream_model_id=model_id,
+        )
         sdk_payload = await call_sdk_generate_with_metrics(
             driver=driver,
             api_key=key_selection.key,
             model_id=model_id,
-            payload=payload,
+            payload=upstream_payload,
             base_url=normalize_base_url(provider_cfg.base_url),
             db=db,
             provider_id=provider_id,
@@ -268,25 +280,37 @@ async def execute_sdk_transport(
         )
     except Exception as exc:
         record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
-        logger.warning(
-            "SDK transport: error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-        )
-        return TransportResult(
-            success=False,
-            error_text=str(exc),
-            retryable=True,
-        )
-    
-    # 成功
+        return TransportResult(success=False, error_text=str(exc), retryable=True)
+
     record_key_success(key_selection, redis=redis)
-    await save_context(redis, session_id, payload, json.dumps(sdk_payload))
-    
+    await save_context(redis, session_id, payload, stringify_payload(sdk_payload))
+
+    converted: Any = sdk_payload
+    if (
+        getattr(driver, "name", "") == "google"
+        and isinstance(sdk_payload, dict)
+        and sdk_payload.get("candidates") is not None
+        and _GEMINI_MODEL_REGEX.search(str(payload.get("model") or model_id or ""))
+    ):
+        # 先统一成 OpenAI chat payload，再交由协议适配层转换到 responses/claude 等客户端风格。
+        converted = _build_openai_completion_from_gemini(
+            sdk_payload,
+            payload.get("model") or model_id,
+        )
+
+    try:
+        converted = adapt_response_payload(
+            converted,
+            from_style=upstream_style,
+            to_style=api_style,
+            request_model=str(payload.get("model") or model_id),
+        )
+    except Exception:
+        pass
+
     return TransportResult(
         success=True,
-        response=JSONResponse(content=sdk_payload, status_code=status.HTTP_200_OK),
+        response=JSONResponse(content=converted, status_code=200),
     )
 
 
@@ -299,64 +323,46 @@ async def execute_claude_cli_transport(
     model_id: str,
     payload: dict[str, Any],
     logical_model_id: str,
+    api_style: str,
     api_key: AuthenticatedAPIKey,
     session_id: str | None,
 ) -> TransportResult:
-    """执行 Claude CLI 传输（非流式）"""
     provider_cfg = get_provider_config(provider_id)
     if provider_cfg is None:
         return TransportResult(
             success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            status_code=503,
             error_text=f"Provider '{provider_id}' is not configured",
             retryable=False,
         )
-    
-    # 获取 API Key
+
     try:
         key_selection = await acquire_provider_key(provider_cfg, redis)
     except NoAvailableProviderKey as exc:
-        return TransportResult(
-            success=False,
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            error_text=str(exc),
-            retryable=False,
-        )
-    
-    # 构建 Claude CLI 请求
+        return TransportResult(success=False, status_code=503, error_text=str(exc), retryable=False)
+
     try:
         claude_cli_headers = build_claude_cli_headers(key_selection.key)
-        claude_payload = transform_to_claude_cli_format(
+        openai_payload = adapt_request_payload(
             payload,
+            from_style=api_style,
+            to_style="openai",
+            upstream_model_id=model_id,
+        )
+        claude_payload = transform_to_claude_cli_format(
+            openai_payload,
             api_key=key_selection.key,
             session_id=session_id,
         )
     except Exception as exc:
-        logger.error(
-            "Claude CLI: failed to build request provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
         return TransportResult(
             success=False,
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=500,
             error_text=f"Failed to build Claude CLI request: {exc}",
             retryable=False,
         )
-    
-    # 构建 URL
+
     claude_url = f"{str(provider_cfg.base_url).rstrip('/')}/v1/messages?beta=true"
-    
-    logger.info(
-        "Claude CLI transport: sending request to provider=%s model=%s url=%s",
-        provider_id,
-        model_id,
-        claude_url,
-    )
-    
-    # 发送请求
     try:
         r = await call_upstream_http_with_metrics(
             client=client,
@@ -371,80 +377,52 @@ async def execute_claude_cli_transport(
         )
     except httpx.HTTPError as exc:
         record_key_failure(key_selection, retryable=True, status_code=None, redis=redis)
-        logger.error(
-            "Claude CLI: network error provider=%s model=%s error=%s",
-            provider_id,
-            model_id,
-            exc,
-            exc_info=True,
-        )
-        return TransportResult(
-            success=False,
-            error_text=str(exc),
-            retryable=True,
-        )
-    
+        return TransportResult(success=False, error_text=str(exc), retryable=True)
+
     status_code = r.status_code
     text = r.text
-    
-    logger.info(
-        "Claude CLI transport: response status=%s provider=%s model=%s body_length=%d",
-        status_code,
-        provider_id,
-        model_id,
-        len(text or ""),
-    )
-    
-    # 检查错误
     if status_code >= 400:
-        retryable = _is_retryable_status(status_code)
-        record_key_failure(
-            key_selection,
-            retryable=retryable,
-            status_code=status_code,
-            redis=redis,
-        )
-        
+        retryable = _is_retryable_upstream_status(provider_id, status_code)
+        record_key_failure(key_selection, retryable=retryable, status_code=status_code, redis=redis)
         return TransportResult(
             success=False,
             status_code=status_code,
             error_text=text,
             retryable=retryable,
         )
-    
-    # 成功
+
     record_key_success(key_selection, redis=redis)
     await save_context(redis, session_id, payload, text)
-    
     try:
-        content = r.json()
+        content: Any = r.json()
     except ValueError:
         content = {"raw": text}
-    
+
+    try:
+        content = adapt_response_payload(
+            content,
+            from_style="claude",
+            to_style=api_style,
+            request_model=str(payload.get("model") or model_id),
+        )
+    except Exception as exc:
+        return TransportResult(
+            success=False,
+            status_code=502,
+            error_text=f"Failed to adapt Claude response: {exc}",
+            retryable=False,
+        )
+
     return TransportResult(
         success=True,
         response=JSONResponse(content=content, status_code=status_code),
     )
 
 
-def _build_headers(api_key: str, provider_cfg: ProviderConfig) -> dict[str, str]:
-    """构建请求头"""
-    headers = {"Authorization": f"Bearer {api_key}"}
-    if provider_cfg.custom_headers:
-        headers.update(provider_cfg.custom_headers)
-    return headers
-
-
-def _is_retryable_status(status_code: int) -> bool:
-    """判断状态码是否可重试"""
-    # 5xx 服务器错误通常可重试
-    if 500 <= status_code < 600:
-        return True
-    # 429 限流可重试
-    if status_code == 429:
-        return True
-    # 408 请求超时可重试
-    if status_code == 408:
-        return True
-    # 其他 4xx 客户端错误不可重试
-    return False
+__all__ = [
+    "TransportResult",
+    "_build_headers",
+    "execute_claude_cli_transport",
+    "execute_http_transport",
+    "execute_sdk_transport",
+]

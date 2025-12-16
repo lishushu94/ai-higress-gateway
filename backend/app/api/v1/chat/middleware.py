@@ -3,7 +3,7 @@
 """
 
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from typing import Any
 
 from fastapi import HTTPException, status
@@ -115,6 +115,7 @@ async def wrap_stream_with_moderation(
     api_key: AuthenticatedAPIKey,
     logical_model: str | None,
     provider_id: str | None,
+    provider_id_getter: Callable[[], str | None] | None = None,
 ) -> AsyncIterator[bytes]:
     """流式响应内容审核"""
     if not settings.enable_content_moderation:
@@ -123,6 +124,12 @@ async def wrap_stream_with_moderation(
         return
 
     async for chunk in iterator:
+        effective_provider_id = provider_id
+        if effective_provider_id is None and provider_id_getter is not None:
+            try:
+                effective_provider_id = provider_id_getter()
+            except Exception:
+                effective_provider_id = provider_id
         text = chunk.decode("utf-8", errors="ignore")
         result = apply_content_policy(
             text,
@@ -138,7 +145,7 @@ async def wrap_stream_with_moderation(
                 user_id=api_key.user_id,
                 api_key_id=api_key.id,
                 logical_model=logical_model,
-                provider_id=provider_id,
+                provider_id=effective_provider_id,
                 session_id=session_id,
                 status_code=None,
                 decision="blocked" if result.blocked else "allowed",

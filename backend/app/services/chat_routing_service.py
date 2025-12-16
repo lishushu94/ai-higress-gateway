@@ -481,9 +481,23 @@ class OpenAIToClaudeStreamAdapter:
         self.content_block_id = f"{self.message_id}-cb-0"
         self.buffer = ""
         self.started = False
+        self.had_error = False
         self.stop_reason: str | None = None
         self.usage: dict[str, Any] | None = None
         self.aggregate_text: str = ""
+
+    def _usage_object(self) -> dict[str, int]:
+        """
+        Claude messages SSE 事件里 `usage` 字段在部分客户端（如 Claude Code CLI）
+        的 schema 校验中是必填 object，不能为 null。
+        """
+        usage = self.usage if isinstance(self.usage, dict) else {}
+        input_tokens = usage.get("input_tokens")
+        output_tokens = usage.get("output_tokens")
+        return {
+            "input_tokens": int(input_tokens) if isinstance(input_tokens, int) else 0,
+            "output_tokens": int(output_tokens) if isinstance(output_tokens, int) else 0,
+        }
 
     def _encode_event(self, event: str, payload: dict[str, Any]) -> bytes:
         return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n".encode()
@@ -498,6 +512,9 @@ class OpenAIToClaudeStreamAdapter:
                 "role": "assistant",
                 "model": self.model,
                 "content": [],
+                "stop_reason": None,
+                "stop_sequence": None,
+                "usage": self._usage_object(),
             },
         }
         content_block_payload = {
@@ -534,6 +551,8 @@ class OpenAIToClaudeStreamAdapter:
             decoded = chunk.decode("utf-8")
         except UnicodeDecodeError:
             return outputs
+        if self.had_error:
+            return outputs
         self.buffer += decoded
         while "\n\n" in self.buffer:
             raw_event, self.buffer = self.buffer.split("\n\n", 1)
@@ -549,6 +568,33 @@ class OpenAIToClaudeStreamAdapter:
                 data = json.loads(payload_str)
             except json.JSONDecodeError:
                 continue
+            if isinstance(data, dict) and data.get("error") is not None:
+                err = data.get("error")
+                message = None
+                if isinstance(err, dict):
+                    raw_message = err.get("message")
+                    if isinstance(raw_message, str) and raw_message.strip():
+                        message = raw_message.strip()
+                    else:
+                        message = json.dumps(err, ensure_ascii=False)
+                elif isinstance(err, str) and err.strip():
+                    message = err.strip()
+                else:
+                    message = "Upstream streaming error"
+                self.had_error = True
+                outputs.append(
+                    self._encode_event(
+                        "error",
+                        {
+                            "type": "error",
+                            "error": {
+                                "type": "upstream_error",
+                                "message": message,
+                            },
+                        },
+                    )
+                )
+                return outputs
             choices = data.get("choices")
             if not isinstance(choices, list):
                 continue
@@ -581,6 +627,8 @@ class OpenAIToClaudeStreamAdapter:
 
     def finalize(self) -> list[bytes]:
         outputs: list[bytes] = []
+        if self.had_error:
+            return outputs
         if not self.started:
             outputs.extend(self._emit_start_events())
         outputs.append(
@@ -595,7 +643,7 @@ class OpenAIToClaudeStreamAdapter:
                         "stop_reason": self.stop_reason or "end_turn",
                         "stop_sequence": None,
                     },
-                    "usage": self.usage,
+                    "usage": self._usage_object(),
                 },
             )
         )
@@ -604,15 +652,6 @@ class OpenAIToClaudeStreamAdapter:
                 "message_stop",
                 {
                     "type": "message_stop",
-                    "message": {
-                        "id": self.message_id,
-                        "type": "message",
-                        "role": "assistant",
-                        "model": self.model,
-                        "content": [
-                            {"type": "text", "text": self.aggregate_text},
-                        ],
-                    },
                 },
             )
         )
@@ -820,6 +859,7 @@ async def _claude_streaming_fallback_iterator(
             json_body=fallback_payload,
             redis=redis,
             session_id=session_id,
+            sse_style="openai",
             db=db,
             provider_id=provider_id,
             logical_model=logical_model_id,
@@ -890,6 +930,7 @@ async def _responses_streaming_fallback_iterator(
             json_body=fallback_payload,
             redis=redis,
             session_id=session_id,
+            sse_style="openai",
             db=db,
             provider_id=provider_id,
             logical_model=logical_model_id,

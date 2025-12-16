@@ -1,38 +1,50 @@
 """
-测试 ProviderSelector 模块
+测试 ProviderSelector（v2）
 """
 
-import pytest
+from __future__ import annotations
+
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.api.v1.chat.provider_selector import ProviderSelector
+from app.api.v1.chat.routing_state import RoutingStateService
 from app.routing.scheduler import CandidateScore
-from app.schemas import LogicalModel, PhysicalModel, RoutingMetrics, Session
+from app.schemas import LogicalModel, PhysicalModel, RoutingMetrics
+
+
+@pytest.fixture
+def mock_client():
+    return AsyncMock()
 
 
 @pytest.fixture
 def mock_redis():
-    """Mock Redis 客户端"""
-    return MagicMock()
+    return AsyncMock()
 
 
 @pytest.fixture
 def mock_db():
-    """Mock 数据库 Session"""
     return MagicMock()
 
 
 @pytest.fixture
-def provider_selector(mock_redis, mock_db):
-    """创建 ProviderSelector 实例"""
-    return ProviderSelector(redis=mock_redis, db=mock_db)
+def provider_selector(mock_client, mock_redis, mock_db):
+    routing_state = MagicMock(spec=RoutingStateService)
+    routing_state.get_cached_health_status = AsyncMock(return_value=None)
+    routing_state.load_metrics_for_candidates = AsyncMock(return_value={})
+    routing_state.load_dynamic_weights = AsyncMock(return_value={})
+    return ProviderSelector(
+        client=mock_client, redis=mock_redis, db=mock_db, routing_state=routing_state
+    )
 
 
 @pytest.fixture
 def sample_logical_model():
-    """示例逻辑模型"""
     from datetime import datetime
-    
+
+    now = datetime.now().timestamp()
     return LogicalModel(
         logical_id="gpt-4",
         display_name="GPT-4",
@@ -44,172 +56,96 @@ def sample_logical_model():
                 model_id="gpt-4-turbo",
                 endpoint="https://api.openai.com/v1/chat/completions",
                 base_weight=1.0,
-                updated_at=datetime.now().timestamp(),
+                updated_at=now,
             ),
             PhysicalModel(
                 provider_id="azure",
                 model_id="gpt-4",
                 endpoint="https://azure.openai.com/v1/chat/completions",
                 base_weight=0.8,
-                updated_at=datetime.now().timestamp(),
+                updated_at=now,
             ),
         ],
         strategy={"name": "balanced"},
-        updated_at=datetime.now().timestamp(),
+        updated_at=now,
     )
 
 
 @pytest.mark.asyncio
-async def test_select_basic(provider_selector, mock_redis, sample_logical_model):
-    """测试基本的 Provider 选择"""
-    # Mock 依赖
-    with patch.object(provider_selector, "_load_logical_model") as mock_load_model, \
-         patch.object(provider_selector, "_load_metrics") as mock_load_metrics, \
-         patch.object(provider_selector, "_load_dynamic_weights") as mock_load_weights, \
-         patch("app.api.v1.chat.provider_selector.get_session") as mock_get_session, \
-         patch("app.api.v1.chat.provider_selector.choose_upstream") as mock_choose:
-        
-        # 设置返回值
-        mock_load_model.return_value = sample_logical_model
-        mock_load_metrics.return_value = {}
-        mock_load_weights.return_value = None
+async def test_select_orders_candidates_selected_first(provider_selector, sample_logical_model):
+    with patch.object(provider_selector, "_resolve_logical_model") as mock_resolve, patch(
+        "app.api.v1.chat.provider_selector.select_candidate_upstreams"
+    ) as mock_select_upstreams, patch(
+        "app.api.v1.chat.provider_selector.get_session"
+    ) as mock_get_session, patch(
+        "app.api.v1.chat.provider_selector.choose_upstream"
+    ) as mock_choose, patch(
+        "app.api.v1.chat.provider_selector.settings"
+    ) as mock_settings:
+        mock_settings.enable_provider_health_check = False
+        mock_resolve.return_value = sample_logical_model
+        mock_select_upstreams.return_value = list(sample_logical_model.upstreams)
         mock_get_session.return_value = None
-        
-        # Mock choose_upstream 返回
-        selected = CandidateScore(
-            upstream=sample_logical_model.upstreams[0],
-            score=0.95,
-            metrics=None,
-        )
-        all_candidates = [
+
+        selected = CandidateScore(upstream=sample_logical_model.upstreams[1], score=0.9, metrics=None)
+        scored = [
             selected,
-            CandidateScore(
-                upstream=sample_logical_model.upstreams[1],
-                score=0.85,
-                metrics=None,
-            ),
+            CandidateScore(upstream=sample_logical_model.upstreams[0], score=0.8, metrics=None),
         ]
-        mock_choose.return_value = (selected, all_candidates)
-        
-        # 执行测试
+        mock_choose.return_value = (selected, scored)
+
         result = await provider_selector.select(
-            logical_model_id="gpt-4",
+            requested_model="gpt-4",
+            lookup_model_id="gpt-4",
+            api_style="openai",
+            effective_provider_ids={"openai", "azure"},
             session_id=None,
-            payload={"messages": []},
+            user_id=None,
+            is_superuser=False,
         )
-        
-        # 验证结果
-        assert len(result) == 2
-        assert result[0].upstream.provider_id == "openai"
-        assert result[0].score == 0.95
+
+        assert result.logical_model.logical_id == "gpt-4"
+        assert result.ordered_candidates[0].upstream.provider_id == "azure"
 
 
 @pytest.mark.asyncio
-async def test_select_with_session(provider_selector, mock_redis, sample_logical_model):
-    """测试带 Session 的 Provider 选择（粘性路由）"""
-    # 准备 Session
-    from datetime import datetime
-    
-    now = datetime.now().timestamp()
-    existing_session = Session(
-        conversation_id="test-session",
-        logical_model="gpt-4",
-        provider_id="azure",
-        model_id="gpt-4",
-        created_at=now,
-        last_accessed=now,
-    )
-    
-    # Mock 依赖
-    with patch.object(provider_selector, "_load_logical_model") as mock_load_model, \
-         patch.object(provider_selector, "_load_metrics") as mock_load_metrics, \
-         patch.object(provider_selector, "_load_dynamic_weights") as mock_load_weights, \
-         patch("app.api.v1.chat.provider_selector.get_session") as mock_get_session, \
-         patch("app.api.v1.chat.provider_selector.choose_upstream") as mock_choose:
-        
-        # 设置返回值
-        mock_load_model.return_value = sample_logical_model
-        mock_load_metrics.return_value = {}
-        mock_load_weights.return_value = None
-        mock_get_session.return_value = existing_session
-        
-        # Mock choose_upstream 返回（应该选择 azure）
-        selected = CandidateScore(
-            upstream=sample_logical_model.upstreams[1],  # azure
-            score=1.0,  # 粘性路由会给更高分数
-            metrics=None,
-        )
-        all_candidates = [
-            selected,
-            CandidateScore(upstream=sample_logical_model.upstreams[0], score=0.95),
-        ]
-        mock_choose.return_value = (selected, all_candidates)
-        
-        # 执行测试
+async def test_select_filters_by_effective_provider_ids(provider_selector, sample_logical_model):
+    with patch.object(provider_selector, "_resolve_logical_model") as mock_resolve, patch(
+        "app.api.v1.chat.provider_selector.select_candidate_upstreams"
+    ) as mock_select_upstreams, patch(
+        "app.api.v1.chat.provider_selector.choose_upstream"
+    ) as mock_choose, patch(
+        "app.api.v1.chat.provider_selector.settings"
+    ) as mock_settings:
+        mock_settings.enable_provider_health_check = False
+        mock_resolve.return_value = sample_logical_model
+        mock_select_upstreams.return_value = list(sample_logical_model.upstreams)
+
+        def _choose_side_effect(logical_model, upstreams, *_args, **_kwargs):
+            assert [u.provider_id for u in upstreams] == ["openai"]
+            selected = CandidateScore(upstream=upstreams[0], score=1.0, metrics=None)
+            return selected, [selected]
+
+        mock_choose.side_effect = _choose_side_effect
+
         result = await provider_selector.select(
-            logical_model_id="gpt-4",
-            session_id="test-session",
-            payload={"messages": []},
+            requested_model="gpt-4",
+            lookup_model_id="gpt-4",
+            api_style="openai",
+            effective_provider_ids={"openai"},
+            session_id=None,
+            user_id=None,
+            is_superuser=False,
         )
-        
-        # 验证结果
-        assert len(result) == 2
-        assert result[0].upstream.provider_id == "azure"  # 粘性路由选择了 azure
-        mock_get_session.assert_called_once_with(mock_redis, "test-session")
+
+        assert len(result.ordered_candidates) == 1
+        assert result.ordered_candidates[0].upstream.provider_id == "openai"
 
 
 @pytest.mark.asyncio
-async def test_select_model_not_found(provider_selector):
-    """测试逻辑模型不存在的情况"""
-    # Mock _load_logical_model 返回 None
-    with patch.object(provider_selector, "_load_logical_model") as mock_load_model:
-        mock_load_model.return_value = None
-        
-        # 执行测试，应该抛出异常
-        with pytest.raises(ValueError, match="Logical model 'non-existent' not found"):
-            await provider_selector.select(
-                logical_model_id="non-existent",
-                session_id=None,
-                payload={"messages": []},
-            )
-
-
-@pytest.mark.asyncio
-async def test_select_no_upstreams(provider_selector):
-    """测试逻辑模型没有上游的情况"""
-    from datetime import datetime
-    
-    # 创建没有上游的逻辑模型
-    empty_model = LogicalModel(
-        logical_id="empty-model",
-        display_name="Empty Model",
-        description="Empty model for testing",
-        capabilities=[],
-        upstreams=[],
-        strategy={"name": "balanced"},
-        updated_at=datetime.now().timestamp(),
-    )
-    
-    # Mock _load_logical_model
-    with patch.object(provider_selector, "_load_logical_model") as mock_load_model:
-        mock_load_model.return_value = empty_model
-        
-        # 执行测试，应该抛出异常
-        with pytest.raises(ValueError, match="has no upstreams"):
-            await provider_selector.select(
-                logical_model_id="empty-model",
-                session_id=None,
-                payload={"messages": []},
-            )
-
-
-@pytest.mark.asyncio
-async def test_load_metrics(provider_selector, mock_redis, sample_logical_model):
-    """测试加载 Provider 指标"""
-    # Mock get_routing_metrics (从 app.storage.redis_service 导入)
-    with patch("app.storage.redis_service.get_routing_metrics") as mock_get_metrics:
-        # 设置返回值
-        openai_metrics = RoutingMetrics(
+async def test_select_uses_state_metrics_and_weights(provider_selector, sample_logical_model):
+    state_metrics = {
+        "openai": RoutingMetrics(
             logical_model="gpt-4",
             provider_id="openai",
             latency_p95_ms=100.0,
@@ -217,35 +153,58 @@ async def test_load_metrics(provider_selector, mock_redis, sample_logical_model)
             error_rate=0.01,
             success_qps_1m=10.0,
             total_requests_1m=100,
-            last_updated=1234567890.0,
+            last_updated=123.0,
             status="healthy",
         )
-        azure_metrics = RoutingMetrics(
-            logical_model="gpt-4",
-            provider_id="azure",
-            latency_p95_ms=120.0,
-            latency_p99_ms=180.0,
-            error_rate=0.02,
-            success_qps_1m=8.0,
-            total_requests_1m=80,
-            last_updated=1234567890.0,
-            status="healthy",
+    }
+    provider_selector.routing_state.load_metrics_for_candidates = AsyncMock(return_value=state_metrics)
+    provider_selector.routing_state.load_dynamic_weights = AsyncMock(return_value={"openai": 1.2})
+
+    with patch.object(provider_selector, "_resolve_logical_model") as mock_resolve, patch(
+        "app.api.v1.chat.provider_selector.select_candidate_upstreams"
+    ) as mock_select_upstreams, patch(
+        "app.api.v1.chat.provider_selector.choose_upstream"
+    ) as mock_choose, patch(
+        "app.api.v1.chat.provider_selector.settings"
+    ) as mock_settings:
+        mock_settings.enable_provider_health_check = False
+        mock_resolve.return_value = sample_logical_model
+        mock_select_upstreams.return_value = list(sample_logical_model.upstreams)
+
+        def _choose_side_effect(_lm, _upstreams, metrics_by_provider, *_args, **kwargs):
+            assert metrics_by_provider == state_metrics
+            assert kwargs.get("dynamic_weights") == {"openai": 1.2}
+            selected = CandidateScore(upstream=sample_logical_model.upstreams[0], score=1.0, metrics=None)
+            return selected, [selected]
+
+        mock_choose.side_effect = _choose_side_effect
+
+        await provider_selector.select(
+            requested_model="gpt-4",
+            lookup_model_id="gpt-4",
+            api_style="openai",
+            effective_provider_ids={"openai", "azure"},
+            session_id=None,
+            user_id=None,
+            is_superuser=False,
         )
-        
-        async def get_metrics_side_effect(redis, logical_model_id, provider_id):
-            assert logical_model_id == "gpt-4"
-            if provider_id == "openai":
-                return openai_metrics
-            elif provider_id == "azure":
-                return azure_metrics
-            return None
-        
-        mock_get_metrics.side_effect = get_metrics_side_effect
-        
-        # 执行测试
-        result = await provider_selector._load_metrics("gpt-4", sample_logical_model.upstreams)
-        
-        # 验证结果
-        assert len(result) == 2
-        assert result["openai"] == openai_metrics
-        assert result["azure"] == azure_metrics
+
+        provider_selector.routing_state.load_metrics_for_candidates.assert_awaited()
+        provider_selector.routing_state.load_dynamic_weights.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_resolve_logical_model_passes_allowed_provider_ids(provider_selector, sample_logical_model):
+    with patch("app.api.v1.chat.provider_selector.get_logical_model", new=AsyncMock(return_value=None)), patch(
+        "app.api.v1.chat.provider_selector._build_dynamic_logical_model_for_group", new=AsyncMock(return_value=sample_logical_model)
+    ) as mock_build:
+        lm = await provider_selector._resolve_logical_model(
+            requested_model="gpt-4",
+            lookup_model_id="gpt-4",
+            api_style="openai",
+            allowed_provider_ids={"a4f", "runanytime"},
+            user_id=None,
+            is_superuser=False,
+        )
+        assert lm.logical_id == "gpt-4"
+        assert mock_build.call_args.kwargs["allowed_provider_ids"] == {"a4f", "runanytime"}

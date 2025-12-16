@@ -54,6 +54,35 @@ def _convert_models(provider: Provider) -> list[dict[str, Any]] | None:
     Normalise ProviderModel rows (or static_models JSON) into the format
     expected by the routing layer when a provider does not expose /models.
     """
+    def _compact_metadata(value: Any) -> Any:
+        """
+        将类似 {"metadata": {"metadata": {...}}} 的嵌套结构压平到最内层，
+        避免接口返回出现多层套娃（通常由历史同步/回退逻辑导致）。
+        """
+        current = value
+        depth = 0
+        while (
+            isinstance(current, dict)
+            and isinstance(current.get("metadata"), dict)
+            and depth < 10
+        ):
+            current = current["metadata"]
+            depth += 1
+        return current
+
+    # 当 providers.static_models 显式配置时，应作为“权威静态模型列表”优先生效，
+    # 避免被 provider_models（可能由远端发现同步写入）覆盖导致更新后仍返回旧数据。
+    if isinstance(provider.static_models, list) and provider.static_models:
+        cleaned: list[dict[str, Any]] = []
+        for item in provider.static_models:
+            if not isinstance(item, dict):
+                continue
+            copied = dict(item)
+            if isinstance(copied.get("metadata"), dict):
+                copied["metadata"] = _compact_metadata(copied["metadata"])
+            cleaned.append(copied)
+        return cleaned or None
+
     if provider.models:
         items: list[dict[str, Any]] = []
         for entry in provider.models:
@@ -68,14 +97,15 @@ def _convert_models(provider: Provider) -> list[dict[str, Any]] | None:
             if entry.pricing is not None:
                 payload["pricing"] = entry.pricing
             if entry.metadata_json is not None:
-                payload["metadata"] = entry.metadata_json
+                metadata_val: Any = entry.metadata_json
+                if isinstance(metadata_val, dict):
+                    metadata_val = _compact_metadata(metadata_val)
+                payload["metadata"] = metadata_val
             if entry.meta_hash:
                 payload["meta_hash"] = entry.meta_hash
             items.append(payload)
         return items
 
-    if isinstance(provider.static_models, list):
-        return list(provider.static_models)
     return None
 
 

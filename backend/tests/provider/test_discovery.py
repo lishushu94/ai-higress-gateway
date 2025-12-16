@@ -94,6 +94,41 @@ async def test_fetch_models_from_provider_uses_static_models():
 
 
 @pytest.mark.asyncio
+async def test_fetch_models_from_provider_static_models_metadata_does_not_nest():
+    provider = _make_provider(
+        static_models=[
+            {
+                "id": "m1",
+                "context_length": 1024,
+                "metadata": {
+                    "id": "m1",
+                    "family": "x",
+                    "metadata": {
+                        "id": "m1",
+                        "family": "x",
+                        "metadata": {"id": "m1"},
+                    },
+                },
+            }
+        ]
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover - should not run
+        raise AssertionError("HTTP call should be skipped when static_models is set")
+
+    transport = httpx.MockTransport(handler)
+
+    async with httpx.AsyncClient(transport=transport) as client:
+        models: list[Model] = await fetch_models_from_provider(client, provider)
+
+    assert len(models) == 1
+    assert models[0].model_id == "m1"
+    assert isinstance(models[0].metadata, dict)
+    assert models[0].metadata.get("id") == "m1"
+    assert "metadata" not in models[0].metadata
+
+
+@pytest.mark.asyncio
 async def test_fetch_models_from_provider_falls_back_to_env_static_on_invalid_json(
     monkeypatch,
 ):

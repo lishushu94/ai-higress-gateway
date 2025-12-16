@@ -59,6 +59,8 @@ from app.services.user_probe_service import (
     update_user_probe_task,
 )
 from app.settings import settings
+from app.model_cache import MODELS_CACHE_KEY
+from app.storage.redis_service import PROVIDER_MODELS_KEY_TEMPLATE
 
 router = APIRouter(
     tags=["user-providers"],
@@ -71,6 +73,28 @@ def _ensure_can_manage_user(current: AuthenticatedUser, target_user_id: UUID) ->
         return
     if current.id != str(target_user_id):
         raise forbidden("无权管理其他用户的私有提供商")
+
+
+async def _invalidate_provider_model_caches(redis: Redis, provider_id: str) -> None:
+    """
+    清理与 provider 模型列表相关的缓存：
+    - `gateway:models:all`：全局 /models 聚合缓存（MODELS_CACHE_KEY）
+    - `llm:vendor:{provider_id}:models`：单 provider 的模型列表缓存
+
+    注意：逻辑模型缓存（`llm:logical:*`）由 invalidate_logical_models_cache 负责。
+    """
+    if redis is object:
+        return
+    keys = [
+        MODELS_CACHE_KEY,
+        PROVIDER_MODELS_KEY_TEMPLATE.format(provider_id=provider_id),
+    ]
+    try:
+        await redis.delete(*keys)  # type: ignore[attr-defined]
+    except Exception:  # pragma: no cover - 缓存清理失败不阻断主流程
+        logger.warning(
+            "Failed to invalidate provider model caches for %s", provider_id, exc_info=True
+        )
 
 
 def _run_to_response(run, *, provider_id: str) -> UserProbeRunResponse:
@@ -195,6 +219,9 @@ async def create_private_provider_endpoint(
     except Exception:
         logger.exception("Failed to invalidate logical models cache")
 
+    # 同步失效模型列表缓存，避免 /providers/{id}/models 与 /v1/models 返回旧数据。
+    await _invalidate_provider_model_caches(redis, provider.provider_id)
+
     return UserProviderResponse.model_validate(provider)
 
 
@@ -244,6 +271,9 @@ async def update_private_provider_endpoint(
         logger.info("Invalidated %d logical model cache keys after updating provider %s", deleted, provider_id)
     except Exception:
         logger.exception("Failed to invalidate logical models cache")
+
+    # 失效模型列表缓存，确保 provider 模型配置更新后能尽快生效。
+    await _invalidate_provider_model_caches(redis, provider_id)
 
     return UserProviderResponse.model_validate(provider)
 

@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 from app.auth import AuthenticatedAPIKey, require_api_key
 from app.deps import get_redis
 from app.routes import create_app
+from fastapi import HTTPException
 from tests.utils import InMemoryRedis, install_inmemory_db
 
 
@@ -79,24 +80,20 @@ def test_chat_dynamic_discovery_respects_api_key_allowed_providers(
 
     captured: dict[str, object] = {}
 
-    async def fake_build_dynamic_logical_model_for_group(**kwargs):
-        captured["allowed_provider_ids"] = kwargs.get("allowed_provider_ids")
-        return None
+    async def fake_handle(self, **kwargs):
+        captured["effective_provider_ids"] = set(kwargs.get("effective_provider_ids", set()))
+        raise HTTPException(status_code=400, detail={"message": "model not available"})
 
-    monkeypatch.setattr(
-        "app.api.v1.chat_routes._build_dynamic_logical_model_for_group",
-        fake_build_dynamic_logical_model_for_group,
-    )
+    monkeypatch.setattr("app.api.v1.chat_routes.RequestHandler.handle", fake_handle)
 
     with TestClient(app, base_url="http://test") as client:
         resp = client.post(
             "/v1/chat/completions",
             json={"model": "gpt-4", "messages": [{"role": "user", "content": "hi"}]},
         )
-        # fake_build_dynamic_logical_model_for_group 返回 None，会走到“模型不可用”的 400 分支。
         assert resp.status_code == 400
 
-    assert captured.get("allowed_provider_ids") == expected_ids
+    assert captured.get("effective_provider_ids") == expected_ids
 
 
 def test_chat_dynamic_discovery_rejects_when_restrictions_empty_intersection(monkeypatch) -> None:
@@ -124,13 +121,10 @@ def test_chat_dynamic_discovery_rejects_when_restrictions_empty_intersection(mon
     )
 
     # 若交集为空，应直接 403，不进入动态模型发现流程。
-    async def _should_not_be_called(**_kwargs):
-        raise AssertionError("dynamic model discovery should not run when intersection is empty")
+    async def _should_not_be_called(self, **_kwargs):
+        raise AssertionError("handler should not run when intersection is empty")
 
-    monkeypatch.setattr(
-        "app.api.v1.chat_routes._build_dynamic_logical_model_for_group",
-        _should_not_be_called,
-    )
+    monkeypatch.setattr("app.api.v1.chat_routes.RequestHandler.handle", _should_not_be_called)
 
     with TestClient(app, base_url="http://test") as client:
         resp = client.post(

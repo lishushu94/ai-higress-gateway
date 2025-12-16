@@ -2,6 +2,16 @@
 
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Card, CardContent, CardFooter, CardHeader } from "@/components/ui/card";
+import {
+  DollarSign,
+  Calendar,
+  User,
+  Tag,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Sparkles
+} from "lucide-react";
 import type { Model } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
 
@@ -13,8 +23,7 @@ interface ModelCardProps {
 }
 
 /**
- * 计费标签组件
- * 显示模型的输入/输出价格，采用简洁的徽章样式
+ * 计费标签组件 - 现代化设计
  */
 function PricingBadge({ model }: { model: Model }) {
   const { t } = useI18n();
@@ -24,24 +33,28 @@ function PricingBadge({ model }: { model: Model }) {
 
   if (!hasInput && !hasOutput) {
     return (
-      <Badge variant="outline" className="text-xs shrink-0 font-normal">
+      <Badge variant="outline" className="text-xs shrink-0 font-normal gap-1">
+        <DollarSign className="h-3 w-3" />
         {t("providers.model_pricing_not_configured")}
       </Badge>
     );
   }
 
-  // 使用箭头符号表示输入/输出方向
-  const label = [
-    hasInput && `↓${pricing.input}`,
-    hasOutput && `↑${pricing.output}`,
-  ]
-    .filter(Boolean)
-    .join(" / ");
-
   return (
-    <Badge variant="secondary" className="text-xs shrink-0 font-mono font-normal">
-      {label}
-    </Badge>
+    <div className="flex items-center gap-2 shrink-0">
+      {hasInput && (
+        <Badge variant="secondary" className="text-xs font-mono font-normal gap-1 bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800">
+          <ArrowDownToLine className="h-3 w-3" />
+          {pricing.input}
+        </Badge>
+      )}
+      {hasOutput && (
+        <Badge variant="secondary" className="text-xs font-mono font-normal gap-1 bg-purple-50 text-purple-700 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800">
+          <ArrowUpFromLine className="h-3 w-3" />
+          {pricing.output}
+        </Badge>
+      )}
+    </div>
   );
 }
 
@@ -58,79 +71,107 @@ function formatDate(timestamp?: number): string {
 }
 
 /**
- * 模型卡片组件
- * 
- * 设计原则：
- * - 极简主义：只显示核心信息，操作按钮悬停时才显示
- * - 墨水风格：细线边框、大量留白、微妙阴影
- * - 清晰层次：主标题 > 模型ID > 元数据 > 操作区
- * - 平滑交互：200ms 过渡动画，轻微上浮效果
+ * 模型卡片组件 - 现代化设计
+ *
+ * 设计特点：
+ * - 使用 Card 组件提供更好的结构
+ * - 添加图标增强视觉识别
+ * - 渐变背景和悬停效果
+ * - 更清晰的信息层次
+ * - 流畅的动画过渡
  */
 export function ModelCard({ model, canEdit, onEditPricing, onEditAlias }: ModelCardProps) {
   const { t } = useI18n();
 
   return (
-    <div
-      className="group relative border rounded-lg p-5 transition-all duration-200 
-                 hover:border-foreground/20 hover:shadow-sm hover:-translate-y-0.5 
-                 bg-card"
+    <Card
+      className="group relative overflow-hidden transition-all duration-300
+                 hover:shadow-lg hover:shadow-primary/5 hover:-translate-y-1
+                 hover:border-primary/20 bg-gradient-to-br from-card to-card/50"
     >
-      {/* 主标题区：模型名称 + 计费标签 */}
-      <div className="flex items-start justify-between gap-3 mb-3">
-        <h3 className="font-medium text-base leading-tight break-words flex-1">
-          {model.display_name || model.model_id}
-        </h3>
-        <PricingBadge model={model} />
-      </div>
-
-      {/* 模型 ID：小号等宽字体，灰色 */}
-      <code className="text-xs text-muted-foreground font-mono block mb-4 break-all">
-        {model.model_id}
-      </code>
-
-      {/* 元数据区：所有者、创建时间、别名 */}
-      <div className="space-y-1.5 text-xs text-muted-foreground">
-        <div>
-          {t("providers.model_owned_by")}:{" "}
-          {model.metadata?.owned_by || "-"}
-        </div>
-        <div>
-          {t("providers.model_created")}:{" "}
-          {formatDate(model.metadata?.created)}
-        </div>
-        {model.alias && (
-          <div className="font-mono">
-            {t("providers.model_alias")}: {model.alias} → {model.model_id}
+      {/* 装饰性渐变条 */}
+      <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500 via-purple-500 to-blue-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+      
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start gap-2 flex-1 min-w-0">
+            <div className="mt-0.5 p-1.5 rounded-lg bg-primary/5 text-primary shrink-0 group-hover:bg-primary/10 transition-colors">
+              <Sparkles className="h-4 w-4" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h3 className="font-semibold text-base leading-tight break-words mb-1.5">
+                {model.display_name || model.model_id}
+              </h3>
+              <code className="text-xs text-muted-foreground font-mono block break-all bg-muted/50 px-2 py-1 rounded">
+                {model.model_id}
+              </code>
+            </div>
           </div>
-        )}
-      </div>
+          <PricingBadge model={model} />
+        </div>
+      </CardHeader>
 
-      {/* 操作区：悬停时显示，使用细分隔线 */}
-      <div
-        className="mt-4 pt-4 border-t border-border/50 
-                   opacity-0 group-hover:opacity-100 
-                   transition-opacity duration-200 
-                   flex gap-2"
-      >
+
+      <CardContent className="pt-4 pb-3">
+        <div className="space-y-2.5">
+          {/* 所有者信息 */}
+          <div className="flex items-start gap-2 text-sm">
+            <User className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="text-muted-foreground text-xs">{t("providers.model_owned_by")}</span>
+              <p className="font-medium truncate">{model.metadata?.owned_by || "-"}</p>
+            </div>
+          </div>
+
+          {/* 创建时间 */}
+          <div className="flex items-start gap-2 text-sm">
+            <Calendar className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <span className="text-muted-foreground text-xs">{t("providers.model_created")}</span>
+              <p className="font-medium">{formatDate(model.metadata?.created)}</p>
+            </div>
+          </div>
+
+          {/* 别名信息 */}
+          {model.alias && (
+            <div className="flex items-start gap-2 text-sm">
+              <Tag className="h-4 w-4 text-muted-foreground shrink-0 mt-0.5" />
+              <div className="flex-1 min-w-0">
+                <span className="text-muted-foreground text-xs">{t("providers.model_alias")}</span>
+                <p className="font-mono text-xs break-all">
+                  <span className="text-primary font-medium">{model.alias}</span>
+                  <span className="text-muted-foreground mx-1">→</span>
+                  <span>{model.model_id}</span>
+                </p>
+              </div>
+            </div>
+          )}
+        </div>
+      </CardContent>
+
+
+      <CardFooter className="pt-3 pb-3 gap-2 opacity-0 group-hover:opacity-100 transition-all duration-300">
         <Button
-          variant="ghost"
+          variant="outline"
           size="sm"
           onClick={onEditPricing}
-          className="h-8 text-xs hover:bg-muted"
+          className="flex-1 h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/20"
         >
+          <DollarSign className="h-3.5 w-3.5" />
           {t("providers.model_edit_pricing")}
         </Button>
         {canEdit && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             onClick={onEditAlias}
-            className="h-8 text-xs hover:bg-muted"
+            className="flex-1 h-9 text-xs gap-1.5 hover:bg-primary/5 hover:text-primary hover:border-primary/20"
           >
+            <Tag className="h-3.5 w-3.5" />
             {t("providers.model_edit_alias")}
           </Button>
         )}
-      </div>
-    </div>
+      </CardFooter>
+    </Card>
   );
 }

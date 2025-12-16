@@ -16,6 +16,7 @@ from app.provider.key_pool import (
 )
 from app.provider.sdk_selector import get_sdk_driver, normalize_base_url
 from app.schemas import ProviderConfig
+from app.api.v1.chat.header_builder import build_upstream_headers
 from app.services.claude_cli_transformer import (
     build_claude_cli_headers,
     transform_to_claude_cli_format,
@@ -273,16 +274,12 @@ async def execute_user_probe(
             except ValueError:
                 parsed_json = None
         else:
-            headers: dict[str, str] = {"Accept": "application/json"}
-            if chosen_style == "claude":
-                headers["x-api-key"] = selection.key
-                headers.setdefault("Anthropic-Version", "2023-06-01")
-                headers.setdefault("Content-Type", "application/json")
-            else:
-                headers["Authorization"] = f"Bearer {selection.key}"
-
-            if provider_cfg.custom_headers:
-                headers.update(provider_cfg.custom_headers)
+            headers = build_upstream_headers(
+                selection.key,
+                provider_cfg,
+                call_style=chosen_style,
+                is_stream=False,
+            )
 
             url = _build_url(provider_cfg, chosen_style)
             payload = _build_probe_payload(

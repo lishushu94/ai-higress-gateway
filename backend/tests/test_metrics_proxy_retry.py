@@ -131,6 +131,7 @@ async def test_stream_upstream_retries_with_another_proxy_on_transport_upstream_
         json_body: dict,
         redis,
         session_id: str | None,
+        sse_style: str | None = None,
     ):
         if getattr(client, "proxy", None) == "http://bad-proxy":
             raise UpstreamStreamError(
@@ -173,4 +174,3 @@ async def test_stream_upstream_retries_with_another_proxy_on_transport_upstream_
 
     assert chunks == [b"data: ok\n\n"]
     assert used_proxies == ["http://bad-proxy", "http://good-proxy"]
-

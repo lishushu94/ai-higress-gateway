@@ -181,7 +181,7 @@ curl -X POST "http://localhost:8000/auth/login" \
   -d '{"username": "testuser", "password": "securepassword"}'
 
 # 3. 使用JWT令牌创建API密钥
-curl -X POST "http://localhost:8000/v2/users/{user_id}/api-keys" \
+curl -X POST "http://localhost:8000/users/{user_id}/api-keys" \
   -H "Authorization: Bearer <jwt_token>" \
   -H "Content-Type: application/json" \
   -d '{"name": "my-app-key", "expiry": "MONTH"}'

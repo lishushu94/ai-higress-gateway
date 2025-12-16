@@ -341,7 +341,7 @@ pytest --cov=app.api.v1.chat --cov-report=html backend/tests/test_*.py
 **完成时间**: 2024-12-15
 
 **重构成果**:
-- 创建 `chat_routes_refactored.py`：使用模块化组件的简化版本
+- 创建 `chat_routes.py`：使用模块化组件的简化版本（现为默认实现）
 - 代码量从 **2147 行减少到 350 行**（减少 **85%+**）
 - 性能提升 **30-40%**（Redis 查询减少 60-70%）
 - 测试覆盖率从 40% 提升到 **80%**
