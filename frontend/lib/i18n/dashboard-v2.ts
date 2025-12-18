@@ -1,0 +1,134 @@
+import type { Language } from "../i18n-context";
+
+export const dashboardV2Translations: Record<Language, Record<string, string>> = {
+  en: {
+    // Page title
+    "dashboard_v2.title": "Dashboard Overview",
+    "dashboard_v2.subtitle": "Real-time monitoring and analytics",
+
+    // Filter bar
+    "dashboard_v2.filter.time_range.label": "Time Range",
+    "dashboard_v2.filter.time_range.today": "Today",
+    "dashboard_v2.filter.time_range.7d": "Last 7 Days",
+    "dashboard_v2.filter.time_range.30d": "Last 30 Days",
+    
+    "dashboard_v2.filter.transport.label": "Transport",
+    "dashboard_v2.filter.transport.all": "All",
+    "dashboard_v2.filter.transport.http": "HTTP",
+    "dashboard_v2.filter.transport.sdk": "SDK",
+    "dashboard_v2.filter.transport.claude_cli": "Claude CLI",
+    
+    "dashboard_v2.filter.stream.label": "Stream",
+    "dashboard_v2.filter.stream.all": "All",
+    "dashboard_v2.filter.stream.true": "Streaming",
+    "dashboard_v2.filter.stream.false": "Non-Streaming",
+
+    // Health badge
+    "dashboard_v2.health.normal": "Normal",
+    "dashboard_v2.health.unstable": "Unstable",
+    "dashboard_v2.health.critical": "Critical",
+    
+    // Health badge (new keys for HealthBadge component)
+    "dashboardV2.healthBadge.loading": "Loading...",
+    "dashboardV2.healthBadge.healthy": "Normal",
+    "dashboardV2.healthBadge.degraded": "Degraded",
+    "dashboardV2.healthBadge.unhealthy": "Unhealthy",
+
+    // KPI Cards
+    "dashboard_v2.kpi.total_requests": "Total Requests",
+    "dashboard_v2.kpi.credits_spent": "Credits Spent",
+    "dashboard_v2.kpi.latency_p95": "P95 Latency",
+    "dashboard_v2.kpi.error_rate": "Error Rate",
+    "dashboard_v2.kpi.total_tokens": "Total Tokens",
+    "dashboard_v2.kpi.input_tokens": "Input",
+    "dashboard_v2.kpi.output_tokens": "Output",
+
+    // Charts
+    "dashboard_v2.chart.requests_errors.title": "Requests & Errors Trend",
+    "dashboard_v2.chart.requests_errors.subtitle": "Last 24 hours",
+    "dashboard_v2.chart.latency_percentiles.title": "Latency Percentiles",
+    "dashboard_v2.chart.latency_percentiles.subtitle": "Last 24 hours",
+    "dashboard_v2.chart.latency.title": "Latency Percentiles",
+    "dashboard_v2.chart.latency.subtitle": "Last 24 hours",
+    "dashboard_v2.chart.tokens.title": "Token Usage",
+    "dashboard_v2.chart.tokens.subtitle": "Input vs Output",
+    "dashboard_v2.chart.cost.title": "Cost by Provider",
+    "dashboard_v2.chart.cost.subtitle": "Distribution",
+    "dashboard_v2.chart.top_models.title": "Top Models",
+    "dashboard_v2.chart.top_models.subtitle": "Most used models",
+
+    // Loading & Error states
+    "dashboard_v2.loading": "Loading...",
+    "dashboard_v2.error": "Failed to load data",
+    "dashboard_v2.error.retry": "Retry",
+    "dashboard_v2.empty": "No data available",
+
+    // Tooltips
+    "dashboard_v2.tooltip.estimated_requests": "Some tokens are estimated",
+  },
+  zh: {
+    // Page title
+    "dashboard_v2.title": "仪表盘概览",
+    "dashboard_v2.subtitle": "实时监控与分析",
+
+    // Filter bar
+    "dashboard_v2.filter.time_range.label": "时间范围",
+    "dashboard_v2.filter.time_range.today": "今天",
+    "dashboard_v2.filter.time_range.7d": "过去 7 天",
+    "dashboard_v2.filter.time_range.30d": "过去 30 天",
+    
+    "dashboard_v2.filter.transport.label": "传输方式",
+    "dashboard_v2.filter.transport.all": "全部",
+    "dashboard_v2.filter.transport.http": "HTTP",
+    "dashboard_v2.filter.transport.sdk": "SDK",
+    "dashboard_v2.filter.transport.claude_cli": "Claude CLI",
+    
+    "dashboard_v2.filter.stream.label": "流式",
+    "dashboard_v2.filter.stream.all": "全部",
+    "dashboard_v2.filter.stream.true": "流式",
+    "dashboard_v2.filter.stream.false": "非流式",
+
+    // Health badge
+    "dashboard_v2.health.normal": "正常",
+    "dashboard_v2.health.unstable": "抖动",
+    "dashboard_v2.health.critical": "异常",
+    
+    // Health badge (new keys for HealthBadge component)
+    "dashboardV2.healthBadge.loading": "加载中...",
+    "dashboardV2.healthBadge.healthy": "正常",
+    "dashboardV2.healthBadge.degraded": "抖动",
+    "dashboardV2.healthBadge.unhealthy": "异常",
+
+    // KPI Cards
+    "dashboard_v2.kpi.total_requests": "总请求数",
+    "dashboard_v2.kpi.credits_spent": "Credits 花费",
+    "dashboard_v2.kpi.latency_p95": "P95 延迟",
+    "dashboard_v2.kpi.error_rate": "错误率",
+    "dashboard_v2.kpi.total_tokens": "Token 总量",
+    "dashboard_v2.kpi.input_tokens": "输入",
+    "dashboard_v2.kpi.output_tokens": "输出",
+
+    // Charts
+    "dashboard_v2.chart.requests_errors.title": "请求 & 错误趋势",
+    "dashboard_v2.chart.requests_errors.subtitle": "近 24 小时",
+    "dashboard_v2.chart.latency_percentiles.title": "延迟分位数趋势",
+    "dashboard_v2.chart.latency_percentiles.subtitle": "近 24 小时",
+    "dashboard_v2.chart.latency.title": "延迟分位数",
+    "dashboard_v2.chart.latency.subtitle": "近 24 小时",
+    "dashboard_v2.chart.tokens.title": "Token 使用",
+    "dashboard_v2.chart.tokens.subtitle": "输入 vs 输出",
+    "dashboard_v2.chart.cost.title": "按 Provider 成本",
+    "dashboard_v2.chart.cost.subtitle": "分布情况",
+    "dashboard_v2.chart.top_models.title": "热门模型",
+    "dashboard_v2.chart.top_models.subtitle": "使用最多的模型",
+
+    // Loading & Error states
+    "dashboard_v2.loading": "加载中...",
+    "dashboard_v2.error": "加载数据失败",
+    "dashboard_v2.error.retry": "重试",
+    "dashboard_v2.empty": "暂无数据",
+
+    // Tooltips
+    "dashboard_v2.tooltip.estimated_requests": "部分 Token 来自估算",
+  },
+};

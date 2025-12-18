@@ -5,6 +5,14 @@ import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Plus, Search, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 import { ProvidersTableEnhanced } from "@/components/dashboard/providers/providers-table-enhanced";
@@ -14,14 +22,6 @@ import { useErrorDisplay } from "@/lib/errors";
 import { usePrivateProviderQuota } from "@/lib/swr/use-private-providers";
 import { QuotaCard } from "./quota-card";
 import { HealthStats } from "./health-stats";
-
-// 动态加载 Dialog 和表单组件
-const Dialog = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.Dialog })), { ssr: false });
-const DialogContent = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogContent })), { ssr: false });
-const DialogDescription = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogDescription })), { ssr: false });
-const DialogFooter = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogFooter })), { ssr: false });
-const DialogHeader = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogHeader })), { ssr: false });
-const DialogTitle = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogTitle })), { ssr: false });
 
 const ProviderFormEnhanced = dynamic(() => import("@/components/dashboard/providers/provider-form").then(mod => ({ default: mod.ProviderFormEnhanced })), { ssr: false });
 const ProviderModelsDialog = dynamic(() => import("@/components/dashboard/providers/provider-models-dialog").then(mod => ({ default: mod.ProviderModelsDialog })), { ssr: false });
@@ -242,7 +242,7 @@ export function MyProvidersPageClient({
         />
       )}
 
-      {/* 创建/编辑表单对话框 */}
+      {/* 创建/编辑表单抽屉 */}
       <ProviderFormEnhanced
         open={formOpen}
         onOpenChange={(open) => {
@@ -258,41 +258,41 @@ export function MyProvidersPageClient({
         editingProvider={editingProvider}
       />
 
-      {/* 删除确认对话框 */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("providers.delete_dialog_title")}</DialogTitle>
-            <DialogDescription>
+      {/* 删除确认抽屉 */}
+      <Drawer open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DrawerContent className="mx-auto w-full max-w-md">
+          <DrawerHeader>
+            <DrawerTitle>{t("providers.delete_dialog_title")}</DrawerTitle>
+            <DrawerDescription>
               {t("providers.delete_dialog_description")}{" "}
-              <span className="font-mono font-semibold">
-                {deletingProviderId}
-              </span>
+              <span className="font-mono font-semibold">{deletingProviderId}</span>
               {t("providers.delete_dialog_warning")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirmOpen(false)}
-              disabled={isDeleting}
-            >
-              {t("providers.btn_cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-            >
-              {isDeleting
-                ? t("providers.deleting_button")
-                : t("providers.delete_button")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </DrawerDescription>
+          </DrawerHeader>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={isDeleting}
+              >
+                {t("providers.btn_cancel")}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+              >
+                {isDeleting
+                  ? t("providers.deleting_button")
+                  : t("providers.delete_button")}
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
-      {/* 模型查看对话框 */}
+      {/* 模型查看抽屉 */}
       <ProviderModelsDialog
         open={modelsDialogOpen}
         onOpenChange={setModelsDialogOpen}

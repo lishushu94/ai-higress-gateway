@@ -1,8 +1,7 @@
 "use client";
 
 import React, { useEffect } from "react";
-import dynamic from "next/dynamic";
-import { useForm } from "react-hook-form";
+import { Controller, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { Button } from "@/components/ui/button";
@@ -11,25 +10,29 @@ import { Label } from "@/components/ui/label";
 import { useI18n } from "@/lib/i18n-context";
 import { Loader2 } from "lucide-react";
 import type { ProviderKey } from "@/lib/api-types";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
-// 动态加载 Dialog 组件
-const Dialog = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.Dialog })), { ssr: false });
-const DialogContent = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogContent })), { ssr: false });
-const DialogDescription = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogDescription })), { ssr: false });
-const DialogFooter = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogFooter })), { ssr: false });
-const DialogHeader = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogHeader })), { ssr: false });
-const DialogTitle = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogTitle })), { ssr: false });
-
-// 表单验证 schema
-const providerKeySchema = z.object({
-  key: z.string().optional(),
-  label: z.string().min(1, "标签不能为空").max(100, "标签不能超过100字符"),
-  weight: z.number().min(0, "权重不能为负数").max(100, "权重不能超过100"),
-  max_qps: z.number().min(1, "QPS必须大于0").optional().or(z.literal(0)),
-  status: z.enum(['active', 'inactive']),
-});
-
-type ProviderKeyFormData = z.infer<typeof providerKeySchema>;
+type ProviderKeyFormData = {
+  key?: string;
+  label: string;
+  weight: number;
+  max_qps?: number;
+  status: "active" | "inactive";
+};
 
 interface ProviderKeyDialogProps {
   open: boolean;
@@ -48,6 +51,32 @@ export function ProviderKeyDialog({
 }: ProviderKeyDialogProps) {
   const { t } = useI18n();
   const [isSubmitting, setIsSubmitting] = React.useState(false);
+  const isEditing = Boolean(editingKey);
+
+  const providerKeySchema = React.useMemo(
+    () =>
+      z.object({
+        key: z.string().optional(),
+        label: z
+          .string()
+          .trim()
+          .min(1, t("provider_keys.form_label_required"))
+          .max(100, t("provider_keys.form_label_invalid")),
+        weight: z.preprocess(
+          (val) => (typeof val === "number" && Number.isNaN(val) ? 1.0 : val),
+          z
+            .number()
+            .min(0, t("provider_keys.form_weight_invalid"))
+            .max(100, t("provider_keys.form_weight_invalid"))
+        ),
+        max_qps: z.preprocess(
+          (val) => (typeof val === "number" && Number.isNaN(val) ? 0 : val),
+          z.number().min(0, t("provider_keys.form_qps_invalid")).optional()
+        ),
+        status: z.enum(["active", "inactive"]),
+      }),
+    [t]
+  );
 
   const {
     register,
@@ -55,6 +84,7 @@ export function ProviderKeyDialog({
     formState: { errors },
     reset,
     setValue,
+    control,
   } = useForm<ProviderKeyFormData>({
     resolver: zodResolver(providerKeySchema),
     defaultValues: {
@@ -106,129 +136,123 @@ export function ProviderKeyDialog({
     }
   };
 
-  const isEditing = !!editingKey;
-
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
-        <DialogHeader>
-          <DialogTitle>
-            {isEditing 
-              ? t("provider_keys.dialog_edit_title") 
-              : t("provider_keys.dialog_create_title")}
-          </DialogTitle>
-          <DialogDescription>
-            {isEditing 
-              ? t("provider_keys.dialog_edit_description") 
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto w-full max-w-lg">
+        <DrawerHeader>
+          <DrawerTitle>
+            {isEditing ? t("provider_keys.dialog_edit_title") : t("provider_keys.dialog_create_title")}
+          </DrawerTitle>
+          <DrawerDescription>
+            {isEditing
+              ? t("provider_keys.dialog_edit_description")
               : t("provider_keys.dialog_create_description")}
-          </DialogDescription>
-        </DialogHeader>
+          </DrawerDescription>
+        </DrawerHeader>
 
-        <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
-          {/* API 密钥字段 - 仅在创建时显示 */}
-          {!isEditing && (
+        <form onSubmit={handleSubmit(handleFormSubmit)} className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-4">
+            {!isEditing && (
+              <div className="space-y-2">
+                <Label htmlFor="key">
+                  {t("provider_keys.form_key")} <span className="text-destructive">*</span>
+                </Label>
+                <Input
+                  id="key"
+                  type="password"
+                  placeholder={t("provider_keys.form_key_placeholder")}
+                  {...register("key", { required: t("provider_keys.form_key_required") })}
+                />
+                {errors.key && (
+                  <p className="text-sm text-destructive">{errors.key.message}</p>
+                )}
+              </div>
+            )}
+
             <div className="space-y-2">
-              <Label htmlFor="key">
-                {t("provider_keys.form_key")} <span className="text-destructive">*</span>
+              <Label htmlFor="label">
+                {t("provider_keys.form_label")} <span className="text-destructive">*</span>
               </Label>
               <Input
-                id="key"
-                type="password"
-                placeholder={t("provider_keys.form_key_placeholder")}
-                {...register("key", { required: !isEditing })}
+                id="label"
+                placeholder={t("provider_keys.form_label_placeholder")}
+                {...register("label")}
               />
-              {errors.key && (
-                <p className="text-sm text-destructive">{errors.key.message}</p>
+              {errors.label && (
+                <p className="text-sm text-destructive">{errors.label.message}</p>
               )}
             </div>
-          )}
 
-          {/* 标签 */}
-          <div className="space-y-2">
-            <Label htmlFor="label">
-              {t("provider_keys.form_label")} <span className="text-destructive">*</span>
-            </Label>
-            <Input
-              id="label"
-              placeholder={t("provider_keys.form_label_placeholder")}
-              {...register("label")}
-            />
-            {errors.label && (
-              <p className="text-sm text-destructive">{errors.label.message}</p>
-            )}
+            <div className="space-y-2">
+              <Label htmlFor="weight">{t("provider_keys.form_weight")}</Label>
+              <Input
+                id="weight"
+                type="number"
+                step="0.1"
+                {...register("weight", { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("provider_keys.form_weight_description")}
+              </p>
+              {errors.weight && (
+                <p className="text-sm text-destructive">{errors.weight.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="max_qps">{t("provider_keys.form_qps")}</Label>
+              <Input
+                id="max_qps"
+                type="number"
+                placeholder={t("provider_keys.form_qps_placeholder")}
+                {...register("max_qps", { valueAsNumber: true })}
+              />
+              <p className="text-xs text-muted-foreground">
+                {t("provider_keys.form_qps_description")}
+              </p>
+              {errors.max_qps && (
+                <p className="text-sm text-destructive">{errors.max_qps.message}</p>
+              )}
+            </div>
+
+            <div className="space-y-2">
+              <Label>{t("provider_keys.form_status")}</Label>
+              <Controller
+                control={control}
+                name="status"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">{t("provider_keys.status_active")}</SelectItem>
+                      <SelectItem value="inactive">{t("provider_keys.status_inactive")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                )}
+              />
+            </div>
           </div>
 
-          {/* 权重 */}
-          <div className="space-y-2">
-            <Label htmlFor="weight">
-              {t("provider_keys.form_weight")}
-            </Label>
-            <Input
-              id="weight"
-              type="number"
-              step="0.1"
-              {...register("weight", { valueAsNumber: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t("provider_keys.form_weight_description")}
-            </p>
-            {errors.weight && (
-              <p className="text-sm text-destructive">{errors.weight.message}</p>
-            )}
-          </div>
-
-          {/* QPS 限制 */}
-          <div className="space-y-2">
-            <Label htmlFor="max_qps">
-              {t("provider_keys.form_qps")}
-            </Label>
-            <Input
-              id="max_qps"
-              type="number"
-              placeholder={t("provider_keys.form_qps_placeholder")}
-              {...register("max_qps", { valueAsNumber: true })}
-            />
-            <p className="text-xs text-muted-foreground">
-              {t("provider_keys.form_qps_description")}
-            </p>
-            {errors.max_qps && (
-              <p className="text-sm text-destructive">{errors.max_qps.message}</p>
-            )}
-          </div>
-
-          {/* 状态 */}
-          <div className="space-y-2">
-            <Label htmlFor="status">
-              {t("provider_keys.form_status")}
-            </Label>
-            <select
-              id="status"
-              className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              {...register("status")}
-            >
-              <option value="active">{t("provider_keys.status_active")}</option>
-              <option value="inactive">{t("provider_keys.status_inactive")}</option>
-            </select>
-          </div>
-
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={isSubmitting}
-            >
-              {t("common.cancel")}
-            </Button>
-            <Button type="submit" disabled={isSubmitting}>
-              {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-              {isEditing 
-                ? t("providers.btn_save") 
-                : t("providers.btn_create")}
-            </Button>
-          </DialogFooter>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => onOpenChange(false)}
+                disabled={isSubmitting}
+              >
+                {t("common.cancel")}
+              </Button>
+              <Button type="submit" disabled={isSubmitting}>
+                {isSubmitting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                {isEditing ? t("providers.btn_save") : t("providers.btn_create")}
+              </Button>
+            </div>
+          </DrawerFooter>
         </form>
-      </DialogContent>
-    </Dialog>
+      </DrawerContent>
+    </Drawer>
   );
 }

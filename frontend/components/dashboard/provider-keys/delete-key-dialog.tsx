@@ -1,15 +1,14 @@
 "use client";
 
+import { Button } from "@/components/ui/button";
 import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { useI18n } from "@/lib/i18n-context";
 import { Loader2 } from "lucide-react";
 
@@ -35,31 +34,35 @@ export function DeleteKeyDialog({
   };
 
   return (
-    <AlertDialog open={open} onOpenChange={onOpenChange}>
-      <AlertDialogContent>
-        <AlertDialogHeader>
-          <AlertDialogTitle>
-            {t("provider_keys.delete_dialog_title")}
-          </AlertDialogTitle>
-          <AlertDialogDescription>
-            {t("provider_keys.delete_dialog_description")} <strong>{keyLabel}</strong>
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto w-full max-w-md">
+        <DrawerHeader>
+          <DrawerTitle>{t("provider_keys.delete_dialog_title")}</DrawerTitle>
+          <DrawerDescription>
+            {t("provider_keys.delete_dialog_description")} <span className="font-mono font-semibold">{keyLabel}</span>
             {t("provider_keys.delete_dialog_warning")}
-          </AlertDialogDescription>
-        </AlertDialogHeader>
-        <AlertDialogFooter>
-          <AlertDialogCancel disabled={isDeleting}>
-            {t("provider_keys.delete_cancel")}
-          </AlertDialogCancel>
-          <AlertDialogAction
-            onClick={handleConfirm}
-            disabled={isDeleting}
-            className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-          >
-            {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
-            {t("provider_keys.delete_confirm")}
-          </AlertDialogAction>
-        </AlertDialogFooter>
-      </AlertDialogContent>
-    </AlertDialog>
+          </DrawerDescription>
+        </DrawerHeader>
+        <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+          <div className="flex w-full justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={isDeleting}
+            >
+              {t("provider_keys.delete_cancel")}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirm}
+              disabled={isDeleting}
+            >
+              {isDeleting && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+              {t("provider_keys.delete_confirm")}
+            </Button>
+          </div>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

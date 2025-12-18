@@ -12,13 +12,13 @@ import { ProviderModelsDialog } from "@/components/dashboard/providers/provider-
 import { Provider, providerService } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import {
   Select,
   SelectContent,
@@ -295,7 +295,7 @@ export function ProvidersPageClient({
         currentUserId={effectiveUserId ?? undefined}
       />
 
-      {/* 创建表单对话框 */}
+      {/* 创建/编辑表单抽屉 */}
       <ProviderFormEnhanced
         open={formOpen}
         onOpenChange={(open) => {
@@ -308,7 +308,7 @@ export function ProvidersPageClient({
         editingProvider={editingProvider ?? undefined}
       />
 
-      {/* 模型管理对话框 */}
+      {/* 模型管理抽屉 */}
       <ProviderModelsDialog
         open={modelsDialogOpen}
         onOpenChange={setModelsDialogOpen}
@@ -317,35 +317,39 @@ export function ProvidersPageClient({
         onModelsPathChange={handleModelsPathChange}
       />
 
-      {/* 删除确认对话框 */}
-      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{t("providers.delete_dialog_title")}</DialogTitle>
-            <DialogDescription>
+      {/* 删除确认抽屉 */}
+      <Drawer open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DrawerContent className="mx-auto w-full max-w-md">
+          <DrawerHeader>
+            <DrawerTitle>{t("providers.delete_dialog_title")}</DrawerTitle>
+            <DrawerDescription>
               {t("providers.delete_dialog_description")}{" "}
               <span className="font-mono font-semibold">{deletingProviderId}</span>
               {t("providers.delete_dialog_warning")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteConfirmOpen(false)}
-              disabled={isDeleting}
-            >
-              {t("providers.btn_cancel")}
-            </Button>
-            <Button
-              variant="destructive"
-              onClick={handleDeleteConfirm}
-              disabled={isDeleting}
-            >
-              {isDeleting ? t("providers.deleting_button") : t("providers.delete_button")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+            </DrawerDescription>
+          </DrawerHeader>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setDeleteConfirmOpen(false)}
+                disabled={isDeleting}
+              >
+                {t("providers.btn_cancel")}
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={handleDeleteConfirm}
+                disabled={isDeleting}
+              >
+                {isDeleting
+                  ? t("providers.deleting_button")
+                  : t("providers.delete_button")}
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }

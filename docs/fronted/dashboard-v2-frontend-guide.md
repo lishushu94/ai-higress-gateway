@@ -32,6 +32,13 @@
 - 前端建议：系统页在进入前就做权限判断（例如通过现有 session/me 信息），避免用户看到“红色错误页”。
 - 对于接口级错误：使用统一 `ErrorState`（已有模式可参考 `frontend/components/dashboard/overview/error-state.tsx`）。
 
+### 0.3 视觉与信息密度（不要太简单，也不要太复杂）
+
+本页是“决策型概览”，建议把复杂度控制在“**一眼能看懂、下钻能定位**”：
+- 卡片与图表：优先呈现结论（KPI/趋势/Top），细节放到 tooltip/二级页，不要把所有维度堆在一屏。
+- 图表装饰：保留必要的轴/tooltip/少量网格线即可；避免过多动画、渐变、3D、密集图例导致干扰阅读。
+- 颜色策略：用少量强调色表达状态（成功/告警/错误），其余保持克制；错误堆叠柱建议统一红系分层。
+
 ---
 
 ## 1. 信息架构与页面布局（栅格化）
@@ -142,6 +149,17 @@
 - `frontend/components/ui/chart.tsx`（Recharts 封装）
 - 按 `frontend/docs/code-splitting-strategy.md` 做动态 import（避免 Recharts 影响首屏）。
 
+### 3.3 性能与打包优化（AGENTS 与现有实现对齐）
+
+仓库的性能建议主要来自两处：
+- `AGENTS.md`：分页/搜索、SWR 缓存策略、容器组件与展示组件拆分、尽量在服务端准备数据等。
+- `frontend/docs/code-splitting-strategy.md` 与 `frontend/docs/performance-optimization-summary.md`：明确了图表（recharts）等大依赖要用 `next/dynamic` 分割，配合 skeleton，减少首屏 bundle 压力。
+
+针对 Dashboard v2 建议：
+- **所有图表卡片客户端组件**使用 `next/dynamic`（`ssr:false`），页面骨架用 `LoadingSkeleton`/`ChartSkeleton`。
+- **SWR 刷新频率**不高于后端 TTL（v2 接口 Redis TTL=60s）：避免 5s 级别的刷新造成无意义请求风暴。
+- **避免每次 render 构造新 key/params 对象**：filters 用 `useMemo` 固化，减少 SWR 误判为新请求。
+
 ---
 
 ## 4. 交互与可视化细节（建议口径）
@@ -207,4 +225,3 @@
 - Token 估算提示在 `estimated_requests>0` 时可见
 - 空态/无数据：不画“随机曲线”，改为明确空态提示
 - i18n：所有可见文案走 `useI18n()`（不硬编码）
-

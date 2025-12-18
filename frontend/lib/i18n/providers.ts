@@ -32,6 +32,7 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.action_view_models": "View models",
     "providers.models_dialog_title": "Models for this provider",
     "providers.models_dialog_description": "Configure how this provider's model list is discovered and define optional static fallback models.",
+    "providers.models_provider_id_label": "提供商 ID",
     // Providers page - Enhanced
     "providers.management_title": "Provider Management",
     "providers.management_subtitle": "Manage your private/shared providers and view available public providers",
@@ -155,12 +156,13 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.pricing_save_success": "Pricing configuration saved",
     "providers.pricing_save_error": "Failed to save pricing configuration",
 
-    // Per-model alias mapping
-    "providers.alias_current_label": "Current alias",
-    "providers.alias_edit_label": "Model alias mapping",
-    "providers.alias_placeholder": "e.g. claude-sonnet-4-5",
-    "providers.alias_hint":
-      "Map a long upstream model id to a shorter, user-facing alias, e.g. map claude-sonnet-4-5-20250929 to claude-sonnet-4-5. Clear the field and save to remove the alias.",
+	    // Per-model alias mapping
+	    "providers.alias_current_label": "Current alias",
+	    "providers.alias_edit_title": "Edit model alias",
+	    "providers.alias_edit_label": "Model alias mapping",
+	    "providers.alias_placeholder": "e.g. claude-sonnet-4-5",
+	    "providers.alias_hint":
+	      "Map a long upstream model id to a shorter, user-facing alias, e.g. map claude-sonnet-4-5-20250929 to claude-sonnet-4-5. Clear the field and save to remove the alias.",
     "providers.alias_save_success": "Model mapping saved",
     "providers.alias_save_error": "Failed to save model mapping",
 
@@ -354,6 +356,7 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.action_view_models": "查看模型列表",
     "providers.models_dialog_title": "该提供商的模型列表",
     "providers.models_dialog_description": "下面是当前为该提供商展示的模型示例，后续将通过网关接口实时获取模型列表。",
+    "providers.models_provider_id_label": "提供商 ID",
     // Providers page - Enhanced
     "providers.management_title": "提供商管理",
     "providers.management_subtitle": "管理您的私有/授权提供商，并查看可用的公共提供商",
@@ -457,12 +460,13 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.pricing_save_success": "计费配置已保存",
     "providers.pricing_save_error": "保存计费配置失败",
 
-    // 每模型别名映射
-    "providers.alias_current_label": "当前别名",
-    "providers.alias_edit_label": "模型别名映射",
-    "providers.alias_placeholder": "例如 claude-sonnet-4-5",
-    "providers.alias_hint":
-      "为长版本模型 ID 配置一个更易记的别名，例如将 claude-sonnet-4-5-20250929 映射为 claude-sonnet-4-5。留空后保存可清除别名。",
+	    // 每模型别名映射
+	    "providers.alias_current_label": "当前别名",
+	    "providers.alias_edit_title": "编辑模型别名",
+	    "providers.alias_edit_label": "模型别名映射",
+	    "providers.alias_placeholder": "例如 claude-sonnet-4-5",
+	    "providers.alias_hint":
+	      "为长版本模型 ID 配置一个更易记的别名，例如将 claude-sonnet-4-5-20250929 映射为 claude-sonnet-4-5。留空后保存可清除别名。",
     "providers.alias_save_success": "模型映射已保存",
     "providers.alias_save_error": "保存模型映射失败",
 
@@ -501,7 +505,7 @@ export const providersTranslations: Record<Language, Record<string, string>> = {
     "providers.sharing_no_results": "未找到用户",
 
     // Provider models dialog（模型路径 + 静态模型）
-    "providers.models_path_label": "Models Path",
+    "providers.models_path_label": "Models 路径",
     "providers.models_path_tooltip":
       "用于拉取模型列表的接口路径。大多数厂商兼容 /v1/models；仅当上游没有 /models 接口或返回格式不兼容时，才在这里调整，并使用下方的静态模型列表作为兜底配置。",
     "providers.models_path_placeholder": "/v1/models",

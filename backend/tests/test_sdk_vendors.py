@@ -25,6 +25,18 @@ def test_provider_preset_rejects_unknown_sdk_vendor():
         )
 
 
+def test_provider_preset_accepts_vertexai_sdk_vendor():
+    preset = ProviderPresetBase(
+        preset_id="VERTEXAI_TEST",
+        display_name="Vertex AI Test",
+        base_url="https://us-central1-aiplatform.googleapis.com/",
+        transport="sdk",
+        sdk_vendor="vertexai",
+        chat_completions_path="/v1/chat/completions",
+    )
+    assert preset.sdk_vendor == "vertexai"
+
+
 def test_sdk_vendor_route_returns_registry(app_with_inmemory_db):
     app, SessionLocal = app_with_inmemory_db
     with SessionLocal() as session:

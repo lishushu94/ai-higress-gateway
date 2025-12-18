@@ -639,3 +639,96 @@ export interface UpstreamProxyEndpointsResponse {
   endpoints: UpstreamProxyEndpoint[];
   total: number;
 }
+
+// ============= Dashboard v2 用户页相关 =============
+
+/**
+ * Dashboard v2 KPI 数据
+ */
+export interface DashboardV2KPIData {
+  time_range: string;
+  total_requests: number;
+  error_rate: number;
+  latency_p95_ms: number;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+    estimated_requests: number;
+  };
+  credits_spent: number;
+}
+
+/**
+ * Dashboard v2 Pulse 数据点（分钟粒度）
+ */
+export interface DashboardV2PulseDataPoint {
+  window_start: string;
+  total_requests: number;
+  error_4xx_requests: number;
+  error_5xx_requests: number;
+  error_429_requests: number;
+  error_timeout_requests: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+}
+
+/**
+ * Dashboard v2 Pulse 响应
+ */
+export interface DashboardV2PulseResponse {
+  points: DashboardV2PulseDataPoint[];
+}
+
+/**
+ * Dashboard v2 Token 数据点
+ */
+export interface DashboardV2TokenDataPoint {
+  window_start: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  estimated_requests: number;
+}
+
+/**
+ * Dashboard v2 Token 趋势响应
+ */
+export interface DashboardV2TokensResponse {
+  time_range: string;
+  bucket: string;
+  points: DashboardV2TokenDataPoint[];
+}
+
+/**
+ * Dashboard v2 Top Model 项
+ */
+export interface DashboardV2TopModelItem {
+  model: string;
+  requests: number;
+  tokens_total: number;
+}
+
+/**
+ * Dashboard v2 Top Models 响应
+ */
+export interface DashboardV2TopModelsResponse {
+  items: DashboardV2TopModelItem[];
+}
+
+/**
+ * Dashboard v2 Provider 成本项
+ */
+export interface DashboardV2ProviderCostItem {
+  provider_id: string;
+  credits_spent: number;
+  transactions: number;
+}
+
+/**
+ * Dashboard v2 成本结构响应
+ */
+export interface DashboardV2CostByProviderResponse {
+  items: DashboardV2ProviderCostItem[];
+}

@@ -10,23 +10,13 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, Play, Plus, Trash2, Pencil } from "lucide-react";
 import { toast } from "sonner";
@@ -358,126 +348,130 @@ export function ProviderProbesTab({
         </CardContent>
       </Card>
 
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogContent className="sm:max-w-[640px]">
-          <DialogHeader>
-            <DialogTitle>
+      <Drawer open={editorOpen} onOpenChange={setEditorOpen}>
+        <DrawerContent className="mx-auto w-full max-w-2xl">
+          <DrawerHeader>
+            <DrawerTitle>
               {editingTask ? translations?.editTitle ?? "Edit" : translations?.createTitle ?? "Create"}
-            </DialogTitle>
-            <DialogDescription>{translations?.form?.hint ?? ""}</DialogDescription>
-          </DialogHeader>
+            </DrawerTitle>
+            <DrawerDescription>{translations?.form?.hint ?? ""}</DrawerDescription>
+          </DrawerHeader>
 
-          <div className="grid gap-4">
-            <div className="grid gap-2">
-              <Label>{translations?.form?.name ?? "Name"}</Label>
-              <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} />
-            </div>
-
-            <div className="grid gap-2">
-              <Label>{translations?.form?.model ?? "Model"}</Label>
-              {modelOptions.length > 0 ? (
-                <Select value={draftModelId} onValueChange={setDraftModelId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={translations?.form?.modelPlaceholder ?? ""} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {modelOptions.map((m) => (
-                      <SelectItem key={m.value} value={m.value}>
-                        {m.label}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Input
-                  value={draftModelId}
-                  onChange={(e) => setDraftModelId(e.target.value)}
-                  placeholder={translations?.form?.modelPlaceholder ?? ""}
-                />
-              )}
-            </div>
-
-            <div className="grid gap-2">
-              <Label>{translations?.form?.prompt ?? "Prompt"}</Label>
-              <Textarea
-                value={draftPrompt}
-                onChange={(e) => setDraftPrompt(e.target.value)}
-                rows={4}
-              />
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+            <div className="grid gap-4">
               <div className="grid gap-2">
-                <Label>{translations?.form?.interval ?? "Interval (s)"}</Label>
-                <Input
-                  inputMode="numeric"
-                  value={draftInterval}
-                  onChange={(e) => setDraftInterval(e.target.value)}
+                <Label>{translations?.form?.name ?? "Name"}</Label>
+                <Input value={draftName} onChange={(e) => setDraftName(e.target.value)} />
+              </div>
+
+              <div className="grid gap-2">
+                <Label>{translations?.form?.model ?? "Model"}</Label>
+                {modelOptions.length > 0 ? (
+                  <Select value={draftModelId} onValueChange={setDraftModelId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={translations?.form?.modelPlaceholder ?? ""} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {modelOptions.map((m) => (
+                        <SelectItem key={m.value} value={m.value}>
+                          {m.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  <Input
+                    value={draftModelId}
+                    onChange={(e) => setDraftModelId(e.target.value)}
+                    placeholder={translations?.form?.modelPlaceholder ?? ""}
+                  />
+                )}
+              </div>
+
+              <div className="grid gap-2">
+                <Label>{translations?.form?.prompt ?? "Prompt"}</Label>
+                <Textarea
+                  value={draftPrompt}
+                  onChange={(e) => setDraftPrompt(e.target.value)}
+                  rows={4}
                 />
               </div>
-              <div className="grid gap-2">
-                <Label>{translations?.form?.maxTokens ?? "Max tokens"}</Label>
-                <Input
-                  inputMode="numeric"
-                  value={draftMaxTokens}
-                  onChange={(e) => setDraftMaxTokens(e.target.value)}
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label>{translations?.form?.apiStyle ?? "API style"}</Label>
-                <Select
-                  value={draftApiStyle}
-                  onValueChange={(v) => setDraftApiStyle(v as ProbeApiStyle)}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="auto">{translations?.apiStyle?.auto ?? "auto"}</SelectItem>
-                    <SelectItem value="openai">{translations?.apiStyle?.openai ?? "openai"}</SelectItem>
-                    <SelectItem value="claude">{translations?.apiStyle?.claude ?? "claude"}</SelectItem>
-                    <SelectItem value="responses">{translations?.apiStyle?.responses ?? "responses"}</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
 
-            <div className="flex items-center justify-between rounded-md border p-3">
-              <div className="space-y-0.5">
-                <div className="text-sm font-medium">{translations?.form?.enabled ?? "Enabled"}</div>
-                <div className="text-xs text-muted-foreground">
-                  {translations?.form?.enabledHint ?? ""}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid gap-2">
+                  <Label>{translations?.form?.interval ?? "Interval (s)"}</Label>
+                  <Input
+                    inputMode="numeric"
+                    value={draftInterval}
+                    onChange={(e) => setDraftInterval(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{translations?.form?.maxTokens ?? "Max tokens"}</Label>
+                  <Input
+                    inputMode="numeric"
+                    value={draftMaxTokens}
+                    onChange={(e) => setDraftMaxTokens(e.target.value)}
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label>{translations?.form?.apiStyle ?? "API style"}</Label>
+                  <Select
+                    value={draftApiStyle}
+                    onValueChange={(v) => setDraftApiStyle(v as ProbeApiStyle)}
+                  >
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="auto">{translations?.apiStyle?.auto ?? "auto"}</SelectItem>
+                      <SelectItem value="openai">{translations?.apiStyle?.openai ?? "openai"}</SelectItem>
+                      <SelectItem value="claude">{translations?.apiStyle?.claude ?? "claude"}</SelectItem>
+                      <SelectItem value="responses">{translations?.apiStyle?.responses ?? "responses"}</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               </div>
-              <Switch checked={draftEnabled} onCheckedChange={setDraftEnabled} />
+
+              <div className="flex items-center justify-between rounded-md border p-3">
+                <div className="space-y-0.5">
+                  <div className="text-sm font-medium">{translations?.form?.enabled ?? "Enabled"}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {translations?.form?.enabledHint ?? ""}
+                  </div>
+                </div>
+                <Switch checked={draftEnabled} onCheckedChange={setDraftEnabled} />
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditorOpen(false)}>
-              {translations?.cancel ?? "Cancel"}
-            </Button>
-            <Button onClick={submit} disabled={creating || updating}>
-              {creating || updating ? (
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-              ) : null}
-              {translations?.save ?? "Save"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end gap-2">
+              <Button variant="outline" onClick={() => setEditorOpen(false)}>
+                {translations?.cancel ?? "Cancel"}
+              </Button>
+              <Button onClick={submit} disabled={creating || updating}>
+                {creating || updating ? (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                ) : null}
+                {translations?.save ?? "Save"}
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
-      <Dialog open={resultOpen} onOpenChange={setResultOpen}>
-        <DialogContent className="sm:max-w-[720px]">
-          <DialogHeader>
-            <DialogTitle>{translations?.result?.title ?? "Result"}</DialogTitle>
-            <DialogDescription className="font-mono text-xs">
+      <Drawer open={resultOpen} onOpenChange={setResultOpen}>
+        <DrawerContent className="mx-auto w-full max-w-3xl">
+          <DrawerHeader>
+            <DrawerTitle>{translations?.result?.title ?? "Result"}</DrawerTitle>
+            <DrawerDescription className="font-mono text-xs">
               {latestRun
                 ? `${providerId} · ${latestRun.model_id} · ${latestRun.api_style} · ${latestRun.status_code ?? "-"} · ${latestRun.latency_ms ?? "-"}ms`
                 : ""}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-3">
             {latestRun?.response_text ? (
               <Card>
                 <CardHeader>
@@ -513,26 +507,35 @@ export function ProviderProbesTab({
               </Card>
             ) : null}
           </div>
-        </DialogContent>
-      </Dialog>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end">
+              <Button variant="outline" onClick={() => setResultOpen(false)}>
+                {translations?.cancel ?? "Close"}
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
 
-      <AlertDialog open={deleteOpen} onOpenChange={setDeleteOpen}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>{translations?.delete?.title ?? "Delete"}</AlertDialogTitle>
-            <AlertDialogDescription>
-              {translations?.delete?.description ?? ""}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>{translations?.cancel ?? "Cancel"}</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmDelete} disabled={deleting}>
-              {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
-              {translations?.delete?.confirm ?? "Confirm"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <Drawer open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DrawerContent className="mx-auto w-full max-w-md">
+          <DrawerHeader>
+            <DrawerTitle>{translations?.delete?.title ?? "Delete"}</DrawerTitle>
+            <DrawerDescription>{translations?.delete?.description ?? ""}</DrawerDescription>
+          </DrawerHeader>
+          <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+            <div className="flex w-full justify-end gap-2">
+              <Button variant="outline" onClick={() => setDeleteOpen(false)} disabled={deleting}>
+                {translations?.cancel ?? "Cancel"}
+              </Button>
+              <Button variant="destructive" onClick={confirmDelete} disabled={deleting}>
+                {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : null}
+                {translations?.delete?.confirm ?? "Confirm"}
+              </Button>
+            </div>
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
     </div>
   );
 }
