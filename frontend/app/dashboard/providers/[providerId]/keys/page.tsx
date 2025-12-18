@@ -24,26 +24,26 @@ export default function ProviderKeysPage() {
   // 数据获取
   const { keys, isLoading, mutate } = useProviderKeys(providerId);
 
-  // 对话框状态
+  // 抽屉状态
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingKey, setEditingKey] = useState<ProviderKey | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deletingKey, setDeletingKey] = useState<ProviderKey | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // 打开创建对话框
+  // 打开创建抽屉
   const handleCreate = useCallback(() => {
     setEditingKey(null);
     setDialogOpen(true);
   }, []);
 
-  // 打开编辑对话框
+  // 打开编辑抽屉
   const handleEdit = useCallback((key: ProviderKey) => {
     setEditingKey(key);
     setDialogOpen(true);
   }, []);
 
-  // 打开删除确认对话框
+  // 打开删除确认抽屉
   const handleDelete = useCallback((keyId: string) => {
     const key = keys.find(k => k.id === keyId);
     if (key) {
@@ -98,7 +98,7 @@ export default function ProviderKeysPage() {
   }, [deletingKey, providerId, mutate, t, showError]);
 
   const handleSuccess = useCallback(() => {
-    // 对话框关闭后的回调
+    // 抽屉关闭后的回调
   }, []);
 
   return (
@@ -136,7 +136,7 @@ export default function ProviderKeysPage() {
         onDelete={handleDelete}
       />
 
-      {/* 创建/编辑对话框 */}
+      {/* 创建/编辑抽屉 */}
       <ProviderKeyDialog
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -145,7 +145,7 @@ export default function ProviderKeysPage() {
         onSubmit={handleSubmit}
       />
 
-      {/* 删除确认对话框 */}
+      {/* 删除确认抽屉 */}
       {deletingKey && (
         <DeleteKeyDialog
           open={deleteDialogOpen}

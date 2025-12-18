@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -42,21 +42,19 @@ export function ModelPricingDialog({
   const { t } = useI18n();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {t("providers.pricing_edit_title") ?? "编辑模型计费"}
-          </DialogTitle>
-          <DialogDescription className="font-mono text-xs break-all">
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto w-full max-w-md">
+        <DrawerHeader>
+          <DrawerTitle>{t("providers.pricing_edit_title")}</DrawerTitle>
+          <DrawerDescription className="font-mono text-xs break-all">
             {providerId} · {modelId}
-          </DialogDescription>
-        </DialogHeader>
+          </DrawerDescription>
+        </DrawerHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="input-price" className="text-xs font-medium">
-              {t("providers.pricing_input_label") ?? "输入价格（每 1k tokens）"}
+              {t("providers.pricing_input_label")}
             </Label>
             <Input
               id="input-price"
@@ -65,14 +63,14 @@ export function ModelPricingDialog({
               min="0"
               value={inputPrice}
               onChange={(e) => onInputPriceChange(e.target.value)}
-              placeholder={t("providers.pricing_input_placeholder") ?? "例如 5"}
+              placeholder={t("providers.pricing_input_placeholder")}
               className="h-9"
             />
           </div>
 
           <div className="space-y-2">
             <Label htmlFor="output-price" className="text-xs font-medium">
-              {t("providers.pricing_output_label") ?? "输出价格（每 1k tokens）"}
+              {t("providers.pricing_output_label")}
             </Label>
             <Input
               id="output-price"
@@ -81,37 +79,36 @@ export function ModelPricingDialog({
               min="0"
               value={outputPrice}
               onChange={(e) => onOutputPriceChange(e.target.value)}
-              placeholder={t("providers.pricing_output_placeholder") ?? "例如 15"}
+              placeholder={t("providers.pricing_output_placeholder")}
               className="h-9"
             />
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            {t("providers.pricing_edit_desc") ??
-              "单位为每 1000 tokens 扣减的积分数，留空表示不配置 / 清空对应方向的价格。"}
-          </p>
+          <p className="text-xs text-muted-foreground">{t("providers.pricing_edit_desc")}</p>
         </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            {t("common.cancel") ?? "取消"}
-          </Button>
-          <Button onClick={onSave} disabled={loading}>
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t("common.saving") ?? "保存中"}
-              </>
-            ) : (
-              t("common.save") ?? "保存"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+          <div className="flex w-full justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={onSave} disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("common.saving")}
+                </>
+              ) : (
+                t("common.save")
+              )}
+            </Button>
+          </div>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

@@ -1,25 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Info } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { providerService } from "@/http/provider";
 import { useErrorDisplay } from "@/lib/errors";
-
-// 动态加载 Dialog 和 Tooltip 组件
-const Dialog = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.Dialog })), { ssr: false });
-const DialogContent = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogContent })), { ssr: false });
-const DialogDescription = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogDescription })), { ssr: false });
-const DialogFooter = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogFooter })), { ssr: false });
-const DialogHeader = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogHeader })), { ssr: false });
-const DialogTitle = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogTitle })), { ssr: false });
-
-const Tooltip = dynamic(() => import("@/components/ui/tooltip").then(mod => ({ default: mod.Tooltip })), { ssr: false });
-const TooltipContent = dynamic(() => import("@/components/ui/tooltip").then(mod => ({ default: mod.TooltipContent })), { ssr: false });
-const TooltipTrigger = dynamic(() => import("@/components/ui/tooltip").then(mod => ({ default: mod.TooltipTrigger })), { ssr: false });
+import {
+    Dialog,
+    DialogContent,
+    DialogDescription,
+    DialogFooter,
+    DialogHeader,
+    DialogTitle,
+} from "@/components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface ProviderModelsDialogProps {
     open: boolean;
@@ -69,52 +66,47 @@ export function ProviderModelsDialog({
 
     return (
         <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent>
+            <DialogContent className="w-full max-w-2xl">
                 <DialogHeader>
                     <DialogTitle>{t("providers.models_dialog_title")}</DialogTitle>
-                    <DialogDescription>
-                        {t("providers.models_dialog_description")}
-                    </DialogDescription>
+                    <DialogDescription>{t("providers.models_dialog_description")}</DialogDescription>
                 </DialogHeader>
-                <div className="space-y-4">
-                    <div className="text-sm text-muted-foreground">
-                        {providerId && (
-                            <span>
-                                Provider ID:{" "}
-                                <span className="font-mono">{providerId}</span>
-                            </span>
-                        )}
-                    </div>
+
+                <div className="max-h-[70vh] overflow-y-auto space-y-4">
+                    {providerId && (
+                        <div className="text-sm text-muted-foreground">
+                            {t("providers.models_provider_id_label")}:{" "}
+                            <span className="font-mono">{providerId}</span>
+                        </div>
+                    )}
 
                     {providerId && (
                         <div className="space-y-2">
-                            <label className="flex items-center gap-1 text-sm font-medium">
-                                <span>{t("providers.models_path_label")}</span>
+                            <div className="flex items-center gap-2">
+                                <Label className="text-sm font-medium">
+                                    {t("providers.models_path_label")}
+                                </Label>
                                 <Tooltip>
                                     <TooltipTrigger asChild>
-                                        <button
+                                        <Button
                                             type="button"
-                                            className="inline-flex h-4 w-4 items-center justify-center text-muted-foreground"
+                                            variant="ghost"
+                                            size="icon"
+                                            className="h-7 w-7 text-muted-foreground"
+                                            aria-label={t("providers.models_path_tooltip")}
                                         >
-                                            <Info
-                                                className="h-3 w-3"
-                                                aria-hidden="true"
-                                            />
-                                        </button>
+                                            <Info className="h-3.5 w-3.5" aria-hidden="true" />
+                                        </Button>
                                     </TooltipTrigger>
-                                    <TooltipContent>
-                                        {t("providers.models_path_tooltip")}
-                                    </TooltipContent>
+                                    <TooltipContent>{t("providers.models_path_tooltip")}</TooltipContent>
                                 </Tooltip>
-                            </label>
+                            </div>
+
                             <div className="flex gap-2">
                                 <Input
                                     className="flex-1"
                                     placeholder={t("providers.models_path_placeholder")}
-                                    value={
-                                        modelsPathByProvider[providerId] ??
-                                        "/v1/models"
-                                    }
+                                    value={modelsPathByProvider[providerId] ?? "/v1/models"}
                                     onChange={(event) =>
                                         onModelsPathChange(providerId, event.target.value)
                                     }
@@ -130,9 +122,11 @@ export function ProviderModelsDialog({
                                         : t("providers.models_path_update_button")}
                                 </Button>
                             </div>
+
                             <p className="text-xs text-muted-foreground">
                                 {t("providers.models_path_note")}
                             </p>
+
                             {remoteModels.length > 0 && (
                                 <div className="mt-2 rounded-md border bg-muted/40 p-2 max-h-36 overflow-y-auto">
                                     <div className="text-xs font-medium text-muted-foreground mb-1">
@@ -147,13 +141,10 @@ export function ProviderModelsDialog({
                             )}
                         </div>
                     )}
-
-
                 </div>
+
                 <DialogFooter>
-                    <Button onClick={() => onOpenChange(false)}>
-                        {t("common.close")}
-                    </Button>
+                    <Button onClick={() => onOpenChange(false)}>{t("common.close")}</Button>
                 </DialogFooter>
             </DialogContent>
         </Dialog>

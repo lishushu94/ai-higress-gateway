@@ -26,6 +26,7 @@ from app.deps import get_db, get_http_client, get_redis
 from app.errors import forbidden
 from app.logging_config import logger
 from app.log_sanitizer import sanitize_headers_for_log
+from app.services.client_app_fingerprint import infer_client_app_name
 from app.services.chat_routing_service import (
     _normalize_payload_by_model,
     _strip_model_group_prefix,
@@ -34,6 +35,7 @@ from app.services.credit_service import (
     InsufficientCreditsError,
     ensure_account_usable,
 )
+from app.services.user_app_metrics_service import record_user_app_request_metric
 from app.services.user_provider_service import get_accessible_provider_ids
 from app.settings import settings
 from app.upstream import detect_request_format
@@ -63,6 +65,14 @@ async def chat_completions(
         raw_body.get("stream"),
         current_key.user_id,
         x_session_id,
+    )
+
+    # 入口请求口径的 App 使用指标：用来回答“某用户主要用哪些客户端调用网关”。
+    record_user_app_request_metric(
+        db,
+        user_id=current_key.user_id,
+        api_key_id=current_key.id,
+        app_name=infer_client_app_name(request.headers),
     )
 
     payload = dict(raw_body)
@@ -164,6 +174,19 @@ async def chat_completions(
                 fallback_path_override=fallback_path_override,
             )
 
+        # 关键点：流式响应一旦开始发送 headers，后续在生成器里抛出的 HTTPException
+        # 将无法走 FastAPI 的异常处理流程，只会在服务端日志里表现为 TaskGroup/ExceptionGroup。
+        # 因此把“可预判的选择/发现错误”（如模型不可用）前置到构建 StreamingResponse 之前。
+        selection = await handler.provider_selector.select(
+            requested_model=requested_model,
+            lookup_model_id=lookup_model_id,
+            api_style=api_style,
+            effective_provider_ids=effective_provider_ids,
+            session_id=x_session_id,
+            user_id=uuid.UUID(str(current_key.user_id)),
+            is_superuser=bool(current_key.is_superuser),
+        )
+
         provider_holder: dict[str, str | None] = {"provider_id": None}
 
         def _set_provider(provider_id: str) -> None:
@@ -176,6 +199,7 @@ async def chat_completions(
                 lookup_model_id=lookup_model_id,
                 api_style=api_style,
                 effective_provider_ids=effective_provider_ids,
+                selection=selection,
                 session_id=x_session_id,
                 idempotency_key=billing_precharge_key,
                 messages_path_override=messages_path_override,
@@ -281,4 +305,3 @@ async def claude_messages_endpoint(
 
 
 __all__ = ["router"]
-

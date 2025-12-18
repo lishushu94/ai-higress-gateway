@@ -39,10 +39,12 @@ from .logical_model import (
 from .model import (
     Model,
     ModelCapability,
+    ModelDisableUpdateRequest,
     ModelPricingUpdateRequest,
     ProviderModelPricingResponse,
     ModelAliasUpdateRequest,
     ProviderModelAliasResponse,
+    ProviderModelDisabledResponse,
 )
 from .metrics import (
     APIKeyMetricsSummary,
@@ -152,6 +154,7 @@ from .upstream_proxy import (
 )
 from .session import Session
 from .user import (
+    AdminUserResponse,
     UserCreateRequest,
     UserLookupResponse,
     UserResponse,
@@ -200,11 +203,13 @@ __all__ = [
     "MetricsTimeRange",
     "Model",
     "ModelCapability",
+    "ModelDisableUpdateRequest",
     "ModelPricingUpdateRequest",
     "ModelAliasUpdateRequest",
     "PhysicalModel",
     "ProviderModelPricingResponse",
     "ProviderModelAliasResponse",
+    "ProviderModelDisabledResponse",
     "Provider",
     "ProviderAPIKey",
     "ProviderConfig",
@@ -275,6 +280,7 @@ __all__ = [
     "UserProviderUpdateRequest",
     "UserQuotaResponse",
     "UserCreateRequest",
+    "AdminUserResponse",
     "UserResponse",
     "UserStatusUpdateRequest",
     "UserUpdateRequest",

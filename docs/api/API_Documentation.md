@@ -618,6 +618,9 @@
 
 **认证**: JWT 令牌 (仅限超级用户)
 
+**说明**:
+- `credit_auto_topup`：该用户的自动充值规则（结构同 `GET /v1/credits/admin/users/{user_id}/auto-topup` 的成功响应）；未配置时为 `null`。
+
 **响应**:
 ```json
 [
@@ -640,6 +643,15 @@
         "value": false
       }
     ],
+    "credit_auto_topup": {
+      "id": "uuid",
+      "user_id": "uuid",
+      "min_balance_threshold": 100,
+      "target_balance": 200,
+      "is_active": true,
+      "created_at": "datetime",
+      "updated_at": "datetime"
+    },
     "created_at": "datetime",
     "updated_at": "datetime"
   }
@@ -1147,6 +1159,9 @@
 > 额外说明：若某个逻辑模型的上游仅配置为 `responses` 风格（即仅支持 Responses API），
 > 则通过 `POST /v1/chat/completions` 调用该模型可能返回 `400 Bad Request`，
 > 提示“该模型仅支持 Responses API，请使用 /responses 入口调用”。此时请改用 `POST /v1/responses`。
+>
+> 说明：当 `stream=true` 或请求头 `Accept: text/event-stream` 触发流式响应时，若在开始推流前发生可预判错误
+> （例如模型不可用、或仅支持 `/responses` 入口），网关仍会返回常规的 `4xx` JSON 错误体（而不是 SSE）。
 
 ### 计费规则
 
@@ -1607,7 +1622,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
     "static_models": [],
     "transport": "http/sdk/claude_cli",
     "provider_type": "native/aggregator",
-    "sdk_vendor": "string | null（参见 /providers/sdk-vendors）",
+    "sdk_vendor": "string | null（参见 /providers/sdk-vendors，例如 openai/google/claude/vertexai）",
     "supported_api_styles": ["openai", "responses", "claude"] 或 null
   }
 ],
@@ -1616,7 +1631,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 ```
 
 > 说明：
-> - 当 `transport = "sdk"` 时，必须在后台配置 `sdk_vendor`，其值需来自 `/providers/sdk-vendors` 返回列表，网关才会走对应官方 SDK；
+> - 当 `transport = "sdk"` 时，必须在后台配置 `sdk_vendor`，其值需来自 `/providers/sdk-vendors` 返回列表（例如 `openai/google/claude/vertexai`），网关才会走对应官方 SDK；
+> - 当 `sdk_vendor = "vertexai"` 时，建议将 `api_key` 填写为 GCP 服务账号 JSON（将被加密存储）；网关会优先使用该 JSON 中的 `project_id`，并从 `base_url` 推断 `location`（如 `https://us-central1-aiplatform.googleapis.com/`），否则回退到环境变量 `VERTEXAI_PROJECT/GOOGLE_CLOUD_PROJECT` 与 `VERTEXAI_LOCATION/GOOGLE_CLOUD_LOCATION`；
 > - 当 `transport = "http"` 时，`sdk_vendor` 一律为 `null`，表示纯 HTTP 代理模式；
 > - 当 `transport = "claude_cli"` 时，网关会伪装成 Claude Code CLI 客户端，自动添加 CLI 特有的请求头、生成 user_id、转换消息格式，并使用 TLS 指纹伪装技术。适用于需要 Claude CLI 特征的 API 端点。
 
@@ -1633,8 +1649,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 **响应**:
 ```json
 {
-  "vendors": ["openai", "google", "claude"],
-  "total": 3
+  "vendors": ["openai", "google", "claude", "vertexai"],
+  "total": 4
 }
 ```
 
@@ -1678,7 +1694,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "static_models": [],
   "transport": "http/sdk/claude_cli",
   "provider_type": "native/aggregator",
-  "sdk_vendor": "openai/google/claude 或 null",
+  "sdk_vendor": "openai/google/claude/vertexai 或 null",
   "supported_api_styles": ["openai", "responses", "claude"] 或 null
 }
 ```
@@ -1705,7 +1721,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
       "object": "string",
       "created": 1234567890,
       "owned_by": "string",
-      "alias": "string (optional, logical alias such as \"claude-sonnet-4-5\")"
+      "alias": "string (optional, logical alias such as \"claude-sonnet-4-5\")",
+      "disabled": "boolean (optional, true 表示该 Provider 下该模型已被禁用)"
     }
   ],
   "total": 1
@@ -1800,6 +1817,43 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
 
 **错误响应**:
 - 400: 别名与同一 Provider 下其它模型冲突；
+- 403: 当前用户无权修改该 Provider 的模型配置；
+- 404: Provider 不存在。
+
+---
+
+### 3.2 管理单个模型的禁用状态
+
+> 仅限：超级管理员或该私有/受限 Provider 的所有者。
+
+当某个 provider+model 被禁用后：
+- 该模型不会参与聊天路由选择；
+- 网关的 `/models` 聚合列表也不会包含该模型；
+- 若调用方仍请求该模型，且在当前可用 provider 范围内已无任何可路由的候选，上游会返回 `400`，并提示“该模型已被禁用”。
+
+**接口（获取）**: `GET /providers/{provider_id}/models/{model_id}/disabled`  
+**认证**: JWT 令牌  
+
+**响应示例**:
+```json
+{
+  "provider_id": "my-private-provider",
+  "model_id": "gpt-4o",
+  "disabled": true
+}
+```
+
+**接口（更新）**: `PUT /providers/{provider_id}/models/{model_id}/disabled`  
+**认证**: JWT 令牌  
+
+**请求体**:
+```json
+{
+  "disabled": true
+}
+```
+
+**错误响应**:
 - 403: 当前用户无权修改该 Provider 的模型配置；
 - 404: Provider 不存在。
 
@@ -2138,7 +2192,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
     "base_url": "url",
     "provider_type": "native/aggregator",
     "transport": "http/sdk/claude_cli",
-    "sdk_vendor": "openai/google/claude 或 null",
+    "sdk_vendor": "openai/google/claude/vertexai 或 null",
     "preset_id": "string | null",
     "visibility": "private",
     "owner_id": "uuid",
@@ -2171,7 +2225,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "api_key": "string",
   "provider_type": "native 或 aggregator (可选, 默认native)",
   "transport": "http 或 sdk 或 claude_cli (可选, 默认http)",
-  "sdk_vendor": "openai/google/claude (当 transport=sdk 时必填)"
+  "sdk_vendor": "openai/google/claude/vertexai (当 transport=sdk 时必填)"
   // 其余可选字段: weight, region, cost_input, cost_output, max_qps,
   // retryable_status_codes, custom_headers,
   // models_path, messages_path, chat_completions_path, responses_path,
@@ -2189,7 +2243,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "base_url": "url",
   "provider_type": "native/aggregator",
   "transport": "http/sdk/claude_cli",
-   "sdk_vendor": "openai/google/claude 或 null",
+   "sdk_vendor": "openai/google/claude/vertexai 或 null",
    "preset_id": "string | null",
   "visibility": "private",
   "owner_id": "uuid",
@@ -2221,7 +2275,7 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "base_url": "url (可选)",
   "provider_type": "native/aggregator (可选)",
   "transport": "http/sdk/claude_cli (可选)",
-  "sdk_vendor": "openai/google/claude (可选；当 transport 变更为 sdk 时建议显式设置)",
+  "sdk_vendor": "openai/google/claude/vertexai (可选；当 transport 变更为 sdk 时建议显式设置)",
   "weight": 1.0,
   "region": "string | null",
   "cost_input": 0.0,
@@ -3400,7 +3454,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "max_concurrent_requests": 1000,
   "request_timeout_ms": 30000,
   "cache_ttl_seconds": 3600,
-  "probe_prompt": "请回答一个简单问题用于健康检查。"
+  "probe_prompt": "请回答一个简单问题用于健康检查。",
+  "metrics_retention_days": 15
 }
 ```
 
@@ -3423,7 +3478,8 @@ cost_credits = ceil(raw_cost * ModelBillingConfig.multiplier * Provider.billing_
   "max_concurrent_requests": 1000,
   "request_timeout_ms": 30000,
   "cache_ttl_seconds": 3600,
-  "probe_prompt": "请回答一个简单问题用于健康检查。"
+  "probe_prompt": "请回答一个简单问题用于健康检查。",
+  "metrics_retention_days": 15
 }
 ```
 

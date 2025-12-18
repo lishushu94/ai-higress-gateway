@@ -13,8 +13,13 @@ from .provider_api_key import ProviderAPIKey, ProviderAPIKey as ProviderKey
 from .provider_model import ProviderModel
 from .provider_submission import ProviderSubmission
 from .provider_allowed_user import ProviderAllowedUser
-from .provider_metrics_history import ProviderRoutingMetricsHistory
+from .provider_metrics_history import (
+    ProviderRoutingMetricsDaily,
+    ProviderRoutingMetricsHistory,
+    ProviderRoutingMetricsHourly,
+)
 from .user_metrics_history import UserRoutingMetricsHistory
+from .user_app_metrics_history import UserAppRequestMetricsHistory
 from .registration_window import RegistrationWindow, RegistrationWindowStatus
 from .notification import Notification, NotificationReceipt
 from .user_permission import UserPermission
@@ -49,8 +54,11 @@ __all__ = [
     "NotificationReceipt",
     "GatewayConfig",
     "AggregateRoutingMetrics",
+    "ProviderRoutingMetricsDaily",
     "ProviderRoutingMetricsHistory",
+    "ProviderRoutingMetricsHourly",
     "UserRoutingMetricsHistory",
+    "UserAppRequestMetricsHistory",
     "ProviderAuditLog",
     "ProviderTestRecord",
     "RegistrationWindow",

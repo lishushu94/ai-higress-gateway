@@ -15,6 +15,10 @@ export interface UserInfo {
     key: string;
     value: boolean;
   }>;
+  /**
+   * 自动充值规则（管理员列表接口返回）；未配置时为 null。
+   */
+  credit_auto_topup?: CreditAutoTopupConfig | null;
   created_at: string;
   updated_at: string;
 }
@@ -295,6 +299,19 @@ export interface UserOverviewMetricsTimeSeries {
   transport: string;
   is_stream: string;
   points: MetricsDataPoint[];
+}
+
+export interface UserAppUsageMetrics {
+  app_name: string;
+  total_requests: number;
+  last_seen_at: string | null;
+}
+
+export interface UserOverviewAppUsage {
+  scope: "user";
+  user_id: string;
+  time_range: string;
+  items: UserAppUsageMetrics[];
 }
 
 // ============= 注册窗口 / Registration Windows =============
@@ -634,4 +651,164 @@ export interface UpstreamProxySourcesResponse {
 export interface UpstreamProxyEndpointsResponse {
   endpoints: UpstreamProxyEndpoint[];
   total: number;
+}
+
+// ============= Dashboard v2 用户页相关 =============
+
+/**
+ * Dashboard v2 KPI 数据
+ */
+export interface DashboardV2KPIData {
+  time_range: string;
+  total_requests: number;
+  error_rate: number;
+  latency_p95_ms: number;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+    estimated_requests: number;
+  };
+  credits_spent: number;
+}
+
+/**
+ * Dashboard v2 Pulse 数据点（分钟粒度）
+ */
+export interface DashboardV2PulseDataPoint {
+  window_start: string;
+  total_requests: number;
+  error_4xx_requests: number;
+  error_5xx_requests: number;
+  error_429_requests: number;
+  error_timeout_requests: number;
+  latency_p50_ms: number;
+  latency_p95_ms: number;
+  latency_p99_ms: number;
+}
+
+/**
+ * Dashboard v2 Pulse 响应
+ */
+export interface DashboardV2PulseResponse {
+  points: DashboardV2PulseDataPoint[];
+}
+
+/**
+ * Dashboard v2 Token 数据点
+ */
+export interface DashboardV2TokenDataPoint {
+  window_start: string;
+  input_tokens: number;
+  output_tokens: number;
+  total_tokens: number;
+  estimated_requests: number;
+}
+
+/**
+ * Dashboard v2 Token 趋势响应
+ */
+export interface DashboardV2TokensResponse {
+  time_range: string;
+  bucket: string;
+  points: DashboardV2TokenDataPoint[];
+}
+
+/**
+ * Dashboard v2 Top Model 项
+ */
+export interface DashboardV2TopModelItem {
+  model: string;
+  requests: number;
+  tokens_total: number;
+}
+
+/**
+ * Dashboard v2 Top Models 响应
+ */
+export interface DashboardV2TopModelsResponse {
+  items: DashboardV2TopModelItem[];
+}
+
+/**
+ * Dashboard v2 Provider 成本项
+ */
+export interface DashboardV2ProviderCostItem {
+  provider_id: string;
+  credits_spent: number;
+  transactions: number;
+}
+
+/**
+ * Dashboard v2 Provider 指标点（用于卡片小图）
+ */
+export interface DashboardV2ProviderMetricPoint {
+  window_start: string;
+  qps: number;
+  error_rate: number;
+}
+
+/**
+ * Dashboard v2 Provider 指标项（用于用户 Provider 卡片）
+ */
+export interface DashboardV2ProviderMetricsItem {
+  provider_id: string;
+  total_requests: number;
+  error_rate: number;
+  latency_p95_ms: number;
+  qps: number;
+  points: DashboardV2ProviderMetricPoint[];
+}
+
+/**
+ * Dashboard v2 Provider 指标响应（用于用户 Provider 卡片）
+ */
+export interface DashboardV2ProvidersMetricsResponse {
+  time_range: string;
+  bucket: string;
+  items: DashboardV2ProviderMetricsItem[];
+}
+
+/**
+ * Dashboard v2 成本结构响应
+ */
+export interface DashboardV2CostByProviderResponse {
+  items: DashboardV2ProviderCostItem[];
+}
+
+// ============= Dashboard v2 系统页相关 =============
+
+/**
+ * Dashboard v2 系统页 KPI 数据
+ * 注意：系统页没有 credits_spent 字段
+ */
+export interface SystemKPIData {
+  time_range: string;
+  total_requests: number;
+  error_rate: number;
+  latency_p95_ms: number;
+  tokens: {
+    input: number;
+    output: number;
+    total: number;
+    estimated_requests: number;
+  };
+}
+
+/**
+ * Provider 状态项（系统页）
+ */
+export interface ProviderStatusItem {
+  provider_id: string;
+  operation_status: 'active' | 'inactive' | 'maintenance';
+  status: 'healthy' | 'degraded' | 'unhealthy'; // 健康状态
+  audit_status: 'approved' | 'pending' | 'rejected';
+  last_check: string; // ISO 8601 格式
+}
+
+/**
+ * Dashboard v2 系统页 Provider 状态响应
+ */
+export interface SystemDashboardProvidersResponse {
+  items: ProviderStatusItem[];
 }

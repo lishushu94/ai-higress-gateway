@@ -1,13 +1,13 @@
 "use client";
 
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -38,58 +38,55 @@ export function ModelAliasDialog({
   const { t } = useI18n();
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
-        <DialogHeader>
-          <DialogTitle>
-            {t("providers.alias_edit_title") ?? "编辑模型别名"}
-          </DialogTitle>
-          <DialogDescription className="font-mono text-xs break-all">
+    <Drawer open={open} onOpenChange={onOpenChange}>
+      <DrawerContent className="mx-auto w-full max-w-md">
+        <DrawerHeader>
+          <DrawerTitle>{t("providers.alias_edit_title")}</DrawerTitle>
+          <DrawerDescription className="font-mono text-xs break-all">
             {providerId} · {modelId}
-          </DialogDescription>
-        </DialogHeader>
+          </DrawerDescription>
+        </DrawerHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4 space-y-4">
           <div className="space-y-2">
             <Label htmlFor="model-alias" className="text-xs font-medium">
-              {t("providers.alias_edit_label") ?? "模型别名映射"}
+              {t("providers.alias_edit_label")}
             </Label>
             <Input
               id="model-alias"
               type="text"
               value={alias}
               onChange={(e) => onAliasChange(e.target.value)}
-              placeholder={t("providers.alias_placeholder") ?? "例如 claude-sonnet-4-5"}
+              placeholder={t("providers.alias_placeholder")}
               className="h-9"
             />
           </div>
 
-          <p className="text-xs text-muted-foreground">
-            {t("providers.alias_hint") ??
-              "为长版本模型 ID 配置一个更易记的别名，例如将 claude-sonnet-4-5-20250929 映射为 claude-sonnet-4-5。留空后保存可清除别名。"}
-          </p>
+          <p className="text-xs text-muted-foreground">{t("providers.alias_hint")}</p>
         </div>
 
-        <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={loading}
-          >
-            {t("common.cancel") ?? "取消"}
-          </Button>
-          <Button onClick={onSave} disabled={loading}>
-            {loading ? (
-              <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                {t("common.saving") ?? "保存中"}
-              </>
-            ) : (
-              t("common.save") ?? "保存"
-            )}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+        <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+          <div className="flex w-full justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => onOpenChange(false)}
+              disabled={loading}
+            >
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={onSave} disabled={loading}>
+              {loading ? (
+                <>
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  {t("common.saving")}
+                </>
+              ) : (
+                t("common.save")
+              )}
+            </Button>
+          </div>
+        </DrawerFooter>
+      </DrawerContent>
+    </Drawer>
   );
 }

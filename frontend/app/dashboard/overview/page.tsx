@@ -1,30 +1,28 @@
-import { PageHeader } from "./components/page-header";
-import { OverviewClient } from "./components/overview-client";
+import { OverviewWrapper } from "./_components/overview-wrapper";
+import type { Metadata } from "next";
 
 /**
- * Dashboard Overview 页面（服务端组件）
+ * 页面元数据
+ */
+export const metadata: Metadata = {
+  title: "Dashboard - 概览",
+  description: "查看系统健康状况、Token 使用情况和成本花费",
+};
+
+/**
+ * Dashboard 用户页 - 概览页面（服务端组件）
  * 
  * 职责：
- * - 定义页面布局结构
- * - 将交互逻辑委托给客户端组件
+ * - 提供页面布局和容器
+ * - 渲染客户端容器组件（仅客户端渲染，避免 hydration 错误）
+ * - 设置页面元数据
  * 
- * 优化：
- * - 使用服务端组件架构
- * - 页面结构在服务端渲染
- * - 交互逻辑和数据获取封装在客户端组件中
- * 
- * 架构：
- * - PageHeader: 客户端组件，处理 i18n 标题
- * - OverviewClient: 客户端组件，处理所有数据获取和交互
+ * 验证需求：1.1, 2.1, 3.1, 4.1, 5.1, 6.1, 7.1, 8.1
  */
-export default function OverviewPage() {
+export default function DashboardOverviewPage() {
   return (
-    <div className="space-y-6 max-w-7xl">
-      {/* 页面头部 - 客户端组件（用于 i18n） */}
-      <PageHeader />
-
-      {/* 动态内容 - 客户端组件 */}
-      <OverviewClient />
+    <div className="container mx-auto p-6">
+      <OverviewWrapper />
     </div>
   );
 }

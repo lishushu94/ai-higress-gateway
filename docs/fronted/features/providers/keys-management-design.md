@@ -18,8 +18,8 @@
 /dashboard/providers/[providerId]/keys
 ├── 页面容器 (page.tsx)
 ├── 密钥列表表格 (provider-keys-table.tsx)
-├── 创建/编辑密钥对话框 (provider-key-dialog.tsx)
-├── 删除确认对话框 (delete-key-dialog.tsx)
+├── 创建/编辑密钥抽屉 (provider-key-dialog.tsx)
+├── 删除确认抽屉 (delete-key-dialog.tsx)
 └── 密钥状态切换组件 (key-status-toggle.tsx)
 ```
 
@@ -32,8 +32,8 @@ graph TD
     C --> D[Backend API]
     
     A --> E[密钥列表表格]
-    A --> F[创建/编辑对话框]
-    A --> G[删除确认对话框]
+    A --> F[创建/编辑抽屉]
+    A --> G[删除确认抽屉]
     
     E --> H[状态切换组件]
     
@@ -44,7 +44,7 @@ graph TD
 ### 2.3 技术栈
 
 - **状态管理**: SWR (数据获取和缓存)
-- **UI 组件**: shadcn/ui (Table, Dialog, Badge, Switch, Button, Input, Label)
+- **UI 组件**: shadcn/ui (Table, Drawer, Badge, Switch, Button, Input, Label, Select)
 - **表单验证**: React Hook Form + Zod
 - **国际化**: 自定义 i18n Context
 - **样式**: Tailwind CSS (水墨风格)
@@ -95,7 +95,7 @@ export default function ProviderKeysPage({
         onToggleStatus={handleToggleStatus}
       />
       
-      {/* 创建/编辑对话框 */}
+      {/* 创建/编辑抽屉 */}
       <ProviderKeyDialog 
         open={dialogOpen}
         onOpenChange={setDialogOpen}
@@ -151,7 +151,7 @@ interface ProviderKeysTableProps {
 
 ---
 
-### 3.3 创建/编辑密钥对话框
+### 3.3 创建/编辑密钥抽屉
 
 **文件**: `frontend/components/dashboard/provider-keys/provider-key-dialog.tsx`
 
@@ -195,15 +195,16 @@ const providerKeySchema = z.object({
 ```
 
 **UI 布局**:
-- 使用 `@/components/ui/dialog`
+- 使用 `@/components/ui/drawer`
 - 表单使用 `react-hook-form`
 - 输入框使用 `@/components/ui/input`
 - 标签使用 `@/components/ui/label`
+- 状态选择使用 `@/components/ui/select`
 - 提交按钮带加载状态
 
 ---
 
-### 3.4 删除确认对话框
+### 3.4 删除确认抽屉
 
 **文件**: `frontend/components/dashboard/provider-keys/delete-key-dialog.tsx`
 
@@ -223,7 +224,7 @@ interface DeleteKeyDialogProps {
 ```
 
 **特性**:
-- 使用 `@/components/ui/alert-dialog`
+- 使用 `@/components/ui/drawer`
 - 显示密钥标签
 - 警告文案
 - 确认/取消按钮
@@ -461,12 +462,12 @@ const handleDelete = useCallback(async (keyId: string) => {
 ### 5.3 代码分割
 
 **策略**:
-1. **动态导入**: 对话框组件使用动态导入
+1. **动态导入**: 抽屉组件使用动态导入
 2. **路由级分割**: 页面自动按路由分割
 
 **实现示例**:
 ```typescript
-// 动态导入对话框
+// 动态导入抽屉
 const ProviderKeyDialog = dynamic(
   () => import('@/components/dashboard/provider-keys/provider-key-dialog'),
   { ssr: false }
@@ -505,7 +506,7 @@ en: {
   "provider_keys.status_active": "Active",
   "provider_keys.status_inactive": "Inactive",
   
-  // 对话框
+  // 抽屉
   "provider_keys.dialog_create_title": "Add API Key",
   "provider_keys.dialog_edit_title": "Edit API Key",
   "provider_keys.dialog_create_description": "Configure a new API key for this provider",
@@ -570,7 +571,7 @@ zh: {
   "provider_keys.status_active": "运行中",
   "provider_keys.status_inactive": "已禁用",
   
-  // 对话框
+  // 抽屉
   "provider_keys.dialog_create_title": "添加 API 密钥",
   "provider_keys.dialog_edit_title": "编辑 API 密钥",
   "provider_keys.dialog_create_description": "为该提供商配置新的 API 密钥",
@@ -744,10 +745,10 @@ export function ProviderKeysPage() {
 - [ ] SWR Hook 实现
 - [ ] 页面主组件
 - [ ] 密钥列表表格
-- [ ] 创建/编辑对话框
+- [ ] 创建/编辑抽屉
 
 ### Phase 2: 增强功能 (中优先级)
-- [ ] 删除确认对话框
+- [ ] 删除确认抽屉
 - [ ] 状态切换组件
 - [ ] 国际化翻译
 - [ ] 错误处理
@@ -812,7 +813,7 @@ export function ProviderKeysPage() {
 
 - 积分管理页面: `frontend/app/dashboard/credits/page.tsx`
 - 表格组件: `frontend/components/dashboard/credits/credit-transactions-table.tsx`
-- 对话框组件: `frontend/components/dashboard/credits/admin-topup-dialog.tsx`
+- 抽屉/弹窗组件: `frontend/components/dashboard/credits/admin-topup-dialog.tsx`
 
 ---
 

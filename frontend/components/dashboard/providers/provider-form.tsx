@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import dynamic from "next/dynamic";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -18,14 +17,14 @@ import { BasicProviderConfig } from "./basic-provider-config";
 import { AdvancedProviderConfig } from "./advanced-provider-config";
 import { useSdkVendors } from "@/lib/swr";
 import { useI18n } from "@/lib/i18n-context";
-
-// 动态加载 Dialog 组件
-const Dialog = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.Dialog })), { ssr: false });
-const DialogContent = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogContent })), { ssr: false });
-const DialogDescription = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogDescription })), { ssr: false });
-const DialogFooter = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogFooter })), { ssr: false });
-const DialogHeader = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogHeader })), { ssr: false });
-const DialogTitle = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.DialogTitle })), { ssr: false });
+import {
+    Drawer,
+    DrawerContent,
+    DrawerDescription,
+    DrawerFooter,
+    DrawerHeader,
+    DrawerTitle,
+} from "@/components/ui/drawer";
 
 // 表单验证 Schema（根据服务端返回的 SDK 列表动态校验）
 const createProviderFormSchema = (sdkVendorOptions: string[], t: (key: string) => string) =>
@@ -226,13 +225,6 @@ const providerFormDefaults: ProviderFormValues = {
 };
 
 const buildFormValuesFromProvider = (provider: any, isEditing: boolean = false): ProviderFormValues => {
-    console.log('[ProviderForm] buildFormValuesFromProvider - provider data:', {
-        transport: provider?.transport,
-        provider_type: provider?.provider_type,
-        name: provider?.name,
-        isEditing
-    });
-    
     return {
         presetId: provider?.preset_id ?? "",
         name: provider?.name ?? "",
@@ -307,6 +299,17 @@ export function ProviderFormEnhanced({
     const transport = form.watch("transport");
     const isSdkTransport = transport === "sdk";
 
+    useEffect(() => {
+        if (open) return;
+        form.reset(providerFormDefaults);
+        setSelectedPreset(null);
+        setOverriddenFields(new Set());
+        setShowAdvanced(false);
+        setEditingProviderDetail(null);
+        setIsLoadingEditingProvider(false);
+        setIsSubmitting(false);
+    }, [open, form]);
+
     // 编辑模式下拉取最新配置
     useEffect(() => {
         let cancelled = false;
@@ -353,21 +356,8 @@ export function ProviderFormEnhanced({
 
         const sourceData = editingProviderDetail || editingProvider;
 
-        console.log('[ProviderForm] useEffect - resetting form', {
-            hasEditingProviderDetail: !!editingProviderDetail,
-            hasEditingProvider: !!editingProvider,
-            sourceData: sourceData ? {
-                provider_id: sourceData.provider_id,
-                transport: sourceData.transport
-            } : null
-        });
-
         if (sourceData) {
-            const formValues = buildFormValuesFromProvider(sourceData);
-            console.log('[ProviderForm] useEffect - form values to reset:', {
-                transport: formValues.transport,
-                name: formValues.name
-            });
+            const formValues = buildFormValuesFromProvider(sourceData, Boolean(editingProvider));
             form.reset(formValues);
             setOverriddenFields(new Set());
             if (editingProvider) {
@@ -490,9 +480,6 @@ export function ProviderFormEnhanced({
                 if (values.maxQps?.trim()) createPayload.max_qps = Number(values.maxQps);
                 if (values.costInput?.trim()) createPayload.cost_input = Number(values.costInput);
                 if (values.costOutput?.trim()) createPayload.cost_output = Number(values.costOutput);
-                if (!createPayload.base_url) {
-                    createPayload.base_url = values.baseUrl?.trim();
-                }
                 // 高级配置
                 if (values.retryableStatusCodes.length > 0) {
                     createPayload.retryable_status_codes = values.retryableStatusCodes;
@@ -538,89 +525,91 @@ export function ProviderFormEnhanced({
     };
 
     return (
-        <Dialog open={open} onOpenChange={onOpenChange}>
-            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-                <DialogHeader>
-                    <DialogTitle className="flex items-center gap-2">
+        <Drawer open={open} onOpenChange={onOpenChange} direction="right">
+            <DrawerContent className="h-full w-full data-[vaul-drawer-direction=right]:sm:max-w-3xl data-[vaul-drawer-direction=right]:lg:max-w-4xl">
+                <DrawerHeader>
+                    <DrawerTitle className="flex items-center justify-center gap-2 md:justify-start">
                         <Sparkles className="h-5 w-5 text-primary" />
                         {editingProvider ? t("providers.form_edit_title") : t("providers.form_create_title")}
-                    </DialogTitle>
-                    <DialogDescription>
-                        {editingProvider 
+                    </DrawerTitle>
+                    <DrawerDescription>
+                        {editingProvider
                             ? t("providers.form_edit_description")
                             : t("providers.form_create_description")}
-                    </DialogDescription>
-                </DialogHeader>
+                    </DrawerDescription>
+                </DrawerHeader>
 
                 <Form {...form}>
-                    <form onSubmit={form.handleSubmit(handleFormSubmit)} className="space-y-6 py-4">
-                        <fieldset
-                            disabled={Boolean(editingProvider && isLoadingEditingProvider)}
-                            aria-busy={editingProvider ? isLoadingEditingProvider : undefined}
-                            className="space-y-6"
-                        >
-                            {/* 预设选择器 */}
-                            <PresetSelector
-                                selectedPresetId={selectedPreset?.preset_id || null}
-                                onPresetSelect={setSelectedPreset}
-                                disabled={isSubmitting}
-                            />
-
-                            {editingProvider && isLoadingEditingProvider && (
-                                <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
-                                    {t("providers.form_loading_config")}
-                                </div>
-                            )}
-
-                            {/* 基础配置 */}
-                            <BasicProviderConfig
-                                form={form}
-                                isFieldOverridden={isFieldOverridden}
-                                markFieldAsOverridden={markFieldAsOverridden}
-                                isSdkTransport={isSdkTransport}
-                                sdkVendorOptions={sdkVendors}
-                                sdkVendorsLoading={sdkVendorsLoading}
-                            />
-
-                            {/* 高级配置（可折叠） */}
-                            <AdvancedProviderConfig
-                                form={form}
-                                isFieldOverridden={isFieldOverridden}
-                                markFieldAsOverridden={markFieldAsOverridden}
-                                showAdvanced={showAdvanced}
-                                onToggleAdvanced={() => setShowAdvanced(!showAdvanced)}
-                            />
-                        </fieldset>
-
-                        <DialogFooter>
-                            <Button
-                                type="button"
-                                variant="outline"
-                                onClick={handleCancel}
-                                disabled={isSubmitting}
+                    <form
+                        onSubmit={form.handleSubmit(handleFormSubmit)}
+                        className="flex min-h-0 flex-1 flex-col"
+                    >
+                        <div className="min-h-0 flex-1 overflow-y-auto px-4 pb-4">
+                            <fieldset
+                                disabled={Boolean(editingProvider && isLoadingEditingProvider)}
+                                aria-busy={editingProvider ? isLoadingEditingProvider : undefined}
+                                className="space-y-6"
                             >
-                                {t("providers.form_cancel")}
-                            </Button>
-                            <Button
-                                type="submit"
-                                disabled={
-                                    isSubmitting || Boolean(editingProvider && isLoadingEditingProvider)
-                                }
-                            >
-                                {isSubmitting
-                                    ? editingProvider
-                                        ? t("providers.form_updating")
-                                        : t("providers.form_creating")
-                                    : editingProvider
-                                        ? isLoadingEditingProvider
-                                            ? t("providers.form_waiting_config")
-                                            : t("providers.form_update")
-                                        : t("providers.form_create")}
-                            </Button>
-                        </DialogFooter>
+                                <PresetSelector
+                                    selectedPresetId={selectedPreset?.preset_id || null}
+                                    onPresetSelect={setSelectedPreset}
+                                    disabled={isSubmitting}
+                                />
+
+                                {editingProvider && isLoadingEditingProvider && (
+                                    <div className="rounded-md border border-dashed border-muted-foreground/40 bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
+                                        {t("providers.form_loading_config")}
+                                    </div>
+                                )}
+
+                                <BasicProviderConfig
+                                    form={form}
+                                    isFieldOverridden={isFieldOverridden}
+                                    markFieldAsOverridden={markFieldAsOverridden}
+                                    isSdkTransport={isSdkTransport}
+                                    sdkVendorOptions={sdkVendors}
+                                    sdkVendorsLoading={sdkVendorsLoading}
+                                />
+
+                                <AdvancedProviderConfig
+                                    form={form}
+                                    isFieldOverridden={isFieldOverridden}
+                                    markFieldAsOverridden={markFieldAsOverridden}
+                                    showAdvanced={showAdvanced}
+                                    onToggleAdvanced={() => setShowAdvanced(!showAdvanced)}
+                                />
+                            </fieldset>
+                        </div>
+
+                        <DrawerFooter className="border-t bg-background/80 backdrop-blur">
+                            <div className="flex w-full justify-end gap-2">
+                                <Button
+                                    type="button"
+                                    variant="outline"
+                                    onClick={handleCancel}
+                                    disabled={isSubmitting}
+                                >
+                                    {t("providers.form_cancel")}
+                                </Button>
+                                <Button
+                                    type="submit"
+                                    disabled={isSubmitting || Boolean(editingProvider && isLoadingEditingProvider)}
+                                >
+                                    {isSubmitting
+                                        ? editingProvider
+                                            ? t("providers.form_updating")
+                                            : t("providers.form_creating")
+                                        : editingProvider
+                                            ? isLoadingEditingProvider
+                                                ? t("providers.form_waiting_config")
+                                                : t("providers.form_update")
+                                            : t("providers.form_create")}
+                                </Button>
+                            </div>
+                        </DrawerFooter>
                     </form>
                 </Form>
-            </DialogContent>
-        </Dialog>
+            </DrawerContent>
+        </Drawer>
     );
 }
