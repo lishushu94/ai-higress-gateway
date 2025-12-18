@@ -1,59 +1,109 @@
 "use client";
 
 import * as React from "react";
-import { useTheme } from "next-themes";
-import { NeonCard } from "@/components/cards/neon-card";
-import { ThemeCard } from "@/components/cards/theme-card";
-import type { ComponentProps } from "react";
+import { cn } from "@/lib/utils";
+import {
+  Card,
+  CardHeader,
+  CardFooter,
+  CardTitle,
+  CardAction,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+
+interface AdaptiveCardProps extends React.ComponentProps<typeof Card> {
+  /**
+   * 是否显示圣诞装饰
+   * 装饰通过 CSS 类 .christmas-card-decor 自动控制显示/隐藏
+   * @default true
+   */
+  showDecor?: boolean;
+}
 
 /**
  * 自适应主题卡片组件
  * 
- * 根据当前主题自动切换卡片样式：
- * - 圣诞主题：使用 NeonCard（冰川玻璃拟态 + 霓虹灯 + 装饰）
- * - 其他主题：使用 ThemeCard（原有主题卡片样式）
+ * 通过 CSS 变量和类名自动适配所有主题：
+ * - 玻璃拟态效果：通过 .theme-adaptive-card 类自动调整
+ * - 霓虹灯效果：通过 CSS 变量控制颜色
+ * - 圣诞装饰：通过 .christmas-card-decor 类控制显示
  * 
- * 这种设计便于后续扩展更多主题特定的卡片样式
+ * 添加新主题只需在 globals.css 中配置，无需修改组件代码
  * 
  * @example
  * ```tsx
  * <AdaptiveCard>
+ *   <CardHeader>
+ *     <CardTitle>标题</CardTitle>
+ *   </CardHeader>
  *   <CardContent>内容会根据主题自动适配样式</CardContent>
  * </AdaptiveCard>
  * ```
  */
 export function AdaptiveCard({
+  className,
+  showDecor = true,
   children,
   ...props
-}: ComponentProps<typeof NeonCard>) {
-  const { theme } = useTheme();
-  const [mounted, setMounted] = React.useState(false);
+}: AdaptiveCardProps) {
+  return (
+    <div className={cn("relative", className)}>
+      <Card
+        className={cn(
+          "relative overflow-hidden",
+          "theme-adaptive-card",
+          "border-white/20",
+          "transition-all duration-300",
+          "hover:scale-[1.02]",
+        )}
+        {...props}
+      >
+        {/* 圣诞装饰 - 右上角（通过 CSS 类自动控制） */}
+        {showDecor && (
+          <div className="christmas-card-decor absolute top-0 right-0 z-30 w-48 h-32 pointer-events-none">
+            <img
+              src="/theme/chrismas/card.png"
+              alt="Christmas decoration"
+              className="w-full h-full object-contain object-right-top"
+              style={{
+                filter: "drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2))",
+                opacity: 0.95,
+              }}
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+        )}
 
-  React.useEffect(() => {
-    setMounted(true);
-  }, []);
+        {/* 圣诞装饰 - 左侧冰霜（通过 CSS 类自动控制） */}
+        {showDecor && (
+          <div className="christmas-card-decor absolute top-0 left-0 bottom-0 z-30 w-48 pointer-events-none overflow-visible">
+            <img
+              src="/theme/chrismas/frost-left.png"
+              alt="Frost decoration"
+              className="absolute top-0 left-0 h-full w-auto object-contain object-left-top"
+              style={{
+                filter: "drop-shadow(0 2px 8px rgba(0, 0, 0, 0.2))",
+                opacity: 0.9,
+              }}
+              loading="lazy"
+              onError={(e) => {
+                e.currentTarget.style.display = "none";
+              }}
+            />
+          </div>
+        )}
 
-  // 服务端渲染或未挂载时，使用 ThemeCard 作为默认
-  if (!mounted) {
-    return <ThemeCard {...props}>{children}</ThemeCard>;
-  }
-
-  // 根据主题选择对应的卡片组件
-  switch (theme) {
-    case "christmas":
-      // 圣诞主题：使用冰川玻璃拟态卡片
-      return <NeonCard {...props}>{children}</NeonCard>;
-    
-    // 未来可以扩展更多主题特定的卡片
-    // case "ocean":
-    //   return <OceanCard {...props}>{children}</OceanCard>;
-    // case "spring":
-    //   return <SpringCard {...props}>{children}</SpringCard>;
-    
-    default:
-      // 其他主题：使用标准主题卡片
-      return <ThemeCard {...props}>{children}</ThemeCard>;
-  }
+        {/* 卡片内容 */}
+        <div className="relative z-20">
+          {children}
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 // 导出卡片子组件，保持 API 一致性

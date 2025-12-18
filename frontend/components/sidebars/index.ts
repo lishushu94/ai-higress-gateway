@@ -4,8 +4,6 @@
  */
 
 export { AdaptiveSidebar } from "./adaptive-sidebar";
-export { NeonSidebar } from "./neon-sidebar";
-export { ThemeSidebar } from "./theme-sidebar";
 
 // 重新导出 shadcn sidebar 的所有子组件
 export {

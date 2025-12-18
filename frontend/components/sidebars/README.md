@@ -1,142 +1,107 @@
-# Sidebar 主题封装组件
+# Sidebar 组件
 
-基于 shadcn/ui Sidebar 组件封装的主题感知侧边栏组件集合。
+## AdaptiveSidebar - 自适应主题侧边栏
 
-## 组件列表
+唯一的通用侧边栏组件，通过 CSS 变量和类名自动适配所有主题。
 
-### 1. AdaptiveSidebar - 自适应主题侧边栏
+### 特性
 
-根据当前主题自动切换样式的侧边栏。在圣诞主题下使用霓虹灯效果，其他主题使用标准样式。
+- ✅ **自动主题适配**：通过 CSS 变量自动切换颜色
+- ✅ **装饰可拔插**：圣诞装饰等效果通过 CSS 类控制
+- ✅ **无需封装**：所有主题共用一个组件
+- ✅ **易于扩展**：添加新主题只需修改 CSS
 
-```tsx
-import {
-  AdaptiveSidebar,
-  SidebarContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-  SidebarMenuButton,
-  SidebarProvider,
-} from "@/components/sidebars";
-import { Home } from "lucide-react";
-
-<SidebarProvider>
-  <AdaptiveSidebar>
-    <SidebarHeader>
-      <h2>导航</h2>
-    </SidebarHeader>
-    <SidebarContent>
-      <SidebarMenu>
-        <SidebarMenuItem>
-          <SidebarMenuButton>
-            <Home className="h-4 w-4" />
-            <span>首页</span>
-          </SidebarMenuButton>
-        </SidebarMenuItem>
-      </SidebarMenu>
-    </SidebarContent>
-  </AdaptiveSidebar>
-</SidebarProvider>
-```
-
-### 2. NeonSidebar - 霓虹灯侧边栏
-
-带有霓虹灯边框、玻璃拟态效果和圣诞装饰的侧边栏。
-
-**Props:**
-- `neonColor?: "red" | "green" | "blue" | "purple" | "orange" | "cyan" | "auto"` - 霓虹灯颜色（默认: "auto"）
-- `neonIntensity?: 1 | 2 | 3` - 霓虹灯强度（默认: 2）
-- `enableFrostTexture?: boolean | "auto"` - 是否启用冰川纹理和圣诞装饰（默认: "auto"）
+### 使用方式
 
 ```tsx
-import { NeonSidebar, SidebarContent, SidebarProvider } from "@/components/sidebars";
+import { AdaptiveSidebar } from "@/components/sidebars/adaptive-sidebar";
 
-<SidebarProvider>
-  <NeonSidebar neonColor="red" neonIntensity={2} enableFrostTexture={true}>
-    <SidebarContent>
-      {/* 侧边栏内容 */}
-    </SidebarContent>
-  </NeonSidebar>
-</SidebarProvider>
+export default function Layout({ children }) {
+  return (
+    <div className="flex h-screen">
+      <AdaptiveSidebar />
+      <main>{children}</main>
+    </div>
+  );
+}
 ```
 
-**圣诞装饰包含:**
-- 顶部：4个悬挂彩球 + 圣诞花环图片
-- 底部：2个彩球 + 翻转的花环图片
-- 右侧：霓虹灯流光效果
-- 冰川纹理：噪点纹理 + 冰晶效果
+### 主题配置
 
-### 3. ThemeSidebar - 主题感知侧边栏
+所有主题样式在 `app/globals.css` 中配置：
 
-支持多种变体的主题感知侧边栏。
+```css
+/* 默认主题 */
+:root {
+  --sidebar: #f8fafc;
+  --sidebar-foreground: #0f172a;
+  /* ... */
+}
 
-**Props:**
-- `themeVariant?: "default" | "glass" | "neon"` - 侧边栏变体
-- `themeAware?: boolean` - 是否自动根据主题切换变体（默认: true）
-- `neonColor?: "red" | "green" | "blue" | "purple" | "orange" | "cyan" | "auto"` - 霓虹灯颜色（仅 neon 变体）
-- `neonIntensity?: 1 | 2 | 3` - 霓虹灯强度（仅 neon 变体）
+/* 暗色主题 */
+.dark {
+  --sidebar: #09090b;
+  --sidebar-foreground: #fafafa;
+  /* ... */
+}
 
-```tsx
-import { ThemeSidebar, SidebarContent, SidebarProvider } from "@/components/sidebars";
-
-<SidebarProvider>
-  <ThemeSidebar themeVariant="glass" themeAware={false}>
-    <SidebarContent>
-      {/* 侧边栏内容 */}
-    </SidebarContent>
-  </ThemeSidebar>
-</SidebarProvider>
+/* 圣诞主题 */
+.christmas {
+  --sidebar: #fef2f2;
+  --sidebar-foreground: #1a0505;
+  /* ... */
+}
 ```
 
-## 通用子组件
+### 添加新主题
 
-所有侧边栏组件都重新导出了 shadcn/ui 的子组件：
+只需在 `globals.css` 中添加新主题的 CSS 规则：
 
-```tsx
-import {
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarTrigger,
-  SidebarInset,
-  useSidebar,
-} from "@/components/sidebars";
+```css
+/* 新主题 */
+.ocean {
+  --sidebar: #e0f2fe;
+  --sidebar-foreground: #0c4a6e;
+  /* ... */
+}
+
+/* 新主题的玻璃拟态效果 */
+.ocean .theme-adaptive-sidebar [data-slot="sidebar-inner"] {
+  background: rgba(224, 242, 254, 0.1) !important;
+}
+
+/* 新主题的装饰（可选） */
+.ocean-decor {
+  display: none;
+}
+
+.ocean .ocean-decor {
+  display: block;
+}
 ```
 
-## 使用注意事项
+### 装饰系统
 
-1. **必须使用 SidebarProvider 包裹**
-   ```tsx
-   <SidebarProvider>
-     <AdaptiveSidebar>
-       {/* 内容 */}
-     </AdaptiveSidebar>
-   </SidebarProvider>
-   ```
+装饰通过 CSS 类控制显示/隐藏：
 
-2. **圣诞装饰会增加顶部和底部内边距**
-   - 启用圣诞装饰时，侧边栏内容会自动添加 `pt-20` 和 `pb-20` 的内边距
-   - 这是为了给顶部和底部的装饰留出空间
+- `.christmas-menu-decor`：圣诞菜单装饰
+- `.christmas-sidebar-decor`：圣诞侧边栏装饰
 
-3. **响应式支持**
-   - 在移动端会自动切换为抽屉式侧边栏
-   - 使用 `SidebarTrigger` 组件来控制侧边栏的显示/隐藏
+只在对应主题下显示：
 
-## 示例页面
+```css
+.christmas-menu-decor {
+  display: none;
+}
 
-查看 `/theme-demo` 页面可以看到所有侧边栏组件的实际效果。
+.christmas .christmas-menu-decor {
+  display: block;
+}
+```
 
-## 技术细节
+### 优势
 
-- 所有组件都基于 `@/components/ui/sidebar` 封装
-- 使用 `next-themes` 进行主题检测
-- 支持服务端渲染（SSR）
-- 完全兼容 shadcn/ui 的 API
-- 圣诞花环图片路径：`/theme/chrismas/dashboard.png`
+1. **代码简洁**：只有一个组件文件
+2. **易于维护**：主题配置集中在 CSS
+3. **性能优秀**：无需 JS 判断主题
+4. **扩展性强**：添加新主题不需要修改组件代码

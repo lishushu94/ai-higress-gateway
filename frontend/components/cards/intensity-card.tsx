@@ -1,5 +1,3 @@
-import * as React from "react";
-
 interface IntensityCardProps {
   level: 1 | 2 | 3;
   label?: string;

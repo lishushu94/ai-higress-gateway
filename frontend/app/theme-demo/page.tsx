@@ -1,6 +1,4 @@
 import { AdaptiveCard, StatCard, MetricCard, IntensityCard } from "@/components/cards";
-import { DialogExamples } from "@/components/dialogs/dialog-examples";
-import { SidebarExamples } from "@/components/sidebars/sidebar-examples";
 import { ArrowLeft } from "lucide-react";
 import { ThemeSwitcher } from "@/components/theme-switcher";
 import Link from "next/link";
@@ -38,7 +36,7 @@ export default function ThemeDemoPage() {
               返回首页
             </Link>
             <div className="h-6 w-px bg-border" />
-            <h1 className="text-lg font-semibold">霓虹灯玻璃拟态卡片演示</h1>
+            <h1 className="text-lg font-semibold">自适应主题系统演示</h1>
           </div>
           <ThemeSwitcher />
         </div>
@@ -49,16 +47,16 @@ export default function ThemeDemoPage() {
         <div className="max-w-7xl mx-auto space-y-8 relative">
           {/* 页面说明 */}
           <div className="space-y-2 text-center">
-            <h2 className="text-3xl font-bold">圣诞主题玻璃拟态卡片</h2>
+            <h2 className="text-3xl font-bold">自适应主题卡片系统</h2>
             <p className="text-muted-foreground">
-              透明背景 + 背景模糊 + 霓虹灯边框 + 圣诞装饰
+              通过 CSS 变量自动适配所有主题 · 玻璃拟态效果 · 装饰可拔插
             </p>
           </div>
 
-          {/* 霓虹灯卡片展示 - 类似截图效果 */}
+          {/* 自适应卡片展示 */}
           <section className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <AdaptiveCard neonColor="red" neonIntensity={3}>
+              <AdaptiveCard>
                 <StatCard 
                   label="当前请求数量" 
                   value="249" 
@@ -67,7 +65,7 @@ export default function ThemeDemoPage() {
                 />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="green" neonIntensity={3}>
+              <AdaptiveCard>
                 <StatCard 
                   label="即时处理请求" 
                   value="8" 
@@ -76,7 +74,7 @@ export default function ThemeDemoPage() {
                 />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="cyan" neonIntensity={3}>
+              <AdaptiveCard>
                 <StatCard 
                   label="成功的实率" 
                   value="87.1%" 
@@ -89,69 +87,57 @@ export default function ThemeDemoPage() {
 
           {/* 更多示例 */}
           <section className="space-y-4">
-            <h3 className="text-2xl font-semibold text-center">不同颜色霓虹灯</h3>
+            <h3 className="text-2xl font-semibold text-center">统计卡片</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <AdaptiveCard neonColor="red">
+              <AdaptiveCard>
                 <MetricCard label="API 调用" value="17,065" />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="blue">
+              <AdaptiveCard>
                 <MetricCard label="响应时间" value="1,729ms" />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="green">
+              <AdaptiveCard>
                 <MetricCard label="成本统计" value="$73,509" />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="purple">
+              <AdaptiveCard>
                 <MetricCard label="活跃用户" value="2,350" />
               </AdaptiveCard>
             </div>
           </section>
 
-          {/* 霓虹灯强度对比 */}
+          {/* 不同尺寸对比 */}
           <section className="space-y-4">
-            <h3 className="text-2xl font-semibold text-center">霓虹灯强度对比</h3>
+            <h3 className="text-2xl font-semibold text-center">不同尺寸</h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <AdaptiveCard neonColor="orange" neonIntensity={1}>
+              <AdaptiveCard>
                 <IntensityCard level={1} />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="orange" neonIntensity={2}>
+              <AdaptiveCard>
                 <IntensityCard level={2} />
               </AdaptiveCard>
 
-              <AdaptiveCard neonColor="orange" neonIntensity={3}>
+              <AdaptiveCard>
                 <IntensityCard level={3} />
               </AdaptiveCard>
             </div>
           </section>
 
-          {/* Dialog 示例 */}
-          <section className="space-y-4">
-            <h3 className="text-2xl font-semibold text-center">对话框组件示例</h3>
-            <DialogExamples />
-          </section>
-
-          {/* Sidebar 示例 */}
-          <section className="space-y-4">
-            <h3 className="text-2xl font-semibold text-center">侧边栏组件示例</h3>
-            <SidebarExamples />
-          </section>
-
+ 
           {/* 提示信息 */}
           <div className="mt-12 p-6 rounded-lg border border-dashed border-white/30 bg-black/20 backdrop-blur-sm">
-            <h3 className="text-lg font-semibold mb-2 text-white">💡 效果说明</h3>
+            <h3 className="text-lg font-semibold mb-2 text-white">💡 自适应主题系统</h3>
             <ul className="space-y-1 text-sm text-white/80">
-              <li>• 背景：圣诞雪景图片（7MB SVG）</li>
-              <li>• 卡片：玻璃拟态效果（半透明 + 背景模糊）</li>
-              <li>• 边框：上下霓虹灯发光效果</li>
-              <li>• 装饰：右上角圣诞彩灯和雪花</li>
-              <li>• 颜色：支持 red, green, blue, purple, orange, cyan</li>
-              <li>• 强度：支持 1-3 档调节</li>
-              <li>• 对话框：支持 AdaptiveDialog、NeonDialog、ThemeDialog</li>
-              <li>• 侧边栏：支持 AdaptiveSidebar、NeonSidebar、ThemeSidebar</li>
-              <li>• 圣诞装饰：顶部 4 个彩球 + 花环，底部 2 个彩球 + 翻转花环</li>
+              <li>• <strong>背景</strong>：圣诞雪景图片（7MB SVG）</li>
+              <li>• <strong>卡片</strong>：AdaptiveCard - 通过 CSS 变量自动适配所有主题</li>
+              <li>• <strong>玻璃拟态</strong>：半透明背景 + 背景模糊效果</li>
+              <li>• <strong>圣诞装饰</strong>：右上角圣诞帽 + 左侧冰霜（仅圣诞主题显示）</li>
+              <li>• <strong>主题切换</strong>：点击右上角切换主题，卡片样式自动更新</li>
+              <li>• <strong>侧边栏</strong>：AdaptiveSidebar - 唯一通用组件，支持所有主题</li>
+              <li>• <strong>扩展性</strong>：添加新主题只需修改 globals.css，无需修改组件代码</li>
+              <li>• <strong>性能</strong>：完全由 CSS 控制，无需 JS 判断主题</li>
             </ul>
           </div>
         </div>

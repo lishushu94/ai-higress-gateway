@@ -159,7 +159,7 @@ export function MyProvidersPageClient({
   }, []);
 
   return (
-    <div className="space-y-6 max-w-7xl">
+    <div className="space-y-6">
       {/* 页面标题 */}
       <div className="space-y-1">
         <h1 className="text-3xl font-bold">{t("my_providers.title")}</h1>
