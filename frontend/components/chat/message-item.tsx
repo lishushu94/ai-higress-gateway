@@ -1,0 +1,169 @@
+"use client";
+
+import { formatDistanceToNow } from "date-fns";
+import { zhCN, enUS } from "date-fns/locale";
+import { User, Bot, Eye, Sparkles } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import { useI18n } from "@/lib/i18n-context";
+import type { Message, RunSummary } from "@/lib/api-types";
+import { cn } from "@/lib/utils";
+
+export interface MessageItemProps {
+  message: Message;
+  run?: RunSummary;
+  onViewDetails?: (runId: string) => void;
+  onTriggerEval?: (runId: string) => void;
+  showEvalButton?: boolean;
+}
+
+export function MessageItem({
+  message,
+  run,
+  onViewDetails,
+  onTriggerEval,
+  showEvalButton = true,
+}: MessageItemProps) {
+  const { t, language } = useI18n();
+  const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
+
+  // 格式化时间
+  const formattedTime = formatDistanceToNow(new Date(message.created_at), {
+    addSuffix: true,
+    locale: language === "zh" ? zhCN : enUS,
+  });
+
+  // 获取状态显示
+  const getStatusBadge = () => {
+    if (!run) return null;
+
+    const statusConfig = {
+      queued: {
+        label: t("chat.run.status_queued"),
+        className: "bg-muted text-muted-foreground",
+      },
+      running: {
+        label: t("chat.run.status_running"),
+        className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+      },
+      succeeded: {
+        label: t("chat.run.status_succeeded"),
+        className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+      },
+      failed: {
+        label: t("chat.run.status_failed"),
+        className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      },
+    };
+
+    const config = statusConfig[run.status];
+    if (!config) return null;
+
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+          config.className
+        )}
+      >
+        {config.label}
+      </span>
+    );
+  };
+
+  return (
+    <div
+      className={cn(
+        "flex gap-3 group",
+        isUser ? "justify-end" : "justify-start"
+      )}
+    >
+      {/* 助手头像 */}
+      {isAssistant && (
+        <div className="flex-shrink-0 mt-1">
+          <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+            <Bot className="size-4" />
+          </div>
+        </div>
+      )}
+
+      {/* 消息内容 */}
+      <div className={cn("flex flex-col gap-2 max-w-[80%]", isUser && "items-end")}>
+        {/* 消息卡片 */}
+        <Card
+          className={cn(
+            "shadow-sm",
+            isUser
+              ? "bg-primary text-primary-foreground"
+              : "bg-card"
+          )}
+        >
+          <CardContent className="py-3 px-4">
+            <div className="whitespace-pre-wrap break-words text-sm">
+              {message.content}
+            </div>
+
+            {/* Run 摘要信息 */}
+            {run && isAssistant && (
+              <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2 text-xs text-muted-foreground">
+                <span className="font-medium">{run.requested_logical_model}</span>
+                {getStatusBadge()}
+                {run.latency && (
+                  <span>
+                    {run.latency}ms
+                  </span>
+                )}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* 时间和操作按钮 */}
+        <div className="flex items-center gap-2 px-1">
+          <span className="text-xs text-muted-foreground">
+            {formattedTime}
+          </span>
+
+          {/* 助手消息的操作按钮 */}
+          {isAssistant && run && (
+            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+              {/* 查看详情按钮 */}
+              {onViewDetails && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onViewDetails(run.run_id)}
+                  title={t("chat.message.view_details")}
+                >
+                  <Eye className="size-3.5" />
+                </Button>
+              )}
+
+              {/* 推荐评测按钮 */}
+              {showEvalButton && onTriggerEval && run.status === "succeeded" && (
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onTriggerEval(run.run_id)}
+                  title={t("chat.message.trigger_eval")}
+                >
+                  <Sparkles className="size-3.5" />
+                </Button>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* 用户头像 */}
+      {isUser && (
+        <div className="flex-shrink-0 mt-1">
+          <div className="flex size-8 items-center justify-center rounded-full bg-muted text-muted-foreground">
+            <User className="size-4" />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

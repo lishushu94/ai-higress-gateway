@@ -136,13 +136,238 @@ interface AssistantFormProps {
 
 组件遵循项目的极简墨水风格设计，使用 Tailwind CSS 和 shadcn/ui 组件库。
 
+### ConversationItem
+
+会话列表项组件，用于显示单个会话的信息。
+
+**功能：**
+- 显示会话标题和最后活动时间
+- 提供归档、删除操作按钮
+- 支持选中状态高亮
+- 二次确认对话框（归档和删除）
+- 智能时间格式化（刚刚、X分钟前、X小时前、X天前）
+
+**Props：**
+```typescript
+interface ConversationItemProps {
+  conversation: Conversation;
+  isSelected?: boolean;
+  onSelect?: (conversationId: string) => void;
+  onArchive?: (conversationId: string) => void;
+  onDelete?: (conversationId: string) => void;
+}
+```
+
+**使用示例：**
+```tsx
+<ConversationItem
+  conversation={conversation}
+  isSelected={selectedId === conversation.conversation_id}
+  onSelect={handleSelect}
+  onArchive={handleArchive}
+  onDelete={handleDelete}
+/>
+```
+
+### ConversationList
+
+会话列表组件，用于显示和管理多个会话。
+
+**功能：**
+- 显示会话列表（按 last_activity_at 倒序）
+- 支持选中会话
+- 提供"新建会话"按钮
+- 支持分页加载
+- 空状态和加载状态处理
+
+**Props：**
+```typescript
+interface ConversationListProps {
+  conversations: Conversation[];
+  isLoading?: boolean;
+  selectedConversationId?: string;
+  onSelectConversation?: (conversationId: string) => void;
+  onCreateConversation?: () => void;
+  onArchiveConversation?: (conversationId: string) => void;
+  onDeleteConversation?: (conversationId: string) => void;
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+}
+```
+
+**使用示例：**
+```tsx
+<ConversationList
+  conversations={conversations}
+  isLoading={isLoading}
+  selectedConversationId={selectedId}
+  onSelectConversation={handleSelect}
+  onCreateConversation={handleCreate}
+  onArchiveConversation={handleArchive}
+  onDeleteConversation={handleDelete}
+  onLoadMore={handleLoadMore}
+  hasMore={hasMore}
+/>
+```
+
 ## Requirements
 
 这些组件实现了以下需求：
 
+### 助手管理
 - **Requirements 1.1**: 创建助手（名称、系统提示词、默认模型）
 - **Requirements 1.2**: 编辑助手
 - **Requirements 1.3**: 归档助手
 - **Requirements 1.4**: 删除助手（带二次确认）
 - **Requirements 1.5**: 显示助手列表，支持分页
 - **Requirements 1.6**: 查看助手详情
+
+### 会话管理
+- **Requirements 2.1**: 创建会话
+- **Requirements 2.2**: 显示会话列表（按时间倒序），支持分页
+- **Requirements 2.3**: 归档会话
+- **Requirements 2.6**: 删除会话（带二次确认）
+
+### MessageItem
+
+消息项组件，用于显示单条消息。
+
+**功能：**
+- 显示消息内容和时间
+- 区分用户消息和助手回复
+- 显示 Run 摘要信息（模型、状态、延迟）
+- 提供"查看详情"和"推荐评测"按钮
+- 悬停显示操作按钮
+
+**Props：**
+```typescript
+interface MessageItemProps {
+  message: Message;
+  run?: RunSummary;
+  onViewDetails?: (runId: string) => void;
+  onTriggerEval?: (runId: string) => void;
+  showEvalButton?: boolean;
+}
+```
+
+**使用示例：**
+```tsx
+<MessageItem
+  message={message}
+  run={run}
+  onViewDetails={handleViewDetails}
+  onTriggerEval={handleTriggerEval}
+  showEvalButton={true}
+/>
+```
+
+### MessageList
+
+消息列表组件，用于显示会话中的消息历史。
+
+**功能：**
+- 显示消息列表
+- 支持分页加载（向前加载更早的消息）
+- 使用虚拟列表优化性能（@tanstack/react-virtual）
+- 自动滚动到底部
+- 空状态和加载状态处理
+
+**Props：**
+```typescript
+interface MessageListProps {
+  conversationId: string;
+  onViewDetails?: (runId: string) => void;
+  onTriggerEval?: (runId: string) => void;
+  showEvalButton?: boolean;
+}
+```
+
+**使用示例：**
+```tsx
+<MessageList
+  conversationId={conversationId}
+  onViewDetails={handleViewDetails}
+  onTriggerEval={handleTriggerEval}
+  showEvalButton={true}
+/>
+```
+
+### MessageInput
+
+消息输入框组件，用于发送消息。
+
+**功能：**
+- 实现消息输入框
+- 实现发送按钮
+- 实现乐观更新
+- 处理归档会话的禁用状态
+- 自动调整 textarea 高度
+- 支持 Ctrl/Cmd + Enter 快捷键发送
+
+**Props：**
+```typescript
+interface MessageInputProps {
+  conversationId: string;
+  disabled?: boolean;
+  onMessageSent?: (message: Message) => void;
+  className?: string;
+}
+```
+
+**使用示例：**
+```tsx
+<MessageInput
+  conversationId={conversationId}
+  disabled={conversation?.archived}
+  onMessageSent={handleMessageSent}
+/>
+```
+
+### RunDetailDialog
+
+Run 详情对话框组件，用于显示模型运行的完整详情。
+
+**功能：**
+- 显示 run 的完整详情（request、response、tokens、cost）
+- 使用 Dialog 组件
+- 显示状态、延迟、错误信息
+- 格式化 JSON 数据
+- 惰性加载详情数据
+
+**Props：**
+```typescript
+interface RunDetailDialogProps {
+  runId: string | null;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+}
+```
+
+**使用示例：**
+```tsx
+<RunDetailDialog
+  runId={selectedRunId}
+  open={isDialogOpen}
+  onOpenChange={setIsDialogOpen}
+/>
+```
+
+## 消息和聊天功能
+
+这些组件实现了以下需求：
+
+### 消息发送与显示
+- **Requirements 3.1**: 发送消息并创建用户消息记录
+- **Requirements 3.2**: 同步执行 baseline run
+- **Requirements 3.5**: 创建助手回复消息并关联 run_id
+- **Requirements 4.1**: 显示消息列表，支持分页
+- **Requirements 4.2**: 消息列表只包含 run 摘要（轻量化）
+- **Requirements 4.3**: 惰性加载 run 详情
+
+### UI 交互体验
+- **Requirements 8.1**: 乐观更新（立即显示用户消息）
+- **Requirements 8.2**: 显示加载状态
+- **Requirements 8.3**: 立即渲染助手回复
+
+### 性能优化
+- **Requirements 9.4**: 使用虚拟列表优化大量消息渲染

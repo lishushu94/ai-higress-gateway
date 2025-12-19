@@ -203,6 +203,68 @@ def _load_provider_transport(db: Session, provider_id: str | None) -> str:
         return "http"
 
 
+def estimate_request_cost_credits(
+    db: Session,
+    *,
+    logical_model_name: str | None,
+    provider_id: str | None,
+    provider_model_id: str | None,
+    request_payload: dict[str, Any] | None,
+) -> int | None:
+    """
+    基于 request_payload 对一次调用进行“保守”的积分成本预估（不做扣费）。
+
+    约定与扣费逻辑保持一致：
+    - tokens：优先使用 max_tokens / max_tokens_to_sample / max_output_tokens 粗略估算；
+    - 价格：优先使用 provider_models.pricing（input/output 单价）；当缺少 input/output 拆分时整体按 output 计费；
+    - 叠加：logical_model 的 multiplier（ModelBillingConfig）与 Provider.billing_factor。
+
+    返回：
+    - 预估成本（int，向上取整）；
+    - 若无法预估（缺少 tokens 或 pricing），返回 None。
+    """
+    if not isinstance(request_payload, dict):
+        return None
+
+    approx_tokens: int | None = None
+    for key in ("max_tokens", "max_tokens_to_sample", "max_output_tokens"):
+        value = request_payload.get(key)
+        if isinstance(value, int) and value > 0:
+            approx_tokens = value
+            break
+
+    if approx_tokens is None:
+        return None
+
+    input_price, output_price = _load_provider_model_pricing(
+        db, provider_id=provider_id, model_name=provider_model_id
+    )
+    if input_price is None and output_price is None:
+        return None
+
+    per_1k = output_price if output_price is not None else input_price
+    if per_1k is None:
+        return None
+
+    try:
+        model_multiplier = _load_multiplier_for_model(db, logical_model_name)
+        provider_factor = _load_provider_factor(db, provider_id)
+        raw_cost = (int(approx_tokens) / 1000.0) * float(per_1k) * model_multiplier * provider_factor
+        cost = int(math.ceil(raw_cost))
+    except Exception:  # pragma: no cover
+        logger.exception(
+            "Failed to estimate credit cost for provider=%r model=%r logical=%r",
+            provider_id,
+            provider_model_id,
+            logical_model_name,
+        )
+        return None
+
+    if cost < 0:
+        return None
+    return cost
+
+
 
 def _create_transaction(
     db: Session,

@@ -101,7 +101,16 @@ async def send_message_and_run_baseline(
                 "当前助手默认模型为 auto，但项目未配置 candidate_logical_models",
                 details={"project_id": str(ctx.project_id)},
             )
-        
+
+        # 用 assistant preset（+override）构造一个“能力/预算判定用”的轻量 payload：
+        # - 只需要 tools / max_tokens 等字段即可用于候选池过滤；
+        # - messages 依赖实际历史上下文，这里不强依赖。
+        preset_payload: dict[str, Any] = {}
+        if isinstance(assistant.model_preset, dict):
+            preset_payload.update(assistant.model_preset)
+        if isinstance(model_preset, dict):
+            preset_payload.update(model_preset)
+
         # 过滤不可用/无权限/故障的模型
         selector = ProviderSelector(client=client, redis=redis, db=db)
         candidates = await selector.check_candidate_availability(
@@ -110,6 +119,8 @@ async def send_message_and_run_baseline(
             api_style="openai",  # 默认聊天场景
             user_id=UUID(str(current_user.id)),
             is_superuser=current_user.is_superuser,
+            request_payload=preset_payload or None,
+            budget_credits=cfg.budget_per_eval_credits,
         )
 
         if not candidates:

@@ -41,6 +41,7 @@ from app.auth import AuthenticatedAPIKey
 from app.redis_client import get_redis_client
 from app.settings import settings
 from app.api.v1.chat.request_handler import RequestHandler
+from app.api.v1.chat.provider_selector import ProviderSelector
 from app.upstream import detect_request_format
 
 
@@ -220,6 +221,18 @@ async def create_eval(
 
     user_text = _extract_user_text_from_run(baseline)
     candidate_models = list(cfg.candidate_logical_models or [])
+    
+    selector = ProviderSelector(client=client, redis=redis, db=db)
+    candidate_models = await selector.check_candidate_availability(
+        candidate_logical_models=candidate_models,
+        effective_provider_ids=effective_provider_ids,
+        api_style="openai",  # 评测场景通常基于 OpenAI 兼容接口
+        user_id=UUID(str(current_user.id)),
+        is_superuser=bool(current_user.is_superuser),
+        request_payload=baseline.request_payload if isinstance(baseline.request_payload, dict) else None,
+        budget_credits=cfg.budget_per_eval_credits,
+    )
+
     max_challengers = int(cfg.max_challengers or 2)
     max_challengers = max(0, min(max_challengers, 5))
 

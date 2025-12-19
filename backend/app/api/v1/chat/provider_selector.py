@@ -30,8 +30,15 @@ from app.models import Provider, ProviderModel
 from app.routing.mapper import select_candidate_upstreams
 from app.routing.scheduler import CandidateScore, choose_upstream
 from app.routing.session_manager import get_session
-from app.schemas import LogicalModel, PhysicalModel, RoutingMetrics, Session as RoutingSession
+from app.schemas import (
+    LogicalModel,
+    ModelCapability,
+    PhysicalModel,
+    RoutingMetrics,
+    Session as RoutingSession,
+)
 from app.services.chat_routing_service import _build_dynamic_logical_model_for_group, _build_ordered_candidates
+from app.services.credit_service import estimate_request_cost_credits
 from app.settings import settings
 from app.storage.redis_service import get_logical_model
 from app.api.v1.chat.routing_state import RoutingStateService
@@ -40,6 +47,54 @@ from app.api.v1.chat.routing_state import RoutingStateService
 def _status_worse(a: Any, b: Any) -> bool:
     order = {"healthy": 0, "degraded": 1, "down": 2}
     return order.get(getattr(b, "value", str(b)), 0) > order.get(getattr(a, "value", str(a)), 0)
+
+
+def _infer_required_capabilities_from_request_payload(
+    request_payload: dict[str, Any] | None,
+) -> set[ModelCapability]:
+    """
+    基于请求 payload（通常是 OpenAI chat.completions 风格）推断本次请求所需的 capability。
+
+    目标：用于 eval / auto 选模阶段的“可行候选池过滤”，不追求 100% 完整覆盖，
+    但要对 tools / vision / audio 等关键能力做保守约束。
+    """
+    if not isinstance(request_payload, dict):
+        return set()
+
+    required: set[ModelCapability] = set()
+
+    tools = request_payload.get("tools")
+    functions = request_payload.get("functions")
+    tool_choice = request_payload.get("tool_choice")
+    function_call = request_payload.get("function_call")
+    if (
+        (isinstance(tools, list) and tools)
+        or (isinstance(functions, list) and functions)
+        or (tool_choice not in (None, "none"))
+        or (function_call not in (None, "none"))
+    ):
+        required.add(ModelCapability.FUNCTION_CALLING)
+
+    messages = request_payload.get("messages")
+    if isinstance(messages, list):
+        for msg in messages:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content")
+            if isinstance(content, list):
+                for part in content:
+                    if not isinstance(part, dict):
+                        continue
+                    part_type = part.get("type")
+                    if part_type in ("image_url", "input_image"):
+                        required.add(ModelCapability.VISION)
+                    if part_type in ("input_audio", "audio"):
+                        required.add(ModelCapability.AUDIO)
+
+    if isinstance(request_payload.get("audio"), dict):
+        required.add(ModelCapability.AUDIO)
+
+    return required
 
 
 @dataclass(frozen=True)
@@ -133,6 +188,9 @@ class ProviderSelector:
         api_style: str = "openai",
         user_id: UUID | None = None,
         is_superuser: bool = False,
+        required_capabilities: set[ModelCapability] | None = None,
+        request_payload: dict[str, Any] | None = None,
+        budget_credits: int | None = None,
     ) -> list[str]:
         """
         Check which of the candidate logical models are currently available/feasible.
@@ -143,8 +201,14 @@ class ProviderSelector:
         3. It has at least one valid upstream (PhysicalModel) within effective_provider_ids.
         4. It is not disabled by provider/model pair.
         5. It is not fully down (health check).
+        6. It has at least one upstream not in failure cooldown (routing_state).
         """
         available: list[str] = []
+        derived_required_capabilities = required_capabilities
+        if derived_required_capabilities is None and request_payload is not None:
+            derived_required_capabilities = _infer_required_capabilities_from_request_payload(
+                request_payload
+            )
         # Pre-load disabled pairs for all relevant providers to avoid repetitive DB queries?
         # Optimization: We do it per model for now as the list is small.
         
@@ -163,6 +227,12 @@ class ProviderSelector:
                 if not logical_model.enabled:
                     continue
 
+                # 1.5) Capability constraints (logical-level)
+                if derived_required_capabilities:
+                    caps = set(logical_model.capabilities or [])
+                    if not derived_required_capabilities.issubset(caps):
+                        continue
+
                 # 2) Candidates
                 candidates: list[PhysicalModel] = select_candidate_upstreams(
                     logical_model,
@@ -170,6 +240,7 @@ class ProviderSelector:
                     exclude_providers=[],
                 )
                 candidates = [c for c in candidates if c.provider_id in effective_provider_ids]
+                candidates = [c for c in candidates if c.max_qps is None or int(c.max_qps) > 0]
 
                 if not candidates:
                     continue
@@ -196,17 +267,76 @@ class ProviderSelector:
                 if not candidates:
                     continue
 
+                # 4.5) Failure cooldown / routing_state penalties
+                if self.redis is not object:
+                    skipped_providers: set[str] = set()
+                    provider_ids = {c.provider_id for c in candidates}
+                    for pid in provider_ids:
+                        status_obj = await self.routing_state.get_failure_cooldown_status(pid)
+                        if status_obj.should_skip:
+                            skipped_providers.add(pid)
+                    if skipped_providers:
+                        candidates = [c for c in candidates if c.provider_id not in skipped_providers]
+
+                if not candidates:
+                    continue
+
                 # 5) Health check
+                healthy_or_unknown_providers: set[str] | None = None
                 if settings.enable_provider_health_check and self.redis is not object:
                     down_providers: set[str] = set()
+                    degraded_providers: set[str] = set()
+                    healthy_or_unknown_providers = set()
                     for cand in candidates:
                         health = await self.routing_state.get_cached_health_status(cand.provider_id)
-                        if health and health.status.value == "down":
+                        if health is None:
+                            healthy_or_unknown_providers.add(cand.provider_id)
+                            continue
+                        status_value = getattr(getattr(health, "status", None), "value", None)
+                        if status_value == "down":
                             down_providers.add(cand.provider_id)
+                        elif status_value == "degraded":
+                            degraded_providers.add(cand.provider_id)
+                        else:
+                            healthy_or_unknown_providers.add(cand.provider_id)
                     
                     if down_providers:
                         candidates = [c for c in candidates if c.provider_id not in down_providers]
-                
+
+                    if candidates:
+                        remaining_providers = {c.provider_id for c in candidates}
+                        if not (remaining_providers & healthy_or_unknown_providers):
+                            # 候选上游均处于 degraded（或未知状态被上面视为 healthy），则视为不可行候选。
+                            # 对 eval/auto 选模更偏保守，避免把仅降级可用的模型纳入候选池。
+                            if remaining_providers & degraded_providers:
+                                candidates = []
+
+                # 6) Budget feasibility (per-eval credits)
+                if budget_credits is not None:
+                    if not isinstance(request_payload, dict):
+                        continue
+
+                    budget_candidates = candidates
+                    if healthy_or_unknown_providers is not None:
+                        budget_candidates = [
+                            c for c in budget_candidates if c.provider_id in healthy_or_unknown_providers
+                        ]
+
+                    feasible = False
+                    for cand in budget_candidates:
+                        cost = estimate_request_cost_credits(
+                            self.db,
+                            logical_model_name=logical_model.logical_id,
+                            provider_id=cand.provider_id,
+                            provider_model_id=cand.model_id,
+                            request_payload=request_payload,
+                        )
+                        if cost is not None and cost <= int(budget_credits):
+                            feasible = True
+                            break
+                    if not feasible:
+                        continue
+
                 if candidates:
                     available.append(model_id)
 
