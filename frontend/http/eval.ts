@@ -16,6 +16,10 @@ export const evalService = {
    * 基于 baseline run 触发推荐评测
    */
   async createEval(data: CreateEvalRequest): Promise<EvalResponse> {
+    // 验证 message_id 必填
+    if (!data.message_id) {
+      throw new Error('message_id is required to create eval');
+    }
     const response = await httpClient.post<EvalResponse>('/v1/evals', data);
     return response.data;
   },

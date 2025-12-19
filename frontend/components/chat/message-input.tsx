@@ -56,7 +56,13 @@ export function MessageInput({
 
   // 发送消息
   const onSubmit = async (data: MessageFormData) => {
-    if (disabled || isSending) return;
+    // 阻止在归档会话中发送消息
+    if (disabled) {
+      toast.error(t("chat.conversation.archived_notice"));
+      return;
+    }
+
+    if (isSending) return;
 
     setIsSending(true);
 
@@ -120,7 +126,7 @@ export function MessageInput({
             register("content").ref(e);
             textareaRef.current = e;
           }}
-          placeholder={t("chat.message.input_placeholder")}
+          placeholder={disabled ? t("chat.conversation.archived_notice") : t("chat.message.input_placeholder")}
           disabled={disabled || isSending}
           onKeyDown={handleKeyDown}
           rows={1}
@@ -136,20 +142,6 @@ export function MessageInput({
             errors.content && "border-destructive"
           )}
         />
-
-        {/* 归档提示 */}
-        {disabled && (
-          <div 
-            id="archived-notice"
-            className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md"
-            role="alert"
-            aria-live="polite"
-          >
-            <span className="text-sm text-muted-foreground">
-              {t("chat.conversation.archived_notice")}
-            </span>
-          </div>
-        )}
       </div>
 
       {/* 发送按钮 */}

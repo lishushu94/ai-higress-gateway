@@ -4,6 +4,8 @@ import dynamic from "next/dynamic";
 import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { AssistantList } from "@/components/chat/assistant-list";
 import { ConversationList } from "@/components/chat/conversation-list";
+import { ProjectSelector } from "@/components/chat/project-selector";
+import { ErrorAlert } from "@/components/chat/error-alert";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { useAuth } from "@/components/providers/auth-provider";
 import { useRouter } from "next/navigation";
@@ -45,7 +47,7 @@ export default function ChatLayout({
   const { t } = useI18n();
   const { user, isLoading } = useAuth();
   const router = useRouter();
-  const { selectedAssistantId, setSelectedAssistant, setSelectedConversation } = useChatStore();
+  const { selectedProjectId, selectedAssistantId, setSelectedAssistant, setSelectedConversation } = useChatStore();
 
   // 对话框状态
   const [isAssistantDialogOpen, setIsAssistantDialogOpen] = useState(false);
@@ -65,17 +67,18 @@ export default function ChatLayout({
     return null;
   }
 
-  // TODO: 在 MVP 阶段，使用用户 ID 作为 project_id
-  const projectId = user.id;
-
-  // 获取助手列表
-  const { assistants, isLoading: isLoadingAssistants, mutate: mutateAssistants } = useAssistants({
-    project_id: projectId,
-    limit: 50,
-  });
+  // 获取助手列表（仅当选中项目时）
+  const { assistants, isLoading: isLoadingAssistants, error: assistantsError, mutate: mutateAssistants } = useAssistants(
+    selectedProjectId
+      ? {
+          project_id: selectedProjectId,
+          limit: 50,
+        }
+      : { project_id: '', limit: 0 }
+  );
 
   // 获取会话列表（仅当选中助手时）
-  const { conversations, isLoading: isLoadingConversations, mutate: mutateConversations } = useConversations(
+  const { conversations, isLoading: isLoadingConversations, error: conversationsError, mutate: mutateConversations } = useConversations(
     selectedAssistantId
       ? {
           assistant_id: selectedAssistantId,
@@ -109,12 +112,16 @@ export default function ChatLayout({
   };
 
   const handleSaveAssistant = async (data: CreateAssistantRequest | UpdateAssistantRequest) => {
+    if (!selectedProjectId) {
+      toast.error(t('chat.project.not_selected'));
+      return;
+    }
     try {
       if (editingAssistant) {
         await updateAssistant(editingAssistant.assistant_id, data as UpdateAssistantRequest);
         toast.success(t('chat.assistant.updated'));
       } else {
-        const newAssistant = await createAssistant({ ...data, project_id: projectId } as CreateAssistantRequest);
+        const newAssistant = await createAssistant({ ...data, project_id: selectedProjectId } as CreateAssistantRequest);
         toast.success(t('chat.assistant.created'));
         handleSelectAssistant(newAssistant.assistant_id);
       }
@@ -157,11 +164,11 @@ export default function ChatLayout({
   };
 
   const handleCreateConversation = async () => {
-    if (!selectedAssistantId) return;
+    if (!selectedAssistantId || !selectedProjectId) return;
     try {
       const newConversation = await createConversation({
         assistant_id: selectedAssistantId,
-        project_id: projectId,
+        project_id: selectedProjectId,
       } as CreateConversationRequest);
       toast.success(t('chat.conversation.created'));
       handleSelectConversation(newConversation.conversation_id);
@@ -192,59 +199,87 @@ export default function ChatLayout({
 
   return (
     <>
-      <div className="flex h-screen bg-background overflow-hidden w-full">
-        <ResizablePanelGroup direction="horizontal">
-          {/* 左侧边栏：助手列表 + 会话列表 */}
-          <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
-            <div className="flex flex-col h-full border-r">
-              {/* 助手列表区域 */}
-              <div className="flex-1 overflow-y-auto border-b">
-                <AssistantList
-                  assistants={assistants}
-                  isLoading={isLoadingAssistants}
-                  selectedAssistantId={selectedAssistantId || undefined}
-                  onSelectAssistant={handleSelectAssistant}
-                  onCreateAssistant={handleCreateAssistant}
-                  onEditAssistant={handleEditAssistant}
-                  onDeleteAssistant={handleDeleteAssistant}
-                />
-              </div>
+      <div className="flex h-screen flex-col bg-background overflow-hidden w-full">
+        {/* 项目选择器 */}
+        <div className="border-b p-4">
+          <ProjectSelector />
+        </div>
 
-              {/* 会话列表区域 */}
-              {selectedAssistantId && (
-                <div className="flex-1 overflow-y-auto">
-                  <ConversationList
-                    conversations={conversations}
-                    isLoading={isLoadingConversations}
-                    onSelectConversation={handleSelectConversation}
-                    onCreateConversation={handleCreateConversation}
-                    onDeleteConversation={handleDeleteConversation}
-                  />
+        {/* 主内容区 */}
+        {selectedProjectId ? (
+          <div className="flex-1 overflow-hidden">
+            <ResizablePanelGroup direction="horizontal">
+              {/* 左侧边栏：助手列表 + 会话列表 */}
+              <ResizablePanel defaultSize={20} minSize={15} maxSize={30}>
+                <div className="flex flex-col h-full border-r">
+                  {/* 助手列表区域 */}
+                  <div className="flex-1 overflow-y-auto border-b">
+                    {assistantsError ? (
+                      <div className="p-4">
+                        <ErrorAlert error={assistantsError} />
+                      </div>
+                    ) : (
+                      <AssistantList
+                        assistants={assistants}
+                        isLoading={isLoadingAssistants}
+                        selectedAssistantId={selectedAssistantId || undefined}
+                        onSelectAssistant={handleSelectAssistant}
+                        onCreateAssistant={handleCreateAssistant}
+                        onEditAssistant={handleEditAssistant}
+                        onDeleteAssistant={handleDeleteAssistant}
+                      />
+                    )}
+                  </div>
+
+                  {/* 会话列表区域 */}
+                  {selectedAssistantId && (
+                    <div className="flex-1 overflow-y-auto">
+                      {conversationsError ? (
+                        <div className="p-4">
+                          <ErrorAlert error={conversationsError} />
+                        </div>
+                      ) : (
+                        <ConversationList
+                          conversations={conversations}
+                          isLoading={isLoadingConversations}
+                          onSelectConversation={handleSelectConversation}
+                          onCreateConversation={handleCreateConversation}
+                          onDeleteConversation={handleDeleteConversation}
+                        />
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          </ResizablePanel>
+              </ResizablePanel>
 
-          {/* 调整宽度的手柄 */}
-          <ResizableHandle withHandle />
+              {/* 调整宽度的手柄 */}
+              <ResizableHandle withHandle />
 
-          {/* 主内容区 */}
-          <ResizablePanel defaultSize={80}>
-            <div className="h-full overflow-hidden">
-              {children}
-            </div>
-          </ResizablePanel>
-        </ResizablePanelGroup>
+              {/* 主内容区 */}
+              <ResizablePanel defaultSize={80}>
+                <div className="h-full overflow-hidden">
+                  {children}
+                </div>
+              </ResizablePanel>
+            </ResizablePanelGroup>
+          </div>
+        ) : (
+          <div className="flex flex-1 items-center justify-center">
+            <p className="text-muted-foreground">{t('chat.project.not_selected')}</p>
+          </div>
+        )}
       </div>
 
       {/* 助手创建/编辑对话框 */}
-      <AssistantForm
-        open={isAssistantDialogOpen}
-        onOpenChange={setIsAssistantDialogOpen}
-        editingAssistant={editingAssistant}
-        projectId={projectId}
-        onSubmit={handleSaveAssistant}
-      />
+      {selectedProjectId && (
+        <AssistantForm
+          open={isAssistantDialogOpen}
+          onOpenChange={setIsAssistantDialogOpen}
+          editingAssistant={editingAssistant}
+          projectId={selectedProjectId}
+          onSubmit={handleSaveAssistant}
+        />
+      )}
 
       {/* 删除助手确认对话框 */}
       <AlertDialog open={!!deleteConfirmAssistant} onOpenChange={() => setDeleteConfirmAssistant(null)}>

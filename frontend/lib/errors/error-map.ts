@@ -185,11 +185,27 @@ export const ERROR_MAP: Record<string, ErrorMapping> = {
     actionable: true
   },
   
+  // 项目相关错误
+  'project_not_found': {
+    category: ErrorCategory.BUSINESS,
+    severity: ErrorSeverity.WARNING,
+    i18nKey: 'chat.errors.project_not_found',
+    retryable: false,
+    actionable: true
+  },
+  
   // 评测相关错误
   'eval_not_enabled': {
     category: ErrorCategory.BUSINESS,
     severity: ErrorSeverity.WARNING,
     i18nKey: 'chat.errors.eval_not_enabled',
+    retryable: false,
+    actionable: true
+  },
+  'PROJECT_EVAL_DISABLED': {
+    category: ErrorCategory.BUSINESS,
+    severity: ErrorSeverity.WARNING,
+    i18nKey: 'chat.errors.project_eval_disabled',
     retryable: false,
     actionable: true
   },
@@ -199,6 +215,20 @@ export const ERROR_MAP: Record<string, ErrorMapping> = {
     i18nKey: 'chat.errors.eval_cooldown',
     retryable: true,
     actionable: false
+  },
+  'PROJECT_EVAL_COOLDOWN': {
+    category: ErrorCategory.BUSINESS,
+    severity: ErrorSeverity.WARNING,
+    i18nKey: 'chat.errors.project_eval_cooldown',
+    retryable: true,
+    actionable: false
+  },
+  'PROJECT_EVAL_BUDGET_EXCEEDED': {
+    category: ErrorCategory.BUSINESS,
+    severity: ErrorSeverity.WARNING,
+    i18nKey: 'chat.errors.project_eval_budget_exceeded',
+    retryable: false,
+    actionable: true
   },
   'eval_not_found': {
     category: ErrorCategory.BUSINESS,

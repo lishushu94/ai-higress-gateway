@@ -88,6 +88,8 @@ export function MessageListVirtual({
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
           const message = messages[virtualItem.index];
+          if (!message) return null;
+          
           const isUser = message.role === "user";
 
           return (

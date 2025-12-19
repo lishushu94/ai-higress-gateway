@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useMemo } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
+import { ErrorAlert } from "./error-alert";
 import { useI18n } from "@/lib/i18n-context";
 import { useMessages } from "@/lib/swr/use-messages";
 import { useCachePreloader } from "@/lib/swr/cache";
@@ -14,7 +15,7 @@ import type { Message, RunSummary } from "@/lib/api-types";
 export interface MessageListProps {
   conversationId: string;
   onViewDetails?: (runId: string) => void;
-  onTriggerEval?: (runId: string) => void;
+  onTriggerEval?: (messageId: string, runId: string) => void; // 添加 messageId 参数
   showEvalButton?: boolean;
 }
 
@@ -33,7 +34,7 @@ export function MessageList({
   const parentRef = useRef<HTMLDivElement>(null);
 
   // 获取消息列表
-  const { messages, nextCursor, isLoading, isError } = useMessages(
+  const { messages, nextCursor, isLoading, isError, error } = useMessages(
     conversationId,
     { cursor, limit: 50 }
   );
@@ -58,6 +59,9 @@ export function MessageList({
   }, [nextCursor, conversationId, isLoading, preloadData]);
 
   // 合并新消息到列表
+  // 注意：后端返回倒序（新消息在前），所以：
+  // - 第一次加载：直接使用后端返回的数据
+  // - 分页加载旧消息：旧消息在后端是倒序的末尾，应该追加到当前列表末尾
   useEffect(() => {
     if (messages.length > 0) {
       setAllMessages((prev) => {
@@ -65,15 +69,20 @@ export function MessageList({
         if (!cursor) {
           return messages;
         }
-        // 追加更早的消息（向前分页）
-        return [...messages, ...prev];
+        // 追加更早的消息到列表末尾（因为后端倒序，旧消息在后端列表的后面）
+        return [...prev, ...messages];
       });
     }
   }, [messages, cursor]);
 
+  // 反转消息顺序：后端返回倒序（新消息在前），前端需要正序（旧消息在上，新消息在下）
+  const displayMessages = useMemo(() => {
+    return [...allMessages].reverse();
+  }, [allMessages]);
+
   // 虚拟列表配置
   const rowVirtualizer = useVirtualizer({
-    count: allMessages.length,
+    count: displayMessages.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 100, // 估计每条消息的高度
     overscan: 5, // 预渲染的消息数量
@@ -93,15 +102,15 @@ export function MessageList({
     }
   };
 
-  // 初始加载完成后滚动到底部
+  // 初始加载完成后滚动到底部（显示最新消息）
   useEffect(() => {
-    if (!isLoading && allMessages.length > 0 && !cursor) {
+    if (!isLoading && displayMessages.length > 0 && !cursor) {
       setTimeout(scrollToBottom, 100);
     }
-  }, [isLoading, allMessages.length, cursor]);
+  }, [isLoading, displayMessages.length, cursor]);
 
   // 空状态
-  if (!isLoading && allMessages.length === 0) {
+  if (!isLoading && displayMessages.length === 0) {
     return (
       <div 
         className="flex flex-col items-center justify-center h-full text-center p-8"
@@ -126,9 +135,7 @@ export function MessageList({
         role="alert"
         aria-live="assertive"
       >
-        <div className="text-destructive mb-2">
-          {t("chat.message.failed")}
-        </div>
+        <ErrorAlert error={error} className="mb-4 max-w-md" />
         <Button 
           variant="outline" 
           size="sm" 
@@ -185,7 +192,7 @@ export function MessageList({
           }}
         >
           {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-            const item = allMessages[virtualItem.index];
+            const item = displayMessages[virtualItem.index];
             if (!item) return null;
 
             return (
@@ -204,7 +211,7 @@ export function MessageList({
                 <div className="pb-6">
                   <MessageItem
                     message={item.message}
-                    run={item.run}
+                    runs={item.runs}
                     onViewDetails={onViewDetails}
                     onTriggerEval={onTriggerEval}
                     showEvalButton={showEvalButton}
@@ -217,7 +224,7 @@ export function MessageList({
       </div>
 
       {/* 初始加载状态 */}
-      {isLoading && allMessages.length === 0 && (
+      {isLoading && displayMessages.length === 0 && (
         <div 
           className="flex items-center justify-center h-full"
           role="status"

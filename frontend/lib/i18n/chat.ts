@@ -11,6 +11,13 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.welcome.hint1": "👈 Select an assistant from the left sidebar",
     "chat.welcome.hint2": "Or create a new assistant to get started",
 
+    // ===== 项目选择器 =====
+    "chat.project.title": "Project",
+    "chat.project.select_placeholder": "Select a project",
+    "chat.project.loading": "Loading projects...",
+    "chat.project.empty": "No projects available. Please create an API Key first.",
+    "chat.project.not_selected": "Please select a project to continue",
+
     // ===== 助手管理 =====
     "chat.assistant.title": "Assistants",
     "chat.assistant.create": "Create Assistant",
@@ -87,6 +94,7 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.message.input_form": "Message input form",
     "chat.message.input_label": "Message content",
     "chat.message.list_label": "Message list",
+    "chat.message.no_response": "No response yet",
 
     // ===== Run 详情 =====
     "chat.run.title": "Run Details",
@@ -188,12 +196,29 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.errors.empty_candidate_models": "Candidate model pool cannot be empty",
     "chat.errors.invalid_max_challengers": "Max challengers exceeds reasonable range",
     "chat.errors.project_ai_config_incomplete": "Project AI configuration is incomplete",
+    
+    // 项目相关错误
+    "chat.errors.project_not_found": "Project not found or no access. Please check your project selection.",
+    "chat.errors.project_not_found_hint": "Make sure you have selected the correct API Key",
+    
+    // 评测相关错误（扩展）
+    "chat.errors.project_eval_disabled": "Evaluation is not enabled for this project",
+    "chat.errors.project_eval_cooldown": "Evaluation triggered too frequently, please try again later",
+    "chat.errors.project_eval_budget_exceeded": "Project budget exceeded, cannot trigger evaluation",
+    
+    // 归档会话提示
+    "chat.errors.archived_conversation_readonly": "This conversation is archived and cannot be edited",
+    "chat.errors.archived_conversation_hint": "Unarchive the conversation to continue chatting",
+    
+    // 错误操作建议
     "chat.errors.action_go_back": "Go back to the previous page",
     "chat.errors.action_select_another": "Select another resource",
     "chat.errors.action_retry": "Try again",
     "chat.errors.action_contact_admin": "Contact administrator to enable this feature",
     "chat.errors.action_wait": "Please wait before trying again",
     "chat.errors.action_check_input": "Please check your input",
+    "chat.errors.action_check_project": "Please check your project selection",
+    "chat.errors.action_unarchive": "Unarchive to continue",
 
     // ===== 通用操作 =====
     "chat.action.cancel": "Cancel",
@@ -213,6 +238,13 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.welcome.description": "选择或创建一个助手开始聊天",
     "chat.welcome.hint1": "👈 从左侧边栏选择一个助手",
     "chat.welcome.hint2": "或创建一个新助手开始使用",
+
+    // ===== 项目选择器 =====
+    "chat.project.title": "项目",
+    "chat.project.select_placeholder": "选择项目",
+    "chat.project.loading": "加载项目中...",
+    "chat.project.empty": "暂无可用项目，请先创建 API Key",
+    "chat.project.not_selected": "请先选择一个项目",
 
     // ===== 助手管理 =====
     "chat.assistant.title": "助手",
@@ -290,6 +322,7 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.message.input_form": "消息输入表单",
     "chat.message.input_label": "消息内容",
     "chat.message.list_label": "消息列表",
+    "chat.message.no_response": "暂无回复",
 
     // ===== Run 详情 =====
     "chat.run.title": "运行详情",
@@ -391,12 +424,29 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.errors.empty_candidate_models": "候选模型池不能为空",
     "chat.errors.invalid_max_challengers": "最大挑战者数超出合理范围",
     "chat.errors.project_ai_config_incomplete": "Project AI 配置不完整",
+    
+    // 项目相关错误
+    "chat.errors.project_not_found": "项目不存在或无权访问，请检查项目选择",
+    "chat.errors.project_not_found_hint": "请确保已选择正确的 API Key",
+    
+    // 评测相关错误（扩展）
+    "chat.errors.project_eval_disabled": "该项目未启用推荐评测",
+    "chat.errors.project_eval_cooldown": "评测触发过于频繁，请稍后再试",
+    "chat.errors.project_eval_budget_exceeded": "项目预算不足，无法触发评测",
+    
+    // 归档会话提示
+    "chat.errors.archived_conversation_readonly": "此会话已归档，无法继续对话",
+    "chat.errors.archived_conversation_hint": "取消归档后可继续对话",
+    
+    // 错误操作建议
     "chat.errors.action_go_back": "返回上一页",
     "chat.errors.action_select_another": "选择其他资源",
     "chat.errors.action_retry": "重试",
     "chat.errors.action_contact_admin": "联系管理员启用此功能",
     "chat.errors.action_wait": "请稍后再试",
     "chat.errors.action_check_input": "请检查您的输入",
+    "chat.errors.action_check_project": "请检查项目选择",
+    "chat.errors.action_unarchive": "取消归档以继续",
 
     // ===== 通用操作 =====
     "chat.action.cancel": "取消",

@@ -6,6 +6,11 @@ import type {
   GetConversationsParams,
   ConversationsResponse,
 } from '@/lib/api-types';
+import {
+  normalizeConversation,
+  type ConversationBackend,
+  type ConversationsResponseBackend,
+} from '@/lib/normalizers/chat-normalizers';
 
 /**
  * 会话管理服务
@@ -15,24 +20,19 @@ export const conversationService = {
    * 获取会话列表（按 last_activity_at 倒序）
    */
   getConversations: async (params: GetConversationsParams): Promise<ConversationsResponse> => {
-    const { data } = await httpClient.get('/v1/conversations', { params });
-    return data;
+    const { data } = await httpClient.get<ConversationsResponseBackend>('/v1/conversations', { params });
+    return {
+      items: data.items.map(normalizeConversation),
+      next_cursor: data.next_cursor,
+    };
   },
 
   /**
    * 创建会话
    */
   createConversation: async (request: CreateConversationRequest): Promise<Conversation> => {
-    const { data } = await httpClient.post('/v1/conversations', request);
-    return data;
-  },
-
-  /**
-   * 获取单个会话详情
-   */
-  getConversation: async (conversationId: string): Promise<Conversation> => {
-    const { data } = await httpClient.get(`/v1/conversations/${conversationId}`);
-    return data;
+    const { data } = await httpClient.post<ConversationBackend>('/v1/conversations', request);
+    return normalizeConversation(data);
   },
 
   /**
@@ -42,8 +42,8 @@ export const conversationService = {
     conversationId: string,
     request: UpdateConversationRequest
   ): Promise<Conversation> => {
-    const { data } = await httpClient.patch(`/v1/conversations/${conversationId}`, request);
-    return data;
+    const { data } = await httpClient.put<ConversationBackend>(`/v1/conversations/${conversationId}`, request);
+    return normalizeConversation(data);
   },
 
   /**

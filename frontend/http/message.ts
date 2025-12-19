@@ -6,6 +6,12 @@ import type {
   MessagesResponse,
   RunDetail,
 } from '@/lib/api-types';
+import {
+  normalizeMessagesResponse,
+  normalizeRunDetail,
+  type MessagesResponseBackend,
+  type RunDetailBackend,
+} from '@/lib/normalizers/chat-normalizers';
 
 /**
  * 消息和 Run 管理服务
@@ -18,10 +24,10 @@ export const messageService = {
     conversationId: string,
     params?: GetMessagesParams
   ): Promise<MessagesResponse> => {
-    const { data } = await httpClient.get(`/v1/conversations/${conversationId}/messages`, {
+    const { data } = await httpClient.get<MessagesResponseBackend>(`/v1/conversations/${conversationId}/messages`, {
       params,
     });
-    return data;
+    return normalizeMessagesResponse(data);
   },
 
   /**
@@ -42,7 +48,7 @@ export const messageService = {
    * 获取 Run 详情（惰性加载完整数据）
    */
   getRun: async (runId: string): Promise<RunDetail> => {
-    const { data } = await httpClient.get(`/v1/runs/${runId}`);
-    return data;
+    const { data } = await httpClient.get<RunDetailBackend>(`/v1/runs/${runId}`);
+    return normalizeRunDetail(data);
   },
 };

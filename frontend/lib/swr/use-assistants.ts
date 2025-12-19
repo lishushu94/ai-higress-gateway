@@ -17,13 +17,14 @@ import type {
  * 使用 static 缓存策略（助手列表变化不频繁）
  */
 export function useAssistants(params: GetAssistantsParams) {
-  const key = useMemo(
-    () => ({
-      url: '/v1/assistants',
-      params,
-    }),
-    [params.project_id, params.cursor, params.limit]
-  );
+  // 使用字符串 key 确保序列化一致性
+  const key = useMemo(() => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('project_id', params.project_id);
+    if (params.cursor) queryParams.set('cursor', params.cursor);
+    if (params.limit) queryParams.set('limit', params.limit.toString());
+    return `/v1/assistants?${queryParams.toString()}`;
+  }, [params.project_id, params.cursor, params.limit]);
 
   const { data, error, isLoading, mutate } = useSWR<AssistantsResponse>(
     key,

@@ -1,0 +1,278 @@
+// 聊天助手系统规范化函数
+// 此文件提供数据转换函数，将后端响应转换为前端使用的类型
+
+// 重新导出后端类型，供 HTTP 层使用
+export type {
+  AssistantBackend,
+  AssistantsResponseBackend,
+  ConversationBackend,
+  ConversationsResponseBackend,
+  MessageBackend,
+  MessageContent,
+  RunSummaryBackend,
+  RunDetailBackend,
+  MessagesResponseBackend,
+  SendMessageResponseBackend,
+  ChallengerRunBackend,
+  EvalResponseBackend,
+} from '@/lib/api-types-backend';
+
+import type {
+  AssistantBackend,
+  AssistantsResponseBackend,
+  ConversationBackend,
+  ConversationsResponseBackend,
+  MessageBackend,
+  MessageContent,
+  RunSummaryBackend,
+  RunDetailBackend,
+  MessagesResponseBackend,
+  SendMessageResponseBackend,
+  ChallengerRunBackend,
+  EvalResponseBackend,
+} from '@/lib/api-types-backend';
+import type {
+  Assistant,
+  AssistantsResponse,
+  Conversation,
+  ConversationsResponse,
+  Message,
+  RunSummary,
+  RunDetail,
+  MessagesResponse,
+  SendMessageResponse,
+  ChallengerRun,
+  EvalResponse,
+} from '@/lib/api-types';
+
+// ============= 助手相关规范化函数 =============
+
+/**
+ * 规范化助手数据
+ * 将后端的 archived_at 转换为前端的 archived boolean
+ * 
+ * @param backend - 后端返回的助手数据
+ * @returns 前端使用的助手数据
+ */
+export function normalizeAssistant(backend: AssistantBackend): Assistant {
+  return {
+    assistant_id: backend.assistant_id,
+    project_id: backend.project_id,
+    name: backend.name,
+    system_prompt: backend.system_prompt,
+    default_logical_model: backend.default_logical_model,
+    model_preset: backend.model_preset,
+    archived: backend.archived_at !== null, // 转换为 boolean
+    created_at: backend.created_at,
+    updated_at: backend.updated_at,
+  };
+}
+
+/**
+ * 规范化助手列表响应
+ * 
+ * @param backend - 后端返回的助手列表响应
+ * @returns 前端使用的助手列表响应
+ */
+export function normalizeAssistantsResponse(
+  backend: AssistantsResponseBackend
+): AssistantsResponse {
+  return {
+    items: backend.items.map(normalizeAssistant),
+    next_cursor: backend.next_cursor,
+  };
+}
+
+// ============= 会话相关规范化函数 =============
+
+/**
+ * 规范化会话数据
+ * 将后端的 archived_at 转换为前端的 archived boolean
+ * 
+ * @param backend - 后端返回的会话数据
+ * @returns 前端使用的会话数据
+ */
+export function normalizeConversation(backend: ConversationBackend): Conversation {
+  return {
+    conversation_id: backend.conversation_id,
+    assistant_id: backend.assistant_id,
+    project_id: backend.project_id,
+    title: backend.title,
+    archived: backend.archived_at !== null, // 转换为 boolean
+    last_activity_at: backend.last_activity_at,
+    created_at: backend.created_at,
+    updated_at: backend.updated_at,
+  };
+}
+
+/**
+ * 规范化会话列表响应
+ * 
+ * @param backend - 后端返回的会话列表响应
+ * @returns 前端使用的会话列表响应
+ */
+export function normalizeConversationsResponse(
+  backend: ConversationsResponseBackend
+): ConversationsResponse {
+  return {
+    items: backend.items.map(normalizeConversation),
+    next_cursor: backend.next_cursor,
+  };
+}
+
+// ============= 消息相关规范化函数 =============
+
+/**
+ * 规范化消息内容
+ * 将后端的结构化 content 转换为前端的字符串
+ * 
+ * @param content - 后端返回的消息内容结构
+ * @returns 前端使用的消息内容字符串
+ */
+export function normalizeMessageContent(content: MessageContent): string {
+  if (content.type === 'text') {
+    return content.text || '';
+  }
+  if (content.type === 'image') {
+    return `[图片: ${content.image_url}]`;
+  }
+  if (content.type === 'file') {
+    return `[文件: ${content.file_url}]`;
+  }
+  return '';
+}
+
+/**
+ * 规范化消息数据
+ * 将后端的结构化 content 转换为前端的字符串
+ * 
+ * @param backend - 后端返回的消息数据
+ * @returns 前端使用的消息数据
+ */
+export function normalizeMessage(backend: MessageBackend): Message {
+  return {
+    message_id: backend.message_id,
+    conversation_id: backend.conversation_id,
+    role: backend.role,
+    content: normalizeMessageContent(backend.content), // 转换为字符串
+    created_at: backend.created_at,
+  };
+}
+
+/**
+ * 规范化 run 摘要数据
+ * 映射字段名称：latency_ms -> latency, cost_credits -> cost
+ * 
+ * @param backend - 后端返回的 run 摘要数据
+ * @returns 前端使用的 run 摘要数据
+ */
+export function normalizeRunSummary(backend: RunSummaryBackend): RunSummary {
+  return {
+    run_id: backend.run_id,
+    requested_logical_model: backend.requested_logical_model,
+    status: backend.status,
+    output_preview: backend.output_preview,
+    latency: backend.latency_ms, // 映射字段名
+    error_code: backend.error_code,
+  };
+}
+
+/**
+ * 规范化 run 详情数据
+ * 映射字段名称：request_payload -> request, response_payload -> response
+ * 
+ * @param backend - 后端返回的 run 详情数据
+ * @returns 前端使用的 run 详情数据
+ */
+export function normalizeRunDetail(backend: RunDetailBackend): RunDetail {
+  return {
+    ...normalizeRunSummary(backend),
+    request: backend.request_payload, // 映射字段名
+    response: backend.response_payload, // 映射字段名
+    output_text: backend.output_text,
+    input_tokens: backend.input_tokens,
+    output_tokens: backend.output_tokens,
+    total_tokens: backend.total_tokens,
+    cost: backend.cost_credits, // 映射字段名
+  };
+}
+
+/**
+ * 规范化消息列表响应
+ * 处理 runs 数组和消息内容
+ * 
+ * @param backend - 后端返回的消息列表响应
+ * @returns 前端使用的消息列表响应
+ */
+export function normalizeMessagesResponse(
+  backend: MessagesResponseBackend
+): MessagesResponse {
+  return {
+    items: backend.items.map((item) => {
+      const normalizedMessage = normalizeMessage(item.message);
+      const normalizedRuns = item.runs.map(normalizeRunSummary);
+      
+      // 如果是 assistant 消息且有 runs，取第一个 run
+      // 注意：后端返回的是 runs 数组，前端期望单个 run（可选）
+      const run = normalizedRuns.length > 0 ? normalizedRuns[0] : undefined;
+      
+      return {
+        message: normalizedMessage,
+        run,
+      };
+    }),
+    next_cursor: backend.next_cursor,
+  };
+}
+
+/**
+ * 规范化发送消息响应
+ * 
+ * @param backend - 后端返回的发送消息响应
+ * @returns 前端使用的发送消息响应
+ */
+export function normalizeSendMessageResponse(
+  backend: SendMessageResponseBackend
+): SendMessageResponse {
+  return {
+    message_id: backend.message_id,
+    baseline_run: normalizeRunSummary(backend.baseline_run),
+  };
+}
+
+// ============= 评测相关规范化函数 =============
+
+/**
+ * 规范化挑战者 run 数据
+ * 映射字段名称：latency_ms -> latency
+ * 
+ * @param backend - 后端返回的挑战者 run 数据
+ * @returns 前端使用的挑战者 run 数据
+ */
+export function normalizeChallengerRun(backend: ChallengerRunBackend): ChallengerRun {
+  return {
+    run_id: backend.run_id,
+    requested_logical_model: backend.requested_logical_model,
+    status: backend.status,
+    output_preview: backend.output_preview,
+    latency: backend.latency_ms, // 映射字段名
+    error_code: backend.error_code,
+  };
+}
+
+/**
+ * 规范化评测响应
+ * 
+ * @param backend - 后端返回的评测响应
+ * @returns 前端使用的评测响应
+ */
+export function normalizeEvalResponse(backend: EvalResponseBackend): EvalResponse {
+  return {
+    eval_id: backend.eval_id,
+    status: backend.status,
+    baseline_run_id: backend.baseline_run_id,
+    challengers: backend.challengers.map(normalizeChallengerRun),
+    explanation: backend.explanation,
+    created_at: backend.created_at,
+  };
+}

@@ -137,7 +137,7 @@ describe('聊天助手系统服务导出', () => {
     expect(conversationService).toBeDefined();
     expect(conversationService.getConversations).toBeDefined();
     expect(conversationService.createConversation).toBeDefined();
-    expect(conversationService.getConversation).toBeDefined();
+    // getConversation 已移除，后端不提供单独的会话详情接口
     expect(conversationService.updateConversation).toBeDefined();
     expect(conversationService.deleteConversation).toBeDefined();
   });

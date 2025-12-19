@@ -65,17 +65,17 @@ describe('MessageInput', () => {
   it('renders input field and send button', () => {
     render(<MessageInput conversationId="conv-1" />);
     expect(screen.getByPlaceholderText('chat.message.input_placeholder')).toBeInTheDocument();
-    expect(screen.getByTitle('chat.message.send')).toBeInTheDocument();
+    expect(screen.getByTitle('chat.message.send_hint')).toBeInTheDocument();
   });
 
   it('disables input when disabled prop is true', () => {
     render(<MessageInput conversationId="conv-1" disabled />);
-    const input = screen.getByPlaceholderText('chat.message.input_placeholder');
+    const input = screen.getByPlaceholderText('chat.conversation.archived_notice');
     expect(input).toBeDisabled();
   });
 
-  it('shows archived notice when disabled', () => {
+  it('shows archived notice in placeholder when disabled', () => {
     render(<MessageInput conversationId="conv-1" disabled />);
-    expect(screen.getByText('chat.conversation.archived_notice')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('chat.conversation.archived_notice')).toBeInTheDocument();
   });
 });

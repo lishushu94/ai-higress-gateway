@@ -20,7 +20,7 @@ export const evalConfigService = {
     projectId: string,
     request: UpdateEvalConfigRequest
   ): Promise<EvalConfig> => {
-    const { data } = await httpClient.patch(`/v1/projects/${projectId}/eval-config`, request);
+    const { data } = await httpClient.put(`/v1/projects/${projectId}/eval-config`, request);
     return data;
   },
 };

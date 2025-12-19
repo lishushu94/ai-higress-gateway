@@ -16,17 +16,17 @@ import type {
  * 使用 frequent 缓存策略（实时对话场景）
  */
 export function useMessages(conversationId: string | null, params?: GetMessagesParams) {
-  const key = useMemo(
-    () =>
-      conversationId
-        ? {
-            url: `/v1/conversations/${conversationId}/messages`,
-            params,
-          }
-        : null,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [conversationId, params?.cursor, params?.limit]
-  );
+  // 使用字符串 key 确保序列化一致性
+  const key = useMemo(() => {
+    if (!conversationId) return null;
+    
+    const queryParams = new URLSearchParams();
+    if (params?.cursor) queryParams.set('cursor', params.cursor);
+    if (params?.limit) queryParams.set('limit', params.limit.toString());
+    
+    const queryString = queryParams.toString();
+    return `/v1/conversations/${conversationId}/messages${queryString ? `?${queryString}` : ''}`;
+  }, [conversationId, params?.cursor, params?.limit]);
 
   const { data, error, isLoading, mutate } = useSWR<MessagesResponse>(
     key,
@@ -69,6 +69,10 @@ export function useRun(runId: string | null) {
 /**
  * 发送消息的 mutation hook
  * 支持乐观更新和回滚逻辑
+ * 
+ * 注意：后端返回的消息列表是倒序（新消息在前），所以：
+ * - 新消息应该插入到列表开头（因为后端是倒序）
+ * - 分页加载的旧消息应该插入到列表末尾（因为后端是倒序）
  */
 export function useSendMessage(conversationId: string | null) {
   const { mutate: globalMutate } = useSWRConfig();
@@ -78,10 +82,8 @@ export function useSendMessage(conversationId: string | null) {
       throw new Error('Conversation ID is required');
     }
 
-    const messagesKey = {
-      url: `/v1/conversations/${conversationId}/messages`,
-      params: undefined,
-    };
+    // 使用字符串 key 确保与 useMessages 一致
+    const messagesKey = `/v1/conversations/${conversationId}/messages`;
 
     // 创建乐观更新的用户消息
     const optimisticMessage = {
@@ -92,17 +94,19 @@ export function useSendMessage(conversationId: string | null) {
         content: request.content,
         created_at: new Date().toISOString(),
       },
+      runs: [],
     };
 
     try {
       // 乐观更新：立即显示用户消息
+      // 因为后端返回倒序，新消息插入到列表开头
       await globalMutate(
         messagesKey,
         async (currentData?: MessagesResponse) => {
           if (!currentData) return currentData;
           return {
             ...currentData,
-            items: [...currentData.items, optimisticMessage],
+            items: [optimisticMessage, ...currentData.items],
           };
         },
         { revalidate: false }

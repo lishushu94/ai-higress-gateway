@@ -6,7 +6,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { 
   useConversations, 
-  useConversation, 
+  useConversationFromList, 
   useCreateConversation, 
   useUpdateConversation, 
   useDeleteConversation 
@@ -50,27 +50,17 @@ describe('useConversations hook', () => {
   });
 });
 
-describe('useConversation hook', () => {
-  it('应该正确定义 useConversation hook', () => {
-    expect(useConversation).toBeDefined();
-    expect(typeof useConversation).toBe('function');
+describe('useConversationFromList helper', () => {
+  it('应该正确定义 useConversationFromList helper', () => {
+    expect(useConversationFromList).toBeDefined();
+    expect(typeof useConversationFromList).toBe('function');
   });
 
-  it('应该返回正确的属性', () => {
-    // 这个测试只验证 hook 的结构，不实际调用
-    const hookResult = {
-      conversation: undefined,
-      isLoading: false,
-      isError: false,
-      error: undefined,
-      mutate: vi.fn(),
-    };
-
-    expect(hookResult).toHaveProperty('conversation');
-    expect(hookResult).toHaveProperty('isLoading');
-    expect(hookResult).toHaveProperty('isError');
-    expect(hookResult).toHaveProperty('error');
-    expect(hookResult).toHaveProperty('mutate');
+  it('应该返回 Conversation 或 undefined', () => {
+    // 这个测试只验证返回类型，不实际调用
+    // useConversationFromList 返回 Conversation | undefined
+    const result: ReturnType<typeof useConversationFromList> = undefined;
+    expect(result === undefined || typeof result === 'object').toBe(true);
   });
 });
 
@@ -110,7 +100,7 @@ describe('conversationService 集成', () => {
   it('conversationService 应该有所有必需的方法', () => {
     expect(conversationService.getConversations).toBeDefined();
     expect(conversationService.createConversation).toBeDefined();
-    expect(conversationService.getConversation).toBeDefined();
+    // getConversation 已移除，后端不提供单独的会话详情接口
     expect(conversationService.updateConversation).toBeDefined();
     expect(conversationService.deleteConversation).toBeDefined();
   });
@@ -118,7 +108,7 @@ describe('conversationService 集成', () => {
   it('所有方法应该是函数', () => {
     expect(typeof conversationService.getConversations).toBe('function');
     expect(typeof conversationService.createConversation).toBe('function');
-    expect(typeof conversationService.getConversation).toBe('function');
+    // getConversation 已移除
     expect(typeof conversationService.updateConversation).toBe('function');
     expect(typeof conversationService.deleteConversation).toBe('function');
   });

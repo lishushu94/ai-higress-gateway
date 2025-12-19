@@ -17,13 +17,14 @@ import type {
  * 使用 frequent 缓存策略（会话列表会因新消息而更新 last_activity_at）
  */
 export function useConversations(params: GetConversationsParams) {
-  const key = useMemo(
-    () => ({
-      url: '/v1/conversations',
-      params,
-    }),
-    [params.assistant_id, params.cursor, params.limit]
-  );
+  // 使用字符串 key 确保序列化一致性
+  const key = useMemo(() => {
+    const queryParams = new URLSearchParams();
+    queryParams.set('assistant_id', params.assistant_id);
+    if (params.cursor) queryParams.set('cursor', params.cursor);
+    if (params.limit) queryParams.set('limit', params.limit.toString());
+    return `/v1/conversations?${queryParams.toString()}`;
+  }, [params.assistant_id, params.cursor, params.limit]);
 
   const { data, error, isLoading, mutate } = useSWR<ConversationsResponse>(
     key,
@@ -42,25 +43,24 @@ export function useConversations(params: GetConversationsParams) {
 }
 
 /**
- * 获取单个会话详情
- * 使用 default 缓存策略
+ * 从会话列表中获取单个会话
+ * 注意：后端不提供单独的会话详情接口，需要从列表数据中获取
+ * 
+ * @param conversationId - 会话 ID
+ * @param assistantId - 助手 ID（用于获取会话列表）
+ * @returns 会话数据或 undefined
  */
-export function useConversation(conversationId: string | null) {
-  const key = conversationId ? `/v1/conversations/${conversationId}` : null;
-
-  const { data, error, isLoading, mutate } = useSWR<Conversation>(
-    key,
-    () => conversationService.getConversation(conversationId!),
-    cacheStrategies.default
-  );
-
-  return {
-    conversation: data,
-    isLoading,
-    isError: !!error,
-    error,
-    mutate,
-  };
+export function useConversationFromList(
+  conversationId: string | null,
+  assistantId: string
+): Conversation | undefined {
+  const { conversations } = useConversations({ assistant_id: assistantId });
+  
+  if (!conversationId) {
+    return undefined;
+  }
+  
+  return conversations.find((c) => c.conversation_id === conversationId);
 }
 
 /**

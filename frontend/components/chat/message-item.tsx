@@ -11,15 +11,15 @@ import { cn } from "@/lib/utils";
 
 export interface MessageItemProps {
   message: Message;
-  run?: RunSummary;
+  runs?: RunSummary[]; // 改为 runs 数组
   onViewDetails?: (runId: string) => void;
-  onTriggerEval?: (runId: string) => void;
+  onTriggerEval?: (messageId: string, runId: string) => void; // 添加 messageId 参数
   showEvalButton?: boolean;
 }
 
 export function MessageItem({
   message,
-  run,
+  runs = [], // 默认为空数组
   onViewDetails,
   onTriggerEval,
   showEvalButton = true,
@@ -27,6 +27,9 @@ export function MessageItem({
   const { t, language } = useI18n();
   const isUser = message.role === "user";
   const isAssistant = message.role === "assistant";
+  
+  // 获取第一个 run（通常是 baseline run）
+  const primaryRun = runs.length > 0 ? runs[0] : undefined;
 
   // 格式化时间
   const formattedTime = formatDistanceToNow(new Date(message.created_at), {
@@ -35,9 +38,7 @@ export function MessageItem({
   });
 
   // 获取状态显示
-  const getStatusBadge = () => {
-    if (!run) return null;
-
+  const getStatusBadge = (run: RunSummary) => {
     const statusConfig = {
       queued: {
         label: t("chat.run.status_queued"),
@@ -105,16 +106,33 @@ export function MessageItem({
             </div>
 
             {/* Run 摘要信息 */}
-            {run && isAssistant && (
-              <div className="mt-3 pt-3 border-t border-border/50 flex items-center gap-2 text-xs text-muted-foreground">
-                <span className="font-medium">{run.requested_logical_model}</span>
-                {getStatusBadge()}
-                {run.latency && (
-                  <span>
-                    {run.latency}ms
-                  </span>
+            {isAssistant && (
+              <>
+                {runs.length === 0 ? (
+                  <div className="mt-3 pt-3 border-t border-border/50 text-xs text-muted-foreground">
+                    {t("chat.message.no_response")}
+                  </div>
+                ) : (
+                  <div className="mt-3 pt-3 border-t border-border/50 space-y-2">
+                    {runs.map((run, index) => (
+                      <div key={run.run_id} className="flex items-center gap-2 text-xs text-muted-foreground">
+                        {runs.length > 1 && (
+                          <span className="font-medium text-muted-foreground/70">
+                            #{index + 1}
+                          </span>
+                        )}
+                        <span className="font-medium">{run.requested_logical_model}</span>
+                        {getStatusBadge(run)}
+                        {run.latency && (
+                          <span>
+                            {run.latency}ms
+                          </span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 )}
-              </div>
+              </>
             )}
           </CardContent>
         </Card>
@@ -126,14 +144,14 @@ export function MessageItem({
           </span>
 
           {/* 助手消息的操作按钮 */}
-          {isAssistant && run && (
+          {isAssistant && primaryRun && (
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
               {/* 查看详情按钮 */}
               {onViewDetails && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => onViewDetails(run.run_id)}
+                  onClick={() => onViewDetails(primaryRun.run_id)}
                   title={t("chat.message.view_details")}
                 >
                   <Eye className="size-3.5" />
@@ -141,11 +159,11 @@ export function MessageItem({
               )}
 
               {/* 推荐评测按钮 */}
-              {showEvalButton && onTriggerEval && run.status === "succeeded" && (
+              {showEvalButton && onTriggerEval && primaryRun.status === "succeeded" && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  onClick={() => onTriggerEval(run.run_id)}
+                  onClick={() => onTriggerEval(message.message_id, primaryRun.run_id)}
                   title={t("chat.message.trigger_eval")}
                 >
                   <Sparkles className="size-3.5" />

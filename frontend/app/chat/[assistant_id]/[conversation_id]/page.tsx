@@ -4,7 +4,7 @@ import { useParams } from "next/navigation";
 import dynamic from "next/dynamic";
 import { MessageList } from "@/components/chat/message-list";
 import { MessageInput } from "@/components/chat/message-input";
-import { useConversation } from "@/lib/swr/use-conversations";
+import { useConversationFromList } from "@/lib/swr/use-conversations";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { useI18n } from "@/lib/i18n-context";
 import { useCreateEval } from "@/lib/swr/use-evals";
@@ -37,20 +37,20 @@ export default function ConversationPage() {
   const assistantId = params.assistant_id as string;
   const conversationId = params.conversation_id as string;
 
-  const { conversation, isLoading } = useConversation(conversationId);
-  const { activeEvalId, setActiveEval } = useChatStore();
+  // 从会话列表中获取会话详情（后端不提供单独的会话详情接口）
+  const conversation = useConversationFromList(conversationId, assistantId);
+  const { selectedProjectId, activeEvalId, setActiveEval } = useChatStore();
   const createEval = useCreateEval();
 
-  const handleTriggerEval = async (baselineRunId: string) => {
-    if (!user) return;
+  const handleTriggerEval = async (messageId: string, baselineRunId: string) => {
+    if (!user || !selectedProjectId) return;
 
     try {
-      // TODO: 在 MVP 阶段，使用用户 ID 作为 project_id
       const result = await createEval({
-        project_id: user.id,
+        project_id: selectedProjectId,
         assistant_id: assistantId,
         conversation_id: conversationId,
-        message_id: '', // 从 baselineRunId 可以推断出 message_id
+        message_id: messageId, // 使用从 MessageItem 传递的 message_id
         baseline_run_id: baselineRunId,
       });
 
@@ -65,18 +65,6 @@ export default function ConversationPage() {
   const handleCloseEval = () => {
     setActiveEval(null);
   };
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-full">
-        <div className="text-center space-y-2">
-          <div className="text-muted-foreground">
-            {t('chat.conversation.loading')}
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (!conversation) {
     return (

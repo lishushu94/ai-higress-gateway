@@ -11,6 +11,7 @@ import { useI18n } from "@/lib/i18n-context";
 import { useEval, useSubmitRating } from "@/lib/swr/use-evals";
 import { EvalChallengerCard } from "./eval-challenger-card";
 import { EvalExplanation } from "./eval-explanation";
+import { ErrorAlert } from "./error-alert";
 import { toast } from "sonner";
 import type { ReasonTag } from "@/lib/api-types";
 
@@ -44,7 +45,7 @@ export function EvalPanel({ evalId, onClose }: EvalPanelProps) {
   const { t } = useI18n();
 
   // 获取评测数据（自动轮询）
-  const { eval: evalData, isLoading, isError, currentPollingInterval, isPolling } = useEval(
+  const { eval: evalData, isLoading, isError, error, currentPollingInterval, isPolling } = useEval(
     evalId,
     { enablePolling: true }
   );
@@ -95,12 +96,10 @@ export function EvalPanel({ evalId, onClose }: EvalPanelProps) {
   // 错误状态
   if (isError || !evalData) {
     return (
-      <Card className="w-full border-red-200">
+      <Card className="w-full">
         <CardHeader>
           <div className="flex items-center justify-between">
-            <CardTitle className="text-red-600">
-              {t("chat.errors.eval_not_found")}
-            </CardTitle>
+            <CardTitle>{t("chat.eval.title")}</CardTitle>
             {onClose && (
               <Button variant="ghost" size="icon" onClick={onClose}>
                 <X className="h-4 w-4" />
@@ -108,6 +107,9 @@ export function EvalPanel({ evalId, onClose }: EvalPanelProps) {
             )}
           </div>
         </CardHeader>
+        <CardContent>
+          <ErrorAlert error={error} />
+        </CardContent>
       </Card>
     );
   }
