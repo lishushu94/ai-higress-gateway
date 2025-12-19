@@ -4,7 +4,7 @@ from uuid import UUID
 
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -37,7 +37,6 @@ def _run_to_summary(run) -> dict:
 @router.post("/v1/evals", response_model=EvalResponse)
 async def create_eval_endpoint(
     payload: EvalCreateRequest,
-    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     redis: Any = Depends(get_redis),
     client: Any = Depends(get_http_client),
@@ -53,7 +52,6 @@ async def create_eval_endpoint(
         conversation_id=payload.conversation_id,
         message_id=payload.message_id,
         baseline_run_id=payload.baseline_run_id,
-        background_tasks=background_tasks,
     )
     return EvalResponse(
         eval_id=eval_obj.id,

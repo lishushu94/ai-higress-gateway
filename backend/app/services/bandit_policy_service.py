@@ -34,12 +34,19 @@ def length_bucket(text: str) -> str:
     return "long"
 
 
-def build_context_features(*, user_text: str, tool_mode: str = "none", task_type: str = "unknown") -> dict:
+def build_context_features(
+    *,
+    user_text: str,
+    tool_mode: str = "none",
+    task_type: str = "unknown",
+    risk_tier: str = "low",
+) -> dict:
     return {
         "language": infer_language(user_text),
         "length_bucket": length_bucket(user_text),
         "tool_mode": tool_mode,
         "task_type": task_type,
+        "risk_tier": risk_tier,
     }
 
 
@@ -82,11 +89,15 @@ def recommend_challengers(
     assistant_id: UUID,
     baseline_logical_model: str,
     user_text: str,
+    context_features: dict | None = None,
     candidate_logical_models: list[str],
     k: int,
     policy_version: str = "ts-v1",
 ) -> BanditRecommendation:
-    features = build_context_features(user_text=user_text)
+    if isinstance(context_features, dict) and context_features:
+        features = dict(context_features)
+    else:
+        features = build_context_features(user_text=user_text)
     context_key = build_context_key(project_id=project_id, assistant_id=assistant_id, features=features)
 
     normalized_candidates: list[str] = []

@@ -57,6 +57,10 @@ Request:
 
 更新助手（支持归档 `archived=true`）。
 
+### DELETE `/v1/assistants/{assistant_id}`
+
+删除助手（硬删除，会级联删除该助手下的会话与消息历史）。
+
 ## Conversations
 
 ### POST `/v1/conversations`
@@ -80,6 +84,25 @@ Query:
 - `assistant_id` (required): UUID
 - `cursor` (optional): string
 - `limit` (optional): 1-100
+
+### PUT `/v1/conversations/{conversation_id}`
+
+更新会话（支持归档/取消归档）。
+
+Request:
+```json
+{
+  "title": "可选新标题",
+  "archived": true
+}
+```
+
+说明：
+- 归档后会话不会出现在会话列表中，但仍可通过 messages 接口读取历史。
+
+### DELETE `/v1/conversations/{conversation_id}`
+
+删除会话（硬删除，会级联删除会话消息与 run/eval 数据）。
 
 ## Messages / Runs
 

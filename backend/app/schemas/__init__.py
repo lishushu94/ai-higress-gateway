@@ -124,11 +124,13 @@ from .assistants import (
     AssistantPresetResponse,
     AssistantPresetUpdateRequest,
     ConversationCreateRequest,
+    ConversationUpdateRequest,
     ConversationItem,
     ConversationListResponse,
     MessageCreateRequest,
     MessageCreateResponse,
     MessageListResponse,
+    RunSummary,
     RunDetailResponse,
 )
 from .evals import EvalCreateRequest, EvalRatingRequest, EvalRatingResponse, EvalResponse
@@ -238,11 +240,13 @@ __all__ = [
     "AssistantPresetResponse",
     "AssistantPresetUpdateRequest",
     "ConversationCreateRequest",
+    "ConversationUpdateRequest",
     "ConversationItem",
     "ConversationListResponse",
     "MessageCreateRequest",
     "MessageCreateResponse",
     "MessageListResponse",
+    "RunSummary",
     "RunDetailResponse",
     # New: Evals
     "EvalCreateRequest",

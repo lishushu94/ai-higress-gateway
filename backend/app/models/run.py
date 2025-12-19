@@ -16,8 +16,16 @@ class Run(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     __table_args__ = (
         Index("ix_chat_runs_message_created", "message_id", "created_at"),
         Index("ix_chat_runs_user_created", "user_id", "created_at"),
+        Index("ix_chat_runs_eval_id", "eval_id"),
     )
 
+    eval_id: Mapped[PG_UUID | None] = Column(
+        PG_UUID(as_uuid=True),
+        ForeignKey("chat_evals.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+        doc="可选：所属评测（Eval）。用于在 challenger 完成后高效更新 Eval 状态。",
+    )
     message_id: Mapped[PG_UUID] = Column(
         PG_UUID(as_uuid=True),
         ForeignKey("chat_messages.id", ondelete="CASCADE"),
@@ -61,4 +69,3 @@ class Run(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 __all__ = ["Run"]
-

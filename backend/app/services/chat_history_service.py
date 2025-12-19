@@ -209,6 +209,75 @@ def get_conversation(
     return conv
 
 
+def get_conversation_any(
+    db: Session,
+    *,
+    conversation_id: UUID,
+    user_id: UUID,
+) -> Conversation:
+    """
+    允许读取已归档会话（用于查看历史消息）；写入类操作应继续使用 get_conversation（仅 active）。
+    """
+    conv = db.execute(
+        select(Conversation).where(
+            Conversation.id == conversation_id,
+            Conversation.user_id == user_id,
+        )
+    ).scalars().first()
+    if conv is None:
+        raise not_found("会话不存在", details={"conversation_id": str(conversation_id)})
+    return conv
+
+
+def update_conversation(
+    db: Session,
+    *,
+    conversation_id: UUID,
+    user_id: UUID,
+    title: str | None = None,
+    archived: bool | None = None,
+) -> Conversation:
+    conv = get_conversation_any(db, conversation_id=conversation_id, user_id=user_id)
+
+    if title is not None:
+        conv.title = title
+    if archived is not None:
+        conv.archived_at = datetime.now(UTC) if archived else None
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
+    return conv
+
+
+def delete_conversation(
+    db: Session,
+    *,
+    conversation_id: UUID,
+    user_id: UUID,
+) -> None:
+    conv = get_conversation_any(db, conversation_id=conversation_id, user_id=user_id)
+    db.delete(conv)
+    db.commit()
+
+
+def delete_assistant(
+    db: Session,
+    *,
+    assistant_id: UUID,
+    user_id: UUID,
+) -> None:
+    assistant = db.execute(
+        select(AssistantPreset).where(
+            AssistantPreset.id == assistant_id,
+            AssistantPreset.user_id == user_id,
+        )
+    ).scalars().first()
+    if assistant is None:
+        raise not_found("助手不存在", details={"assistant_id": str(assistant_id)})
+    db.delete(assistant)
+    db.commit()
+
+
 def _next_message_sequence(db: Session, *, conversation_id: UUID) -> int:
     seq = db.execute(
         select(func.max(Message.sequence)).where(Message.conversation_id == conversation_id)
@@ -290,7 +359,7 @@ def list_messages_with_run_summaries(
     cursor: str | None = None,
     limit: int = 30,
 ) -> tuple[list[Message], dict[UUID, list[Run]], str | None]:
-    conv = get_conversation(db, conversation_id=conversation_id, user_id=user_id)
+    conv = get_conversation_any(db, conversation_id=conversation_id, user_id=user_id)
     _ = conv
 
     offset = _parse_offset_cursor(cursor)
@@ -336,12 +405,16 @@ __all__ = [
     "create_assistant_message_after_user",
     "create_conversation",
     "create_user_message",
+    "delete_assistant",
+    "delete_conversation",
     "get_assistant",
     "get_conversation",
+    "get_conversation_any",
     "get_run_detail",
     "list_assistants",
     "list_conversations",
     "list_messages_with_run_summaries",
+    "update_conversation",
     "update_assistant",
     "update_assistant_message_for_user_sequence",
 ]

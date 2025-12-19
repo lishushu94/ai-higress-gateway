@@ -24,6 +24,7 @@ import {
   Bell,
   Megaphone,
   Globe,
+  MessageSquare,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
@@ -39,6 +40,11 @@ const navItems: NavItem[] = [
     titleKey: "nav.overview",
     href: "/dashboard/overview",
     icon: LayoutDashboard,
+  },
+  {
+    titleKey: "nav.chat",
+    href: "/chat",
+    icon: MessageSquare,
   },
   {
     titleKey: "nav.my_providers",

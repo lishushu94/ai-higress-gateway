@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, Response, status
 from sqlalchemy.orm import Session
 
 try:
@@ -21,6 +21,7 @@ from app.schemas import (
     ConversationCreateRequest,
     ConversationItem,
     ConversationListResponse,
+    ConversationUpdateRequest,
     MessageCreateRequest,
     MessageCreateResponse,
     MessageListResponse,
@@ -31,11 +32,14 @@ from app.services import chat_app_service
 from app.services.chat_history_service import (
     create_assistant,
     create_conversation,
+    delete_assistant,
+    delete_conversation,
     get_assistant,
     get_run_detail,
     list_assistants,
     list_conversations,
     list_messages_with_run_summaries,
+    update_conversation,
     update_assistant,
 )
 
@@ -165,6 +169,16 @@ def update_assistant_endpoint(
     return _assistant_to_response(assistant)
 
 
+@router.delete("/v1/assistants/{assistant_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_assistant_endpoint(
+    assistant_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> Response:
+    delete_assistant(db, assistant_id=assistant_id, user_id=UUID(str(current_user.id)))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.post("/v1/conversations", response_model=ConversationItem, status_code=status.HTTP_201_CREATED)
 def create_conversation_endpoint(
     payload: ConversationCreateRequest,
@@ -179,6 +193,33 @@ def create_conversation_endpoint(
         title=payload.title,
     )
     return _conversation_to_item(conv)
+
+
+@router.put("/v1/conversations/{conversation_id}", response_model=ConversationItem)
+def update_conversation_endpoint(
+    conversation_id: UUID,
+    payload: ConversationUpdateRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> dict:
+    conv = update_conversation(
+        db,
+        conversation_id=conversation_id,
+        user_id=UUID(str(current_user.id)),
+        title=payload.title,
+        archived=payload.archived,
+    )
+    return _conversation_to_item(conv)
+
+
+@router.delete("/v1/conversations/{conversation_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_conversation_endpoint(
+    conversation_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> Response:
+    delete_conversation(db, conversation_id=conversation_id, user_id=UUID(str(current_user.id)))
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get("/v1/conversations", response_model=ConversationListResponse)

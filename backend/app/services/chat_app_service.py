@@ -23,6 +23,7 @@ from app.services.chat_history_service import (
 from app.services.chat_run_service import build_openai_request_payload, create_run_record, execute_run_non_stream
 from app.services.credit_service import InsufficientCreditsError, ensure_account_usable
 from app.services.bandit_policy_service import recommend_challengers
+from app.services.context_features_service import build_rule_context_features
 from app.services.project_eval_config_service import (
     DEFAULT_PROVIDER_SCOPES,
     get_effective_provider_ids_for_user,
@@ -97,6 +98,7 @@ async def send_message_and_run_baseline(
             assistant_id=UUID(str(assistant.id)),
             baseline_logical_model="auto",
             user_text=content,
+            context_features=build_rule_context_features(user_text=content, request_payload=None),
             candidate_logical_models=candidates,
             k=1,
             policy_version="ts-v1",

@@ -57,6 +57,13 @@ class ConversationCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ConversationUpdateRequest(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    archived: bool | None = None
+
+    model_config = ConfigDict(extra="forbid")
+
+
 class ConversationItem(BaseModel):
     conversation_id: UUID
     assistant_id: UUID
@@ -123,6 +130,7 @@ __all__ = [
     "AssistantPresetResponse",
     "AssistantPresetListResponse",
     "ConversationCreateRequest",
+    "ConversationUpdateRequest",
     "ConversationItem",
     "ConversationListResponse",
     "MessageCreateRequest",

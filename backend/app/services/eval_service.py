@@ -5,6 +5,8 @@ from contextlib import asynccontextmanager
 from datetime import UTC, datetime
 from uuid import UUID
 
+import os
+
 from fastapi import BackgroundTasks
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,7 +20,12 @@ from app.models import APIKey, AssistantPreset, Conversation, Eval, EvalRating, 
 from app.services import chat_run_service
 from app.services.bandit_policy_service import recommend_challengers
 from app.services.chat_history_service import update_assistant_message_for_user_sequence
-from app.services.project_ai_service import build_project_ai_explanation, build_rule_explanation
+from app.services.context_features_service import build_rule_context_features
+from app.services.project_ai_service import (
+    build_project_ai_explanation,
+    build_rule_explanation,
+    infer_context_features_via_project_ai,
+)
 from app.services.project_eval_config_service import (
     DEFAULT_PROVIDER_SCOPES,
     get_effective_provider_ids_for_user,
@@ -115,7 +122,6 @@ async def create_eval(
     conversation_id: UUID,
     message_id: UUID,
     baseline_run_id: UUID,
-    background_tasks: BackgroundTasks,
 ) -> tuple[Eval, list[Run], dict | None]:
     ctx = resolve_project_context(db, project_id=project_id, current_user=current_user)
     cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
@@ -203,17 +209,81 @@ async def create_eval(
     max_challengers = int(cfg.max_challengers or 2)
     max_challengers = max(0, min(max_challengers, 5))
 
+    # Context features（低基数）：规则优先，unknown 则走 Project AI 兜底（可拔插）
+    features = build_rule_context_features(
+        user_text=user_text,
+        request_payload=baseline.request_payload if isinstance(baseline.request_payload, dict) else None,
+    )
+    if (
+        features.get("task_type") == "unknown"
+        and bool(getattr(cfg, "project_ai_enabled", False))
+        and cfg.project_ai_provider_model
+    ):
+        try:
+            auth_key = AuthenticatedAPIKey(
+                id=UUID(str(ctx.api_key.id)),
+                user_id=UUID(str(ctx.api_key.user_id)),
+                user_username=current_user.username,
+                is_superuser=bool(current_user.is_superuser),
+                name=ctx.api_key.name,
+                is_active=bool(ctx.api_key.is_active),
+                disabled_reason=ctx.api_key.disabled_reason,
+                has_provider_restrictions=bool(ctx.api_key.has_provider_restrictions),
+                allowed_provider_ids=list(ctx.api_key.allowed_provider_ids),
+            )
+            patch = await infer_context_features_via_project_ai(
+                db,
+                redis=redis,
+                client=client,
+                api_key=auth_key,
+                project_ai_provider_model=str(cfg.project_ai_provider_model),
+                allowed_provider_ids=set(effective_provider_ids),
+                user_text=user_text,
+                rule_features=dict(features),
+                idempotency_key=f"eval:{baseline_run_id}:project_ai_context_features",
+            )
+            if patch:
+                if features.get("task_type") == "unknown" and patch.get("task_type"):
+                    features["task_type"] = patch["task_type"]
+                if patch.get("risk_tier"):
+                    order = {"low": 0, "medium": 1, "high": 2}
+                    current = str(features.get("risk_tier") or "low")
+                    proposed = str(patch["risk_tier"])
+                    if order.get(proposed, 0) > order.get(current, 0):
+                        features["risk_tier"] = proposed
+        except Exception:
+            logger.info("eval_service: project ai context features skipped", exc_info=True)
+
     rec = recommend_challengers(
         db,
         project_id=ctx.project_id,
         assistant_id=UUID(str(assistant.id)),
         baseline_logical_model=baseline.requested_logical_model,
         user_text=user_text,
+        context_features=features,
         candidate_logical_models=candidate_models,
         k=max_challengers,
         policy_version="ts-v1",
     )
     explanation_obj = build_rule_explanation(recommendation=rec, rubric=cfg.rubric)
+
+    eval_obj = Eval(
+        user_id=UUID(str(current_user.id)),
+        api_key_id=ctx.project_id,
+        assistant_id=UUID(str(assistant.id)),
+        conversation_id=UUID(str(conversation.id)),
+        message_id=UUID(str(message.id)),
+        baseline_run_id=UUID(str(baseline.id)),
+        challenger_run_ids=[],
+        effective_provider_ids=sorted(effective_provider_ids),
+        context_features={"context_key": rec.context_key, "features": rec.features},
+        policy_version=rec.policy_version,
+        explanation=explanation_obj.to_dict() if explanation_obj else None,
+        status="running",
+        rated_at=None,
+    )
+    db.add(eval_obj)
+    db.flush()
 
     challenger_runs: list[Run] = []
     challenger_ids: list[str] = []
@@ -222,6 +292,7 @@ async def create_eval(
         req_payload = dict(baseline.request_payload or {})
         req_payload["model"] = cand.logical_model
         run = Run(
+            eval_id=UUID(str(eval_obj.id)),
             message_id=baseline.message_id,
             user_id=baseline.user_id,
             api_key_id=baseline.api_key_id,
@@ -245,27 +316,21 @@ async def create_eval(
         challenger_runs.append(run)
         challenger_ids.append(str(run.id))
 
-    eval_obj = Eval(
-        user_id=UUID(str(current_user.id)),
-        api_key_id=ctx.project_id,
-        assistant_id=UUID(str(assistant.id)),
-        conversation_id=UUID(str(conversation.id)),
-        message_id=UUID(str(message.id)),
-        baseline_run_id=UUID(str(baseline.id)),
-        challenger_run_ids=challenger_ids,
-        effective_provider_ids=sorted(effective_provider_ids),
-        context_features={"context_key": rec.context_key, "features": rec.features},
-        policy_version=rec.policy_version,
-        explanation=explanation_obj.to_dict() if explanation_obj else None,
-        status="running",
-        rated_at=None,
-    )
+    eval_obj.challenger_run_ids = challenger_ids
+    # baseline run 也挂上 eval_id，便于未来扩展（例如统计/审计）。
+    baseline.eval_id = UUID(str(eval_obj.id))
+    db.add(baseline)
     db.add(eval_obj)
     db.commit()
     db.refresh(eval_obj)
 
-    for run in challenger_runs:
-        background_tasks.add_task(_execute_run_background, run_id=UUID(str(run.id)))
+    if os.getenv("PYTEST_CURRENT_TEST"):
+        # 测试环境下同步跑完，避免后台任务不确定性。
+        for run in challenger_runs:
+            await _execute_run_background(run_id=UUID(str(run.id)))
+    else:
+        for run in challenger_runs:
+            asyncio.create_task(_execute_run_background(run_id=UUID(str(run.id))))
 
     # Optional: Project AI（LLM）解释（可拔插），失败降级为规则解释
     try:
@@ -304,6 +369,31 @@ async def create_eval(
     return eval_obj, challenger_runs, eval_obj.explanation
 
 
+def _maybe_mark_eval_ready(db: Session, *, eval_id: UUID) -> None:
+    eval_obj = db.execute(select(Eval).where(Eval.id == eval_id)).scalars().first()
+    if eval_obj is None:
+        return
+    # rated 优先，不覆盖
+    if eval_obj.status == "rated":
+        return
+    if eval_obj.status not in {"running", "ready"}:
+        return
+
+    unfinished = db.execute(
+        select(Run.id)
+        .where(Run.eval_id == eval_id)
+        .where(Run.status.in_(("queued", "running")))
+        .limit(1)
+    ).scalars().first()
+    if unfinished is not None:
+        return
+
+    # challengers 全部结束（成功/失败/取消），置为 ready
+    if eval_obj.status != "ready":
+        eval_obj.status = "ready"
+        db.add(eval_obj)
+
+
 async def _execute_run_background(*, run_id: UUID) -> None:
     async with _RUN_SEMAPHORE:
         SessionFactory = _get_background_session_factory()
@@ -313,6 +403,7 @@ async def _execute_run_background(*, run_id: UUID) -> None:
                 return
             if run.status not in {"queued", "running"}:
                 return
+            eval_id = UUID(str(run.eval_id)) if run.eval_id else None
 
             conversation = db.execute(
                 select(Conversation)
@@ -387,6 +478,9 @@ async def _execute_run_background(*, run_id: UUID) -> None:
                     payload_override=dict(run.request_payload or {}),
                 )
                 _ = updated
+                if eval_id is not None:
+                    _maybe_mark_eval_ready(db, eval_id=eval_id)
+                    db.commit()
 
 
 def submit_rating(

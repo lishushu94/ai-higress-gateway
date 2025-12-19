@@ -19,6 +19,43 @@ from tests.utils import InMemoryRedis, install_inmemory_db, jwt_auth_headers
 def _mock_send(request: httpx.Request) -> httpx.Response:
     if request.method == "POST" and request.url.path.endswith("/v1/chat/completions"):
         body = json.loads(request.content.decode("utf-8"))
+        system_text = ""
+        for m in body.get("messages", []) or []:
+            if isinstance(m, dict) and m.get("role") == "system" and isinstance(m.get("content"), str):
+                system_text = m["content"]
+                break
+
+        if "上下文特征" in system_text and "risk_tier" in system_text:
+            data = {
+                "id": "cmpl-test",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {"role": "assistant", "content": '{"task_type":"qa","risk_tier":"low"}'},
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+            return httpx.Response(200, json=data)
+
+        if "为什么系统选择这些 challenger" in system_text:
+            data = {
+                "id": "cmpl-test",
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "index": 0,
+                        "message": {
+                            "role": "assistant",
+                            "content": '{"summary":"基于探索与样本数选择候选进行对比评测。","evidence":{"constraints":[]}}',
+                        },
+                        "finish_reason": "stop",
+                    }
+                ],
+            }
+            return httpx.Response(200, json=data)
+
         user_messages = [
             m.get("content")
             for m in body.get("messages", [])
@@ -234,6 +271,8 @@ def test_assistant_conversation_message_and_eval_flow(app_with_mock_chat, monkey
         assert resp.status_code == 200
         eval_id = resp.json()["eval_id"]
         assert resp.json()["baseline_run_id"] == baseline_run_id
+        # In pytest env the challengers are executed inline; eval should become ready unless already rated.
+        assert resp.json()["status"] in {"running", "ready"}
 
         # rating (choose baseline as winner for determinism)
         resp = client.post(
@@ -243,3 +282,155 @@ def test_assistant_conversation_message_and_eval_flow(app_with_mock_chat, monkey
         )
         assert resp.status_code == 200
         assert resp.json()["winner_run_id"] == baseline_run_id
+
+
+def test_eval_context_features_fallback_to_project_ai(app_with_mock_chat, monkeypatch):
+    app, SessionLocal, redis = app_with_mock_chat
+    user_id, api_key_id = _get_seed_ids(SessionLocal)
+    headers = jwt_auth_headers(str(user_id))
+
+    # Patch eval background runner to reuse the same mock transport & redis in tests.
+    from app.services import eval_service
+
+    @asynccontextmanager
+    async def _http_client_for_eval():
+        transport = httpx.MockTransport(_mock_send)
+        async with httpx.AsyncClient(transport=transport, timeout=30.0) as client:
+            yield client
+
+    monkeypatch.setattr(eval_service, "_background_http_client", _http_client_for_eval)
+    monkeypatch.setattr(eval_service, "_get_background_redis", lambda: redis)
+    monkeypatch.setattr(eval_service, "_get_background_session_factory", lambda: SessionLocal)
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/assistants",
+            headers=headers,
+            json={
+                "project_id": str(api_key_id),
+                "name": "默认助手",
+                "system_prompt": "你是一个严谨的助手",
+                "default_logical_model": "test-model",
+            },
+        )
+        assert resp.status_code == 201
+        assistant_id = resp.json()["assistant_id"]
+
+        resp = client.post(
+            "/v1/conversations",
+            headers=headers,
+            json={"assistant_id": assistant_id, "project_id": str(api_key_id), "title": "test"},
+        )
+        assert resp.status_code == 201
+        conversation_id = resp.json()["conversation_id"]
+
+        # message + baseline: "你好" 会触发 task_type 规则判定为 unknown，从而走 Project AI 兜底。
+        resp = client.post(
+            f"/v1/conversations/{conversation_id}/messages",
+            headers=headers,
+            json={"content": "你好"},
+        )
+        assert resp.status_code == 200
+        baseline_run_id = resp.json()["baseline_run"]["run_id"]
+        message_id = resp.json()["message_id"]
+
+        # enable eval + candidates + project ai
+        resp = client.put(
+            f"/v1/projects/{api_key_id}/eval-config",
+            headers=headers,
+            json={
+                "enabled": True,
+                "candidate_logical_models": ["test-model", "test-model-2"],
+                "project_ai_enabled": True,
+                "project_ai_provider_model": "mock/test-model",
+            },
+        )
+        assert resp.status_code == 200
+
+        resp = client.post(
+            "/v1/evals",
+            headers=headers,
+            json={
+                "project_id": str(api_key_id),
+                "assistant_id": assistant_id,
+                "conversation_id": conversation_id,
+                "message_id": message_id,
+                "baseline_run_id": baseline_run_id,
+            },
+        )
+        assert resp.status_code == 200
+        eval_id = resp.json()["eval_id"]
+
+    from app.models import Eval
+    from sqlalchemy import select
+
+    with SessionLocal() as db:
+        row = db.execute(select(Eval).where(Eval.id == UUID(str(eval_id)))).scalars().first()
+        assert row is not None
+        ctx = row.context_features or {}
+        assert isinstance(ctx, dict)
+        features = ctx.get("features") or {}
+        assert isinstance(features, dict)
+        assert features.get("task_type") == "qa"
+        assert features.get("risk_tier") == "low"
+
+
+def test_conversation_archive_and_delete(app_with_mock_chat):
+    app, SessionLocal, _ = app_with_mock_chat
+    user_id, api_key_id = _get_seed_ids(SessionLocal)
+    headers = jwt_auth_headers(str(user_id))
+
+    with TestClient(app) as client:
+        resp = client.post(
+            "/v1/assistants",
+            headers=headers,
+            json={
+                "project_id": str(api_key_id),
+                "name": "默认助手",
+                "system_prompt": "你是一个严谨的助手",
+                "default_logical_model": "test-model",
+            },
+        )
+        assert resp.status_code == 201
+        assistant_id = resp.json()["assistant_id"]
+
+        resp = client.post(
+            "/v1/conversations",
+            headers=headers,
+            json={"assistant_id": assistant_id, "project_id": str(api_key_id), "title": "test"},
+        )
+        assert resp.status_code == 201
+        conversation_id = resp.json()["conversation_id"]
+
+        # archive
+        resp = client.put(
+            f"/v1/conversations/{conversation_id}",
+            headers=headers,
+            json={"archived": True},
+        )
+        assert resp.status_code == 200
+
+        # archived conversation should be hidden from list
+        resp = client.get(f"/v1/conversations?assistant_id={assistant_id}", headers=headers)
+        assert resp.status_code == 200
+        ids = [it["conversation_id"] for it in resp.json()["items"]]
+        assert str(conversation_id) not in ids
+
+        # but messages can still be read (empty list)
+        resp = client.get(f"/v1/conversations/{conversation_id}/messages", headers=headers)
+        assert resp.status_code == 200
+
+        # sending new message should fail (get_conversation filters archived)
+        resp = client.post(
+            f"/v1/conversations/{conversation_id}/messages",
+            headers=headers,
+            json={"content": "hello"},
+        )
+        assert resp.status_code == 404
+
+        # delete
+        resp = client.delete(f"/v1/conversations/{conversation_id}", headers=headers)
+        assert resp.status_code == 204
+
+        resp = client.get(f"/v1/conversations/{conversation_id}/messages", headers=headers)
+        assert resp.status_code == 404

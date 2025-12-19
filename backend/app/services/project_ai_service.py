@@ -15,6 +15,9 @@ from dataclasses import dataclass
 
 from app.services.bandit_policy_service import BanditRecommendation
 
+_TASK_TYPES: set[str] = {"code", "translation", "writing", "qa", "unknown"}
+_RISK_TIERS: set[str] = {"low", "medium", "high"}
+
 
 @dataclass(frozen=True)
 class ExplanationPayload:
@@ -65,6 +68,10 @@ def build_rule_explanation(
 
 def _prompt_path() -> Path:
     return Path(__file__).resolve().parents[1] / "prompts" / "project_ai_explanation_prompt.md"
+
+
+def _context_features_prompt_path() -> Path:
+    return Path(__file__).resolve().parents[1] / "prompts" / "project_ai_context_features_prompt.md"
 
 
 def _build_llm_messages(
@@ -219,4 +226,143 @@ async def build_project_ai_explanation(
     return parsed
 
 
-__all__ = ["ExplanationPayload", "build_project_ai_explanation", "build_rule_explanation"]
+def _build_llm_context_features_messages(
+    *,
+    base_prompt: str,
+    user_text: str,
+    rule_features: dict[str, Any] | None,
+) -> list[dict[str, Any]]:
+    system = base_prompt.strip()
+    user = {
+        "user_text": (user_text or "").strip(),
+        "rule_features": rule_features or {},
+        "allowed": {
+            "task_type": sorted(_TASK_TYPES),
+            "risk_tier": sorted(_RISK_TIERS),
+        },
+    }
+    return [
+        {"role": "system", "content": system},
+        {
+            "role": "user",
+            "content": (
+                "请基于以下信息输出 context features（严格 JSON 输出，结构见 system 指令）：\n"
+                + json.dumps(user, ensure_ascii=False)
+            ),
+        },
+    ]
+
+
+def _parse_context_features_json(text: str) -> dict[str, str] | None:
+    if not text:
+        return None
+    try:
+        payload = json.loads(text)
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+
+    task_type = payload.get("task_type")
+    risk_tier = payload.get("risk_tier")
+    if isinstance(task_type, str):
+        task_type = task_type.strip().lower()
+    else:
+        task_type = None
+    if isinstance(risk_tier, str):
+        risk_tier = risk_tier.strip().lower()
+    else:
+        risk_tier = None
+
+    patch: dict[str, str] = {}
+    if task_type in _TASK_TYPES:
+        patch["task_type"] = task_type
+    if risk_tier in _RISK_TIERS:
+        patch["risk_tier"] = risk_tier
+    if not patch:
+        return None
+    return patch
+
+
+async def infer_context_features_via_project_ai(
+    db: Session,
+    *,
+    redis: Any,
+    client: Any,
+    api_key: AuthenticatedAPIKey,
+    project_ai_provider_model: str,
+    allowed_provider_ids: set[str],
+    user_text: str,
+    rule_features: dict[str, Any] | None,
+    idempotency_key: str | None,
+) -> dict[str, str] | None:
+    """
+    Project AI（LLM）兜底特征提取：
+    - 仅在规则无法判定（unknown）时用于补齐 task_type / risk_tier
+    - 输出必须严格 JSON；失败必须返回 None（上层继续使用规则结果）
+    """
+    raw = (project_ai_provider_model or "").strip()
+    if "/" not in raw:
+        return None
+    provider_id, _ = raw.split("/", 1)
+    provider_id = provider_id.strip()
+    if not provider_id or provider_id not in allowed_provider_ids:
+        return None
+
+    base_prompt = load_prompt(_context_features_prompt_path())
+    messages = _build_llm_context_features_messages(
+        base_prompt=base_prompt,
+        user_text=user_text,
+        rule_features=rule_features,
+    )
+
+    requested_model = raw
+    lookup_model_id = _strip_model_group_prefix(requested_model) or requested_model
+    payload: dict[str, Any] = {
+        "model": requested_model,
+        "messages": messages,
+        "temperature": 0.0,
+        "max_tokens": 96,
+        "stream": False,
+    }
+
+    handler = RequestHandler(api_key=api_key, db=db, redis=redis, client=client)
+    try:
+        response = await handler.handle(
+            payload=payload,
+            requested_model=requested_model,
+            lookup_model_id=lookup_model_id,
+            api_style="openai",
+            effective_provider_ids={provider_id},
+            session_id=None,
+            idempotency_key=idempotency_key,
+            billing_reason="project_ai_context_features",
+        )
+    except Exception:
+        logger.info("project_ai_service: llm context features call failed", exc_info=True)
+        return None
+
+    response_payload: dict[str, Any] | None = None
+    try:
+        body = response.body
+        if isinstance(body, (bytes, bytearray)):
+            parsed = json.loads(body.decode("utf-8", errors="ignore"))
+        else:
+            parsed = None
+        if isinstance(parsed, dict):
+            response_payload = parsed
+    except Exception:
+        response_payload = None
+
+    content = _extract_assistant_text_from_chat_completion(response_payload)
+    if not content:
+        return None
+    return _parse_context_features_json(content)
+
+
+__all__ = [
+    "ExplanationPayload",
+    "build_project_ai_explanation",
+    "build_rule_explanation",
+    "infer_context_features_via_project_ai",
+]
