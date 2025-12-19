@@ -40,6 +40,13 @@ def _clamp_weight(value: float, base_weight: float) -> float:
     return max(min(value, upper), lower)
 
 
+def clamp_provider_weight(value: float, base_weight: float) -> float:
+    """
+    对外暴露的权重钳制工具函数，确保权重相对 base_weight 落在合理范围内。
+    """
+    return _clamp_weight(value, base_weight)
+
+
 async def load_dynamic_weights(
     redis: Redis | None,
     logical_model_id: str,
@@ -199,6 +206,7 @@ async def invalidate_provider_weights(
 
 __all__ = [
     "adjust_provider_weight",
+    "clamp_provider_weight",
     "load_dynamic_weights",
     "record_provider_failure",
     "record_provider_success",

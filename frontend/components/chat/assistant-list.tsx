@@ -39,13 +39,18 @@ export function AssistantList({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t("chat.assistant.title")}</h2>
-          <Button size="sm" disabled>
-            <Plus className="w-4 h-4 mr-1" />
+          <Button size="sm" disabled aria-label={t("chat.assistant.create")}>
+            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
             {t("chat.assistant.create")}
           </Button>
         </div>
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div 
+          className="flex items-center justify-center py-12"
+          role="status"
+          aria-live="polite"
+          aria-label={t("chat.assistant.loading")}
+        >
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" aria-hidden="true"></div>
         </div>
       </div>
     );
@@ -57,12 +62,16 @@ export function AssistantList({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t("chat.assistant.title")}</h2>
-          <Button size="sm" onClick={onCreateAssistant}>
-            <Plus className="w-4 h-4 mr-1" />
+          <Button size="sm" onClick={onCreateAssistant} aria-label={t("chat.assistant.create")}>
+            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
             {t("chat.assistant.create")}
           </Button>
         </div>
-        <div className="flex flex-col items-center justify-center py-12 text-center">
+        <div 
+          className="flex flex-col items-center justify-center py-12 text-center"
+          role="status"
+          aria-live="polite"
+        >
           <div className="text-muted-foreground mb-4">
             <div className="text-lg font-medium mb-2">
               {t("chat.assistant.empty")}
@@ -71,8 +80,8 @@ export function AssistantList({
               {t("chat.assistant.empty_description")}
             </div>
           </div>
-          <Button onClick={onCreateAssistant}>
-            <Plus className="w-4 h-4 mr-2" />
+          <Button onClick={onCreateAssistant} aria-label={t("chat.assistant.create")}>
+            <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
             {t("chat.assistant.create")}
           </Button>
         </div>
@@ -81,28 +90,29 @@ export function AssistantList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="region" aria-label={t("chat.assistant.list_label")}>
       {/* 标题和创建按钮 */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{t("chat.assistant.title")}</h2>
-        <Button size="sm" onClick={onCreateAssistant}>
-          <Plus className="w-4 h-4 mr-1" />
+        <Button size="sm" onClick={onCreateAssistant} aria-label={t("chat.assistant.create")}>
+          <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
           {t("chat.assistant.create")}
         </Button>
       </div>
 
       {/* 助手列表 */}
-      <div className="space-y-3">
+      <div className="space-y-3" role="list" aria-label={t("chat.assistant.list")}>
         {assistants.map((assistant) => (
-          <AssistantCard
-            key={assistant.assistant_id}
-            assistant={assistant}
-            isSelected={selectedAssistantId === assistant.assistant_id}
-            onSelect={onSelectAssistant}
-            onEdit={onEditAssistant}
-            onArchive={onArchiveAssistant}
-            onDelete={onDeleteAssistant}
-          />
+          <div key={assistant.assistant_id} role="listitem">
+            <AssistantCard
+              assistant={assistant}
+              isSelected={selectedAssistantId === assistant.assistant_id}
+              onSelect={onSelectAssistant}
+              onEdit={onEditAssistant}
+              onArchive={onArchiveAssistant}
+              onDelete={onDeleteAssistant}
+            />
+          </div>
         ))}
       </div>
 
@@ -114,6 +124,7 @@ export function AssistantList({
             size="sm"
             onClick={onLoadMore}
             disabled={isLoading}
+            aria-label={isLoading ? t("chat.assistant.loading") : t("chat.message.load_more")}
           >
             {isLoading ? t("chat.assistant.loading") : t("chat.message.load_more")}
           </Button>

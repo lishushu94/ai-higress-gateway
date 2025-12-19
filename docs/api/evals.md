@@ -43,20 +43,34 @@ Response（`streaming=false`，默认）:
 ```
 
 Response（`streaming=true`，SSE / `text/event-stream`）:
+- 每条 SSE 帧同时包含：
+  - `event: <type>`（标准 SSE event name，便于客户端按事件类型分发）
+  - `data: <json>`（JSON 内仍包含 `type` 字段，兼容只解析 `data` 的客户端）
 - 首包：`type=eval.created`（包含 eval_id、challengers、explanation）
-- 过程中：`type=run.delta`（每条 challenger run 的增量/状态）
-- 结束：`type=eval.completed`，并以 `data: [DONE]` 结束
+- 过程中：`type=run.delta`（每条 challenger run 的增量/状态；包含 `provider_id`/`provider_model`/`cost_credits` 等元信息）
+- 单条 run 结束：`type=run.completed`（包含 full_text、latency_ms 等）
+- 错误：`type=run.error` / `type=eval.error`
+- 心跳：`type=heartbeat`（用于保持连接与中间状态刷新）
+- 结束：`type=eval.completed`，并以 `event: done` + `data: [DONE]` 结束
 
 示例（SSE data 行内 JSON）：
 ```text
+event: eval.created
 data: {"type":"eval.created","eval_id":"...","challengers":[...],"explanation":{...}}
 
-data: {"type":"run.delta","run_id":"...","status":"running","delta":"..."}
+event: run.delta
+data: {"type":"run.delta","run_id":"...","status":"running","provider_id":"...","provider_model":"...","cost_credits":1,"delta":"..."}
 
-data: {"type":"run.delta","run_id":"...","status":"succeeded","full_text":"..."}
+event: run.completed
+data: {"type":"run.completed","run_id":"...","status":"succeeded","provider_id":"...","provider_model":"...","cost_credits":1,"latency_ms":123,"full_text":"..."}
 
+event: heartbeat
+data: {"type":"heartbeat","ts":1730000000}
+
+event: eval.completed
 data: {"type":"eval.completed","eval_id":"...","status":"ready"}
 
+event: done
 data: [DONE]
 ```
 

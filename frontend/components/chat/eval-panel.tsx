@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import dynamic from "next/dynamic";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -10,9 +11,14 @@ import { useI18n } from "@/lib/i18n-context";
 import { useEval, useSubmitRating } from "@/lib/swr/use-evals";
 import { EvalChallengerCard } from "./eval-challenger-card";
 import { EvalExplanation } from "./eval-explanation";
-import { EvalRatingDialog } from "./eval-rating-dialog";
 import { toast } from "sonner";
 import type { ReasonTag } from "@/lib/api-types";
+
+// 动态导入评分对话框（仅在需要时加载）
+const EvalRatingDialog = dynamic(
+  () => import("./eval-rating-dialog").then((mod) => ({ default: mod.EvalRatingDialog })),
+  { ssr: false }
+);
 
 interface EvalPanelProps {
   /**

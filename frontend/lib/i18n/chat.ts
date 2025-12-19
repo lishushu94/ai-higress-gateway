@@ -5,6 +5,12 @@ import type { Language } from "../i18n-context";
  */
 export const chatTranslations: Record<Language, Record<string, string>> = {
   en: {
+    // ===== 欢迎页面 =====
+    "chat.welcome.title": "Welcome to Chat",
+    "chat.welcome.description": "Select or create an assistant to start chatting",
+    "chat.welcome.hint1": "👈 Select an assistant from the left sidebar",
+    "chat.welcome.hint2": "Or create a new assistant to get started",
+
     // ===== 助手管理 =====
     "chat.assistant.title": "Assistants",
     "chat.assistant.create": "Create Assistant",
@@ -29,6 +35,10 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.assistant.archived": "Assistant archived successfully",
     "chat.assistant.deleted": "Assistant deleted successfully",
     "chat.assistant.loading": "Loading assistants...",
+    "chat.assistant.select": "Select assistant",
+    "chat.assistant.actions": "Assistant actions",
+    "chat.assistant.list": "Assistant list",
+    "chat.assistant.list_label": "Assistants",
 
     // ===== 会话管理 =====
     "chat.conversation.title": "Conversations",
@@ -54,11 +64,16 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.conversation.minutes_ago": "minutes ago",
     "chat.conversation.hours_ago": "hours ago",
     "chat.conversation.days_ago": "days ago",
+    "chat.conversation.select": "Select conversation",
+    "chat.conversation.actions": "Conversation actions",
+    "chat.conversation.list": "Conversation list",
+    "chat.conversation.list_label": "Conversations",
 
     // ===== 消息与聊天 =====
     "chat.message.input_placeholder": "Type a message...",
     "chat.message.send": "Send",
     "chat.message.sending": "Sending...",
+    "chat.message.send_hint": "Press Ctrl+Enter to send",
     "chat.message.view_details": "View Details",
     "chat.message.trigger_eval": "Recommend Evaluation",
     "chat.message.empty": "No Messages",
@@ -69,6 +84,9 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.message.assistant": "Assistant",
     "chat.message.sent": "Message sent successfully",
     "chat.message.failed": "Failed to send message",
+    "chat.message.input_form": "Message input form",
+    "chat.message.input_label": "Message content",
+    "chat.message.list_label": "Message list",
 
     // ===== Run 详情 =====
     "chat.run.title": "Run Details",
@@ -101,6 +119,7 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.eval.select_winner": "Select Best Response",
     "chat.eval.winner": "Winner",
     "chat.eval.reason_tags": "Reason Tags",
+    "chat.eval.rating_instructions": "Select the best response and provide reason tags",
     "chat.eval.reason_accurate": "Accurate",
     "chat.eval.reason_complete": "Complete",
     "chat.eval.reason_concise": "Concise",
@@ -185,9 +204,16 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.action.edit": "Edit",
     "chat.action.close": "Close",
     "chat.action.retry": "Retry",
+    "chat.action.retry_load_messages": "Retry loading messages",
     "chat.action.back": "Back",
   },
   zh: {
+    // ===== 欢迎页面 =====
+    "chat.welcome.title": "欢迎使用聊天助手",
+    "chat.welcome.description": "选择或创建一个助手开始聊天",
+    "chat.welcome.hint1": "👈 从左侧边栏选择一个助手",
+    "chat.welcome.hint2": "或创建一个新助手开始使用",
+
     // ===== 助手管理 =====
     "chat.assistant.title": "助手",
     "chat.assistant.create": "创建助手",
@@ -212,6 +238,10 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.assistant.archived": "助手归档成功",
     "chat.assistant.deleted": "助手删除成功",
     "chat.assistant.loading": "加载助手中...",
+    "chat.assistant.select": "选择助手",
+    "chat.assistant.actions": "助手操作",
+    "chat.assistant.list": "助手列表",
+    "chat.assistant.list_label": "助手",
 
     // ===== 会话管理 =====
     "chat.conversation.title": "会话",
@@ -237,11 +267,16 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.conversation.minutes_ago": "分钟前",
     "chat.conversation.hours_ago": "小时前",
     "chat.conversation.days_ago": "天前",
+    "chat.conversation.select": "选择会话",
+    "chat.conversation.actions": "会话操作",
+    "chat.conversation.list": "会话列表",
+    "chat.conversation.list_label": "会话",
 
     // ===== 消息与聊天 =====
     "chat.message.input_placeholder": "输入消息...",
     "chat.message.send": "发送",
     "chat.message.sending": "发送中...",
+    "chat.message.send_hint": "按 Ctrl+Enter 发送",
     "chat.message.view_details": "查看详情",
     "chat.message.trigger_eval": "推荐评测",
     "chat.message.empty": "暂无消息",
@@ -252,6 +287,9 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.message.assistant": "助手",
     "chat.message.sent": "消息发送成功",
     "chat.message.failed": "消息发送失败",
+    "chat.message.input_form": "消息输入表单",
+    "chat.message.input_label": "消息内容",
+    "chat.message.list_label": "消息列表",
 
     // ===== Run 详情 =====
     "chat.run.title": "运行详情",
@@ -284,6 +322,7 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.eval.select_winner": "选择最佳回复",
     "chat.eval.winner": "赢家",
     "chat.eval.reason_tags": "原因标签",
+    "chat.eval.rating_instructions": "选择最佳回复并提供原因标签",
     "chat.eval.reason_accurate": "准确",
     "chat.eval.reason_complete": "完整",
     "chat.eval.reason_concise": "简洁",
@@ -368,6 +407,7 @@ export const chatTranslations: Record<Language, Record<string, string>> = {
     "chat.action.edit": "编辑",
     "chat.action.close": "关闭",
     "chat.action.retry": "重试",
+    "chat.action.retry_load_messages": "重试加载消息",
     "chat.action.back": "返回",
   },
 };

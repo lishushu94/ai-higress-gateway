@@ -247,6 +247,53 @@ class Settings(BaseSettings):
         le=10,
     )
 
+    candidate_availability_cache_ttl_seconds: int = Field(
+        10,
+        alias="CANDIDATE_AVAILABILITY_CACHE_TTL_SECONDS",
+        description="ProviderSelector.check_candidate_availability 结果缓存 TTL（秒）；0 表示关闭",
+        ge=0,
+        le=300,
+    )
+
+    enable_bandit_routing_weight: bool = Field(
+        False,
+        alias="ENABLE_BANDIT_ROUTING_WEIGHT",
+        description="是否启用 contextual bandit 对路由动态权重的策略映射（按项目/助手/上下文隔离）",
+    )
+    bandit_routing_top_n: int = Field(
+        2,
+        alias="BANDIT_ROUTING_TOP_N",
+        description="bandit 策略提升的 TopN provider 数量",
+        ge=1,
+        le=10,
+    )
+    bandit_routing_max_boost: float = Field(
+        0.3,
+        alias="BANDIT_ROUTING_MAX_BOOST",
+        description="Top1 provider 的最大加权比例（例如 0.3 表示 *1.3）",
+        ge=0.0,
+        le=2.0,
+    )
+    bandit_routing_rank_decay: float = Field(
+        0.6,
+        alias="BANDIT_ROUTING_RANK_DECAY",
+        description="TopN 加权衰减系数（Top2=Top1*decay，Top3=Top1*decay^2）",
+        ge=0.0,
+        le=1.0,
+    )
+    bandit_routing_min_samples_per_arm: int = Field(
+        10,
+        alias="BANDIT_ROUTING_MIN_SAMPLES_PER_ARM",
+        description="bandit 样本不足时不应用策略（仅在 exploration 且 apply_during_exploration=false 时生效）",
+        ge=0,
+        le=1000,
+    )
+    bandit_routing_apply_during_exploration: bool = Field(
+        False,
+        alias="BANDIT_ROUTING_APPLY_DURING_EXPLORATION",
+        description="是否在 exploration 阶段也应用 bandit 路由加权（默认关闭，避免冷启动随机扰动）",
+    )
+
     # User probe tasks (user-managed chat probes)
     user_probe_scheduler_interval_seconds: int = Field(
         60,

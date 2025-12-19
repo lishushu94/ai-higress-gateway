@@ -39,6 +39,20 @@ from app.services.metrics_service import record_provider_token_usage
 from app.settings import settings
 
 
+def _extract_last_user_text(payload: dict[str, Any] | None) -> str:
+    if not isinstance(payload, dict):
+        return ""
+    msgs = payload.get("messages")
+    if not isinstance(msgs, list):
+        return ""
+    for item in reversed(msgs):
+        if isinstance(item, dict) and item.get("role") == "user":
+            val = item.get("content")
+            if isinstance(val, str):
+                return val
+    return ""
+
+
 class RequestHandler:
     """
     执行阶段协调器：负责把“已排序的候选 upstream”转成最终响应，并补齐
@@ -74,6 +88,7 @@ class RequestHandler:
         effective_provider_ids: set[str],
         session_id: str | None = None,
         idempotency_key: str | None = None,
+        assistant_id: UUID | None = None,
         messages_path_override: str | None = None,
         fallback_path_override: str | None = None,
         provider_id_sink: Callable[[str, str], None] | None = None,
@@ -95,6 +110,10 @@ class RequestHandler:
             session_id=session_id,
             user_id=UUID(str(self.api_key.user_id)),
             is_superuser=bool(self.api_key.is_superuser),
+            bandit_project_id=UUID(str(self.api_key.id)),
+            bandit_assistant_id=assistant_id,
+            bandit_user_text=_extract_last_user_text(payload),
+            bandit_request_payload=payload,
         )
 
         selected_provider_id: str | None = None
@@ -194,9 +213,10 @@ class RequestHandler:
         selection: ProviderSelectionResult | None = None,
         session_id: str | None = None,
         idempotency_key: str | None = None,
+        assistant_id: UUID | None = None,
         messages_path_override: str | None = None,
         fallback_path_override: str | None = None,
-        provider_id_sink: Callable[[str], None] | None = None,
+        provider_id_sink: Callable[..., None] | None = None,
     ) -> AsyncIterator[bytes]:
         logger.info(
             "chat_v2: handle stream user=%s logical_model=%s api_style=%s session_id=%s",
@@ -215,6 +235,10 @@ class RequestHandler:
                 session_id=session_id,
                 user_id=UUID(str(self.api_key.user_id)),
                 is_superuser=bool(self.api_key.is_superuser),
+                bandit_project_id=UUID(str(self.api_key.id)),
+                bandit_assistant_id=assistant_id,
+                bandit_user_text=_extract_last_user_text(payload),
+                bandit_request_payload=payload,
             )
 
         # 预扣费：尽量使用首选候选 provider/model（与 v1 行为对齐）
@@ -250,7 +274,10 @@ class RequestHandler:
             nonlocal selected_provider_id, token_estimated
             selected_provider_id = provider_id
             if provider_id_sink is not None:
-                provider_id_sink(provider_id)
+                try:
+                    provider_id_sink(provider_id, model_id)
+                except TypeError:
+                    provider_id_sink(provider_id)
             if session_id:
                 await self.session_manager.bind_session(
                     session_id=session_id,

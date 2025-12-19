@@ -118,6 +118,44 @@ export const useCachePreloader = () => {
   return { preloadData };
 };
 
+// 缓存复用工具 - 用于在切换会话时复用缓存
+export const useCacheReuse = () => {
+  const { cache } = useSWRConfig();
+
+  /**
+   * 检查缓存是否存在且有效
+   */
+  const isCacheValid = useCallback((key: string): boolean => {
+    const cachedData = cache.get(key);
+    return cachedData !== undefined && cachedData !== null;
+  }, [cache]);
+
+  /**
+   * 预热缓存 - 在用户可能访问之前预加载数据
+   */
+  const warmupCache = useCallback((key: string, fetcher: () => Promise<any>) => {
+    if (!isCacheValid(key)) {
+      // 使用 mutate 预加载数据，但不触发重新验证
+      mutate(key, fetcher, { revalidate: false });
+    }
+  }, [cache, isCacheValid]);
+
+  /**
+   * 批量预热缓存
+   */
+  const warmupMultipleCaches = useCallback((items: Array<{ key: string; fetcher: () => Promise<any> }>) => {
+    items.forEach(({ key, fetcher }) => {
+      warmupCache(key, fetcher);
+    });
+  }, [warmupCache]);
+
+  return {
+    isCacheValid,
+    warmupCache,
+    warmupMultipleCaches,
+  };
+};
+
 // 缓存策略配置
 export const cacheStrategies = {
   // 默认策略

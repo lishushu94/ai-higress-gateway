@@ -101,6 +101,8 @@ export function MessageInput({
     <form
       onSubmit={handleSubmit(onSubmit)}
       className={cn("flex items-end gap-2 p-4 border-t bg-background", className)}
+      role="form"
+      aria-label={t("chat.message.input_form")}
     >
       {/* 输入框 */}
       <div className="flex-1 relative">
@@ -122,6 +124,9 @@ export function MessageInput({
           disabled={disabled || isSending}
           onKeyDown={handleKeyDown}
           rows={1}
+          aria-label={t("chat.message.input_label")}
+          aria-describedby={disabled ? "archived-notice" : undefined}
+          aria-invalid={!!errors.content}
           className={cn(
             "w-full resize-none rounded-md border bg-background px-3 py-2 text-sm",
             "placeholder:text-muted-foreground",
@@ -134,7 +139,12 @@ export function MessageInput({
 
         {/* 归档提示 */}
         {disabled && (
-          <div className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md">
+          <div 
+            id="archived-notice"
+            className="absolute inset-0 flex items-center justify-center bg-background/80 rounded-md"
+            role="alert"
+            aria-live="polite"
+          >
             <span className="text-sm text-muted-foreground">
               {t("chat.conversation.archived_notice")}
             </span>
@@ -147,13 +157,17 @@ export function MessageInput({
         type="submit"
         size="icon"
         disabled={disabled || isSending || !content.trim()}
-        title={t("chat.message.send")}
+        aria-label={isSending ? t("chat.message.sending") : t("chat.message.send")}
+        title={t("chat.message.send_hint")}
       >
         {isSending ? (
-          <Loader2 className="size-4 animate-spin" />
+          <Loader2 className="size-4 animate-spin" aria-hidden="true" />
         ) : (
-          <Send className="size-4" />
+          <Send className="size-4" aria-hidden="true" />
         )}
+        <span className="sr-only">
+          {isSending ? t("chat.message.sending") : t("chat.message.send")}
+        </span>
       </Button>
     </form>
   );

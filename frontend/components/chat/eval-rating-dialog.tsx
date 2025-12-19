@@ -134,21 +134,29 @@ export function EvalRatingDialog({
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+      <DialogContent 
+        className="max-w-2xl max-h-[90vh] overflow-y-auto"
+        aria-describedby="eval-rating-description"
+      >
         <DialogHeader>
           <DialogTitle>{t("chat.eval.select_winner")}</DialogTitle>
-          <DialogDescription>
-            {t("chat.eval.reason_tags")}
+          <DialogDescription id="eval-rating-description">
+            {t("chat.eval.rating_instructions")}
           </DialogDescription>
         </DialogHeader>
 
         <div className="space-y-6">
           {/* 选择赢家 */}
           <div className="space-y-3">
-            <Label className="text-base font-medium">
+            <Label className="text-base font-medium" id="winner-selection-label">
               {t("chat.eval.select_winner")}
             </Label>
-            <div className="space-y-2">
+            <div 
+              className="space-y-2" 
+              role="radiogroup" 
+              aria-labelledby="winner-selection-label"
+              aria-required="true"
+            >
               {allRuns.map((run) => (
                 <Card
                   key={run.run_id}
@@ -158,6 +166,16 @@ export function EvalRatingDialog({
                       : "hover:border-primary/50"
                   }`}
                   onClick={() => setSelectedWinner(run.run_id)}
+                  role="radio"
+                  aria-checked={selectedWinner === run.run_id}
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setSelectedWinner(run.run_id);
+                    }
+                  }}
+                  aria-label={`${run.requested_logical_model}${run.isBaseline ? ` (${t("chat.eval.baseline")})` : ""}`}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-start justify-between gap-2">
@@ -179,7 +197,7 @@ export function EvalRatingDialog({
                         )}
                       </div>
                       {selectedWinner === run.run_id && (
-                        <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" />
+                        <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0" aria-hidden="true" />
                       )}
                     </div>
                   </CardContent>
@@ -190,10 +208,15 @@ export function EvalRatingDialog({
 
           {/* 选择原因标签 */}
           <div className="space-y-3">
-            <Label className="text-base font-medium">
+            <Label className="text-base font-medium" id="reason-tags-label">
               {t("chat.eval.reason_tags")}
             </Label>
-            <div className="grid grid-cols-2 gap-3">
+            <div 
+              className="grid grid-cols-2 gap-3" 
+              role="group" 
+              aria-labelledby="reason-tags-label"
+              aria-required="true"
+            >
               {reasonTags.map((reason) => (
                 <div
                   key={reason}
@@ -204,6 +227,7 @@ export function EvalRatingDialog({
                     id={`reason-${reason}`}
                     checked={selectedReasons.has(reason)}
                     onCheckedChange={() => toggleReason(reason)}
+                    aria-label={t(`chat.eval.reason_${reason}`)}
                   />
                   <Label
                     htmlFor={`reason-${reason}`}
@@ -222,6 +246,7 @@ export function EvalRatingDialog({
             variant="outline"
             onClick={() => handleOpenChange(false)}
             disabled={isSubmitting}
+            aria-label={t("chat.action.cancel")}
           >
             {t("chat.action.cancel")}
           </Button>
@@ -230,8 +255,10 @@ export function EvalRatingDialog({
             disabled={
               !selectedWinner || selectedReasons.size === 0 || isSubmitting
             }
+            aria-label={isSubmitting ? t("chat.eval.submitting") : t("chat.eval.submit")}
+            autoFocus
           >
-            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            {isSubmitting && <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />}
             {isSubmitting ? t("chat.eval.submitting") : t("chat.eval.submit")}
           </Button>
         </DialogFooter>

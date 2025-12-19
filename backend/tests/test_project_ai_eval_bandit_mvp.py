@@ -283,6 +283,16 @@ def test_assistant_conversation_message_and_eval_flow(app_with_mock_chat, monkey
         assert resp.status_code == 200
         assert resp.json()["winner_run_id"] == baseline_run_id
 
+    from sqlalchemy import select
+    from app.models import BanditArmStats
+
+    with SessionLocal() as db:
+        rows = db.execute(select(BanditArmStats)).scalars().all()
+        assert any(
+            isinstance(r.arm_logical_model, str) and "|provider:" in r.arm_logical_model
+            for r in rows
+        )
+
 
 def test_eval_context_features_fallback_to_project_ai(app_with_mock_chat, monkeypatch):
     app, SessionLocal, redis = app_with_mock_chat

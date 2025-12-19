@@ -265,6 +265,155 @@ def estimate_request_cost_credits(
     return cost
 
 
+def compute_chat_completion_cost_credits(
+    db: Session,
+    *,
+    logical_model_name: str | None,
+    provider_id: str | None,
+    provider_model_id: str | None,
+    response_payload: dict[str, Any] | None,
+    request_payload: dict[str, Any] | None = None,
+) -> int | None:
+    """
+    纯计算：根据响应 usage（或请求侧保守估算）计算一次调用的积分成本（不扣费、不写流水）。
+
+    - 优先使用 response_payload["usage"]；
+    - 若 usage 不存在，则回退到 request_payload 的 max_tokens 等字段；
+    - 定价、倍率与 record_chat_completion_usage 保持一致。
+    """
+    usage: dict[str, Any] | None = None
+    if isinstance(response_payload, dict):
+        raw_usage = response_payload.get("usage")
+        if isinstance(raw_usage, dict):
+            usage = raw_usage
+
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+    total_tokens: int | None = None
+
+    if isinstance(usage, dict):
+        input_tokens = usage.get("prompt_tokens") or usage.get("input_tokens")
+        output_tokens = usage.get("completion_tokens") or usage.get("output_tokens")
+        total_tokens = usage.get("total_tokens")
+
+        if total_tokens is None and input_tokens is not None and output_tokens is not None:
+            try:
+                total_tokens = int(input_tokens) + int(output_tokens)
+            except Exception:
+                total_tokens = None
+
+    if total_tokens is None and isinstance(request_payload, dict):
+        approx_tokens: int | None = None
+        for key in ("max_tokens", "max_tokens_to_sample", "max_output_tokens"):
+            value = request_payload.get(key)
+            if isinstance(value, int) and value > 0:
+                approx_tokens = value
+                break
+        if approx_tokens is not None and approx_tokens > 0:
+            total_tokens = approx_tokens
+            input_tokens = None
+            output_tokens = None
+
+    if total_tokens is None:
+        return None
+
+    input_price, output_price = _load_provider_model_pricing(
+        db, provider_id=provider_id, model_name=provider_model_id
+    )
+    if input_price is None and output_price is None:
+        return None
+
+    try:
+        model_multiplier = _load_multiplier_for_model(db, logical_model_name)
+        provider_factor = _load_provider_factor(db, provider_id)
+
+        raw_cost = 0.0
+        if input_tokens is not None or output_tokens is not None:
+            if input_tokens is not None and input_price is not None:
+                raw_cost += (int(input_tokens) / 1000.0) * float(input_price)
+            if output_tokens is not None and output_price is not None:
+                raw_cost += (int(output_tokens) / 1000.0) * float(output_price)
+        else:
+            per_1k = output_price if output_price is not None else input_price
+            if per_1k is None:
+                return None
+            raw_cost = (int(total_tokens) / 1000.0) * float(per_1k)
+
+        raw_cost *= float(model_multiplier) * float(provider_factor)
+        cost = int(math.ceil(raw_cost))
+    except Exception:  # pragma: no cover
+        logger.exception(
+            "Failed to compute chat completion credit cost for provider=%r model=%r logical=%r",
+            provider_id,
+            provider_model_id,
+            logical_model_name,
+        )
+        return None
+
+    if cost < 0:
+        return None
+    return cost
+
+
+def estimate_streaming_precharge_cost_credits(
+    db: Session,
+    *,
+    logical_model_name: str | None,
+    provider_id: str | None,
+    provider_model_id: str | None,
+    request_payload: dict[str, Any] | None,
+) -> int | None:
+    """
+    纯计算：按流式预扣费口径对一次请求做保守估算（不扣费、不写流水）。
+
+    - 优先使用 max_tokens / max_tokens_to_sample / max_output_tokens；
+    - 若缺失，则回退到 STREAMING_MIN_TOKENS；
+    - 定价、倍率与 record_streaming_request 保持一致。
+    """
+    if not isinstance(request_payload, dict):
+        return None
+
+    approx_tokens: int | None = None
+    for key in ("max_tokens", "max_tokens_to_sample", "max_output_tokens"):
+        value = request_payload.get(key)
+        if isinstance(value, int) and value > 0:
+            approx_tokens = value
+            break
+
+    if approx_tokens is None:
+        approx_tokens = int(getattr(settings, "streaming_min_tokens", 0) or 0)
+
+    if approx_tokens <= 0:
+        return None
+
+    input_price, output_price = _load_provider_model_pricing(
+        db, provider_id=provider_id, model_name=provider_model_id
+    )
+    if input_price is None and output_price is None:
+        return None
+
+    try:
+        model_multiplier = _load_multiplier_for_model(db, logical_model_name)
+        provider_factor = _load_provider_factor(db, provider_id)
+        per_1k = output_price if output_price is not None else input_price
+        if per_1k is None:
+            return None
+        raw_cost = (int(approx_tokens) / 1000.0) * float(per_1k) * float(model_multiplier) * float(provider_factor)
+        cost = int(math.ceil(raw_cost))
+    except Exception:  # pragma: no cover
+        logger.exception(
+            "Failed to estimate streaming precharge credit cost for provider=%r model=%r logical=%r",
+            provider_id,
+            provider_model_id,
+            logical_model_name,
+        )
+        return None
+
+    if cost < 0:
+        return None
+    return cost
+
+
 
 def _create_transaction(
     db: Session,
@@ -794,8 +943,10 @@ def record_streaming_request(
 __all__ = [
     "InsufficientCreditsError",
     "apply_manual_delta",
+    "compute_chat_completion_cost_credits",
     "disable_auto_topup_for_user",
     "ensure_account_usable",
+    "estimate_streaming_precharge_cost_credits",
     "get_auto_topup_rule_for_user",
     "get_or_create_account_for_user",
     "record_chat_completion_usage",

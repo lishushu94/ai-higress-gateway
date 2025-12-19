@@ -10,6 +10,8 @@ Provider 选择器（v2）
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 from typing import Any
 from uuid import UUID
 
@@ -39,6 +41,7 @@ from app.schemas import (
 )
 from app.services.chat_routing_service import _build_dynamic_logical_model_for_group, _build_ordered_candidates
 from app.services.credit_service import estimate_request_cost_credits
+from app.services.bandit_routing_weight_service import build_bandit_routing_weights
 from app.settings import settings
 from app.storage.redis_service import get_logical_model
 from app.api.v1.chat.routing_state import RoutingStateService
@@ -95,6 +98,16 @@ def _infer_required_capabilities_from_request_payload(
         required.add(ModelCapability.AUDIO)
 
     return required
+
+
+def _extract_token_hint(request_payload: dict[str, Any] | None) -> tuple[str, int] | None:
+    if not isinstance(request_payload, dict):
+        return None
+    for key in ("max_tokens", "max_tokens_to_sample", "max_output_tokens"):
+        value = request_payload.get(key)
+        if isinstance(value, int) and value > 0:
+            return key, int(value)
+    return None
 
 
 @dataclass(frozen=True)
@@ -209,6 +222,40 @@ class ProviderSelector:
             derived_required_capabilities = _infer_required_capabilities_from_request_payload(
                 request_payload
             )
+
+        cache_ttl = int(getattr(settings, "candidate_availability_cache_ttl_seconds", 0) or 0)
+        cache_key: str | None = None
+        if cache_ttl > 0 and self.redis is not object:
+            token_hint = _extract_token_hint(request_payload)
+            payload = {
+                "v": 1,
+                "candidate_logical_models": candidate_logical_models,
+                "effective_provider_ids": sorted(effective_provider_ids),
+                "api_style": api_style,
+                "user_id": str(user_id) if user_id else None,
+                "is_superuser": bool(is_superuser),
+                "required_capabilities": sorted(
+                    [c.value for c in (derived_required_capabilities or set())]
+                ),
+                "budget_credits": int(budget_credits) if budget_credits is not None else None,
+                "token_hint": list(token_hint) if token_hint else None,
+            }
+            raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+            digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()[:32]
+            cache_key = f"provider_selector:candidate_availability:{digest}"
+
+            try:
+                cached = await self.redis.get(cache_key)
+            except Exception:
+                cached = None
+            if cached:
+                try:
+                    decoded = cached.decode("utf-8") if isinstance(cached, (bytes, bytearray)) else str(cached)
+                    parsed = json.loads(decoded)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, list) and all(isinstance(x, str) for x in parsed):
+                    return list(parsed)
         # Pre-load disabled pairs for all relevant providers to avoid repetitive DB queries?
         # Optimization: We do it per model for now as the list is small.
         
@@ -343,7 +390,12 @@ class ProviderSelector:
             except Exception:
                 # Any failure in resolution or check means this model is not available.
                 continue
-        
+
+        if cache_key and cache_ttl > 0 and self.redis is not object:
+            try:
+                await self.redis.setex(cache_key, cache_ttl, json.dumps(available))
+            except Exception:
+                pass
         return available
 
     async def select(
@@ -356,6 +408,11 @@ class ProviderSelector:
         session_id: str | None = None,
         user_id: UUID | None = None,
         is_superuser: bool = False,
+        bandit_project_id: UUID | None = None,
+        bandit_assistant_id: UUID | None = None,
+        bandit_user_text: str | None = None,
+        bandit_request_payload: dict[str, Any] | None = None,
+        bandit_context_features: dict[str, str] | None = None,
     ) -> ProviderSelectionResult:
         logical_model = await self._resolve_logical_model(
             requested_model=requested_model,
@@ -487,13 +544,49 @@ class ProviderSelector:
         dynamic_weights = await self.routing_state.load_dynamic_weights(
             logical_model.logical_id, candidates
         )
+        effective_dynamic_weights = dynamic_weights
+        if (
+            settings.enable_bandit_routing_weight
+            and bandit_project_id is not None
+            and bandit_assistant_id is not None
+            and isinstance(bandit_user_text, str)
+            and bandit_user_text.strip()
+        ):
+            try:
+                policy_result = build_bandit_routing_weights(
+                    self.db,
+                    project_id=bandit_project_id,
+                    assistant_id=bandit_assistant_id,
+                    logical_model_id=logical_model.logical_id,
+                    upstreams=candidates,
+                    user_text=bandit_user_text,
+                    request_payload=bandit_request_payload,
+                    context_features=bandit_context_features,
+                    base_weights=base_weights,
+                    current_weights=dynamic_weights,
+                    top_n=int(settings.bandit_routing_top_n),
+                    max_boost=float(settings.bandit_routing_max_boost),
+                    decay=float(settings.bandit_routing_rank_decay),
+                    min_samples_per_arm=int(settings.bandit_routing_min_samples_per_arm),
+                    apply_during_exploration=bool(
+                        settings.bandit_routing_apply_during_exploration
+                    ),
+                )
+                if policy_result is not None:
+                    effective_dynamic_weights = policy_result.dynamic_weights
+            except Exception:
+                logger.debug(
+                    "provider_selector: bandit routing weight mapping skipped (logical_model=%s)",
+                    logical_model.logical_id,
+                    exc_info=True,
+                )
         selected, scored_candidates = choose_upstream(
             logical_model,
             candidates,
             metrics_by_provider,
             logical_model.strategy,
             session=session_obj,
-            dynamic_weights=dynamic_weights,
+            dynamic_weights=effective_dynamic_weights,
             enable_health_check=settings.enable_provider_health_check,
         )
         ordered_candidates = _build_ordered_candidates(selected, scored_candidates)

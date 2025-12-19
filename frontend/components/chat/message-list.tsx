@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
 import { useI18n } from "@/lib/i18n-context";
 import { useMessages } from "@/lib/swr/use-messages";
+import { useCachePreloader } from "@/lib/swr/cache";
+import { messageService } from "@/http/message";
 import type { Message, RunSummary } from "@/lib/api-types";
 
 export interface MessageListProps {
@@ -23,6 +25,7 @@ export function MessageList({
   showEvalButton = true,
 }: MessageListProps) {
   const { t } = useI18n();
+  const { preloadData } = useCachePreloader();
   const [cursor, setCursor] = useState<string | undefined>();
   const [allMessages, setAllMessages] = useState<
     Array<{ message: Message; run?: RunSummary }>
@@ -34,6 +37,25 @@ export function MessageList({
     conversationId,
     { cursor, limit: 50 }
   );
+
+  // 预加载下一页消息（缓存优化）
+  useEffect(() => {
+    if (nextCursor && !isLoading) {
+      const nextPageKey = {
+        url: `/v1/conversations/${conversationId}/messages`,
+        params: { cursor: nextCursor, limit: 50 },
+      };
+      
+      // 预加载下一页，但不触发重新验证
+      preloadData(
+        JSON.stringify(nextPageKey),
+        () => messageService.getMessages(conversationId, {
+          cursor: nextCursor,
+          limit: 50,
+        })
+      );
+    }
+  }, [nextCursor, conversationId, isLoading, preloadData]);
 
   // 合并新消息到列表
   useEffect(() => {
@@ -81,7 +103,11 @@ export function MessageList({
   // 空状态
   if (!isLoading && allMessages.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
+      <div 
+        className="flex flex-col items-center justify-center h-full text-center p-8"
+        role="status"
+        aria-live="polite"
+      >
         <div className="text-muted-foreground mb-2">
           {t("chat.message.empty")}
         </div>
@@ -95,11 +121,20 @@ export function MessageList({
   // 错误状态
   if (isError) {
     return (
-      <div className="flex flex-col items-center justify-center h-full text-center p-8">
+      <div 
+        className="flex flex-col items-center justify-center h-full text-center p-8"
+        role="alert"
+        aria-live="assertive"
+      >
         <div className="text-destructive mb-2">
           {t("chat.message.failed")}
         </div>
-        <Button variant="outline" size="sm" onClick={() => setCursor(undefined)}>
+        <Button 
+          variant="outline" 
+          size="sm" 
+          onClick={() => setCursor(undefined)}
+          aria-label={t("chat.action.retry_load_messages")}
+        >
           {t("chat.action.retry")}
         </Button>
       </div>
@@ -107,7 +142,7 @@ export function MessageList({
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" role="region" aria-label={t("chat.message.list_label")}>
       {/* 加载更多按钮 */}
       {nextCursor && (
         <div className="flex justify-center p-4 border-b">
@@ -116,10 +151,11 @@ export function MessageList({
             size="sm"
             onClick={loadMore}
             disabled={isLoading}
+            aria-label={isLoading ? t("chat.message.loading") : t("chat.message.load_more")}
           >
             {isLoading ? (
               <>
-                <Loader2 className="size-4 animate-spin mr-2" />
+                <Loader2 className="size-4 animate-spin mr-2" aria-hidden="true" />
                 {t("chat.message.loading")}
               </>
             ) : (
@@ -133,6 +169,10 @@ export function MessageList({
       <div
         ref={parentRef}
         className="flex-1 overflow-y-auto px-4 py-6"
+        role="log"
+        aria-live="polite"
+        aria-atomic="false"
+        aria-relevant="additions"
         style={{
           contain: "strict",
         }}
@@ -178,8 +218,12 @@ export function MessageList({
 
       {/* 初始加载状态 */}
       {isLoading && allMessages.length === 0 && (
-        <div className="flex items-center justify-center h-full">
-          <Loader2 className="size-6 animate-spin text-muted-foreground" />
+        <div 
+          className="flex items-center justify-center h-full"
+          role="status"
+          aria-live="polite"
+        >
+          <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
           <span className="ml-2 text-muted-foreground">
             {t("chat.message.loading")}
           </span>

@@ -87,6 +87,15 @@ export function ConversationItem({
     }
   };
 
+  // 处理键盘事件
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter 或 Space 键选择会话
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  };
+
   return (
     <>
       <Card
@@ -94,6 +103,11 @@ export function ConversationItem({
           isSelected ? "ring-2 ring-primary" : ""
         }`}
         onClick={handleCardClick}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
+        role="button"
+        aria-label={`${t("chat.conversation.select")} ${conversation.title || t("chat.conversation.untitled")}`}
+        aria-pressed={isSelected}
       >
         <CardHeader>
           <CardTitle className="text-base">
@@ -105,7 +119,11 @@ export function ConversationItem({
           <CardAction>
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="icon-sm">
+                <Button 
+                  variant="ghost" 
+                  size="icon-sm"
+                  aria-label={t("chat.conversation.actions")}
+                >
                   <MoreVertical className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -138,10 +156,10 @@ export function ConversationItem({
 
       {/* 归档确认对话框 */}
       <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <DialogContent>
+        <DialogContent aria-describedby="archive-conversation-dialog-description">
           <DialogHeader>
             <DialogTitle>{t("chat.conversation.archive")}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription id="archive-conversation-dialog-description">
               {t("chat.conversation.archive_confirm")}
             </DialogDescription>
           </DialogHeader>
@@ -152,7 +170,7 @@ export function ConversationItem({
             >
               {t("chat.action.cancel")}
             </Button>
-            <Button onClick={handleArchiveConfirm}>
+            <Button onClick={handleArchiveConfirm} autoFocus>
               {t("chat.action.confirm")}
             </Button>
           </DialogFooter>
@@ -161,10 +179,10 @@ export function ConversationItem({
 
       {/* 删除确认对话框 */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
+        <DialogContent aria-describedby="delete-conversation-dialog-description">
           <DialogHeader>
             <DialogTitle>{t("chat.conversation.delete")}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription id="delete-conversation-dialog-description">
               {t("chat.conversation.delete_confirm")}
             </DialogDescription>
           </DialogHeader>
@@ -175,7 +193,7 @@ export function ConversationItem({
             >
               {t("chat.action.cancel")}
             </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
+            <Button variant="destructive" onClick={handleDeleteConfirm} autoFocus>
               {t("chat.action.delete")}
             </Button>
           </DialogFooter>

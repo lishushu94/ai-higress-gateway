@@ -23,6 +23,7 @@ from app.services.eval_service import (
     execute_run_stream,
     _maybe_mark_eval_ready,
     _to_authenticated_api_key,
+    _background_http_client,
 )
 from app.services.project_eval_config_service import (
     resolve_project_context,
@@ -36,11 +37,35 @@ from app.services.chat_history_service import get_conversation, get_assistant
 from app.logging_config import logger
 from app.db.session import SessionLocal
 import asyncio
+import time
 
 router = APIRouter(
     tags=["evals"],
     dependencies=[Depends(require_jwt_token)],
 )
+
+def _encode_sse_event(*, event_type: str, data: Any) -> bytes:
+    """
+    Encode a single SSE event frame.
+
+    We send both:
+    - `event: <type>` so standard SSE clients can dispatch by event name;
+    - `data: <json>` where json includes `type` for backward compatibility.
+    """
+    lines: list[str] = []
+    event = str(event_type or "").strip()
+    if event:
+        lines.append(f"event: {event}")
+
+    if isinstance(data, (bytes, bytearray)):
+        payload = data.decode("utf-8", errors="ignore")
+        lines.append(f"data: {payload}")
+    elif isinstance(data, str):
+        lines.append(f"data: {data}")
+    else:
+        lines.append(f"data: {json.dumps(data, ensure_ascii=False)}")
+
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
 
 
 def _run_to_summary(run) -> dict:
@@ -86,6 +111,27 @@ async def create_eval_endpoint(
             updated_at=eval_obj.updated_at,
         )
 
+    # 计算 stream 执行所需的上下文，并尽量提前释放 request-scoped 资源（db/http client）。
+    ctx = resolve_project_context(db, project_id=payload.project_id, current_user=current_user)
+    cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
+    effective_provider_ids = get_effective_provider_ids_for_user(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key=ctx.api_key,
+        provider_scopes=list(getattr(cfg, "provider_scopes", None) or DEFAULT_PROVIDER_SCOPES),
+    )
+    auth = _to_authenticated_api_key(db, api_key=ctx.api_key)
+
+    # 释放 db/http client（StreamingResponse 生命周期很长，避免一直占用 request-scoped 资源）
+    try:
+        db.close()
+    except Exception:
+        pass
+    try:
+        await client.__aexit__(None, None, None)  # type: ignore[attr-defined]
+    except Exception:
+        pass
+
     # 流式模式：真并行执行 challenger runs 并通过 SSE 返回
     async def _stream_generator():
         run_tasks = []
@@ -102,53 +148,80 @@ async def create_eval_endpoint(
                 ],
                 "explanation": explanation,
             }
-            yield f"data: {json.dumps(initial_data, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield _encode_sse_event(event_type="eval.created", data=initial_data)
 
-            # 准备公共执行上下文
-            ctx = resolve_project_context(db, project_id=payload.project_id, current_user=current_user)
-            cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
-            effective_provider_ids = get_effective_provider_ids_for_user(
-                db,
-                user_id=UUID(str(current_user.id)),
-                api_key=ctx.api_key,
-                provider_scopes=list(getattr(cfg, "provider_scopes", None) or DEFAULT_PROVIDER_SCOPES),
-            )
-            auth = _to_authenticated_api_key(db, api_key=ctx.api_key)
-            
             queue = asyncio.Queue()
-            
+
             async def _run_task(run_id: UUID):
                 try:
                     # 每个 run 独立 session，避免同一 Session 在多个并发任务中交叉使用导致报错
                     with SessionLocal() as task_db:
                         # 重新加载必要对象
-                        task_run = task_db.execute(select(RunModel).where(RunModel.id == run_id)).scalars().first()
-                        conv = get_conversation(task_db, conversation_id=payload.conversation_id, user_id=UUID(str(current_user.id)))
-                        assistant = get_assistant(task_db, assistant_id=payload.assistant_id, user_id=UUID(str(current_user.id)))
-                        user_message = task_db.execute(select(MessageModel).where(MessageModel.id == payload.message_id)).scalars().first()
-                        
+                        task_run = (
+                            task_db.execute(select(RunModel).where(RunModel.id == run_id))
+                            .scalars()
+                            .first()
+                        )
+                        conv = get_conversation(
+                            task_db,
+                            conversation_id=payload.conversation_id,
+                            user_id=UUID(str(current_user.id)),
+                        )
+                        assistant = get_assistant(
+                            task_db,
+                            assistant_id=payload.assistant_id,
+                            user_id=UUID(str(current_user.id)),
+                        )
+                        user_message = (
+                            task_db.execute(select(MessageModel).where(MessageModel.id == payload.message_id))
+                            .scalars()
+                            .first()
+                        )
+
                         if not all([task_run, conv, assistant, user_message]):
-                            logger.error("eval_routes: context objects not found for run %s", run_id)
-                            await queue.put({"run_id": str(run_id), "type": "run.error", "error": {"message": "Context objects not found"}})
+                            logger.error(
+                                "eval_routes: context objects not found for run %s", run_id
+                            )
+                            await queue.put(
+                                {
+                                    "run_id": str(run_id),
+                                    "type": "run.error",
+                                    "status": "failed",
+                                    "error_code": "NOT_FOUND",
+                                    "error": {"message": "Context objects not found"},
+                                }
+                            )
                             return
 
-                        async for item in execute_run_stream(
-                            task_db,
-                            redis=redis,
-                            client=client,
-                            api_key=auth,
-                            effective_provider_ids=effective_provider_ids,
-                            conversation=conv,
-                            assistant=assistant,
-                            user_message=user_message,
-                            run=task_run,
-                            requested_logical_model=task_run.requested_logical_model,
-                            payload_override=dict(task_run.request_payload or {}),
-                        ):
-                            await queue.put(item)
+                        async with _background_http_client() as task_client:
+                            async for item in execute_run_stream(
+                                task_db,
+                                redis=redis,
+                                client=task_client,
+                                api_key=auth,
+                                effective_provider_ids=effective_provider_ids,
+                                conversation=conv,
+                                assistant=assistant,
+                                user_message=user_message,
+                                run=task_run,
+                                requested_logical_model=task_run.requested_logical_model,
+                                payload_override=dict(task_run.request_payload or {}),
+                            ):
+                                await queue.put(item)
+                except asyncio.CancelledError:
+                    # 客户端断开/请求取消：让取消按预期传播，避免误报 run.error。
+                    raise
                 except Exception as task_exc:
                     logger.exception("eval_routes: run_task failed for run %s", run_id)
-                    await queue.put({"run_id": str(run_id), "type": "run.error", "error": {"message": str(task_exc)}})
+                    await queue.put(
+                        {
+                            "run_id": str(run_id),
+                            "type": "run.error",
+                            "status": "failed",
+                            "error_code": "INTERNAL_ERROR",
+                            "error": {"message": str(task_exc)},
+                        }
+                    )
 
             # 启动所有任务
             run_tasks = [asyncio.create_task(_run_task(r.id)) for r in challenger_runs]
@@ -162,9 +235,15 @@ async def create_eval_endpoint(
                 try:
                     # 使用 wait_for 实现 heartbeat
                     item = await asyncio.wait_for(queue.get(), timeout=10.0)
-                    yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n".encode('utf-8')
+                    event_type = "message"
+                    if isinstance(item, dict):
+                        event_type = str(item.get("type") or "message")
+                    yield _encode_sse_event(event_type=event_type, data=item)
                 except asyncio.TimeoutError:
-                    yield b": heartbeat\n\n"
+                    yield _encode_sse_event(
+                        event_type="heartbeat",
+                        data={"type": "heartbeat", "ts": int(time.time())},
+                    )
                 except asyncio.CancelledError:
                     raise
                 except Exception:
@@ -180,12 +259,18 @@ async def create_eval_endpoint(
                 "eval_id": str(eval_obj.id),
                 "status": "ready"
             }
-            yield f"data: {json.dumps(final_data, ensure_ascii=False)}\n\n".encode("utf-8")
-            yield b"data: [DONE]\n\n"
-            
+            yield _encode_sse_event(event_type="eval.completed", data=final_data)
+            yield _encode_sse_event(event_type="done", data="[DONE]")
+
+        except asyncio.CancelledError:
+            # 客户端断开时不发送 eval.error，直接触发 finally 做 cancel/回收。
+            raise
         except Exception as e:
             logger.exception("eval_routes: stream generator failed")
-            yield f"data: {json.dumps({'type': 'eval.error', 'error': {'message': str(e)}}, ensure_ascii=False)}\n\n".encode("utf-8")
+            yield _encode_sse_event(
+                event_type="eval.error",
+                data={"type": "eval.error", "error": {"message": str(e)}},
+            )
         finally:
             # 确保所有任务被取消
             for t in run_tasks:

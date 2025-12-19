@@ -23,6 +23,8 @@ from app.jwt_auth import AuthenticatedUser
 from app.logging_config import logger
 from app.models import APIKey, AssistantPreset, Conversation, Eval, EvalRating, Message, Run, User
 from app.services import chat_run_service
+from app.services.credit_service import estimate_streaming_precharge_cost_credits
+from app.services.credit_service import compute_chat_completion_cost_credits
 from app.services.bandit_policy_service import recommend_challengers
 from app.services.chat_history_service import update_assistant_message_for_user_sequence
 from app.services.context_features_service import build_rule_context_features
@@ -452,6 +454,12 @@ async def execute_run_stream(
 
     full_text_list: list[str] = []
     selected: dict[str, str | None] = {"provider_id": None, "model_id": None}
+    cost_credits: int | None = None
+    cost_persisted = False
+    stream_id: str | None = None
+    stream_created: int | None = None
+    stream_model: str | None = None
+    stream_usage: dict[str, Any] | None = None
 
     try:
         payload = payload_override or chat_run_service.build_openai_request_payload(
@@ -466,7 +474,7 @@ async def execute_run_stream(
 
         def _sink(provider_id: str, model_id: str | None = None) -> None:
             selected["provider_id"] = provider_id
-            if model_id:
+            if model_id is not None:
                 selected["model_id"] = model_id
 
         handler = RequestHandler(api_key=api_key, db=db, redis=redis, client=client)
@@ -478,6 +486,7 @@ async def execute_run_stream(
             api_style=api_style,
             effective_provider_ids=effective_provider_ids,
             session_id=str(conversation.id),
+            assistant_id=UUID(str(assistant.id)),
             provider_id_sink=_sink,
         ):
             # 解析 chunk 获取文本增量（best-effort）
@@ -488,6 +497,15 @@ async def execute_run_stream(
                     data_str = chunk_str[6:].strip()
                     if data_str != "[DONE]":
                         data = json.loads(data_str)
+                        if isinstance(data, dict):
+                            if isinstance(data.get("id"), str):
+                                stream_id = stream_id or data["id"]
+                            if isinstance(data.get("created"), int):
+                                stream_created = stream_created or data["created"]
+                            if isinstance(data.get("model"), str):
+                                stream_model = stream_model or data["model"]
+                            if isinstance(data.get("usage"), dict):
+                                stream_usage = data["usage"]
                         if "choices" in data and len(data["choices"]) > 0:
                             delta = data["choices"][0].get("delta", {})
                             text_delta = delta.get("content", "")
@@ -499,6 +517,7 @@ async def execute_run_stream(
                                 "type": "run.error",
                                 "status": "failed",
                                 "error": data["error"],
+                                "error_code": data["error"].get("type") if isinstance(data.get("error"), dict) else None,
                             }
                             # 更新 DB 记录失败
                             run.status = "failed"
@@ -506,6 +525,9 @@ async def execute_run_stream(
                             run.selected_provider_model = selected.get("model_id")
                             run.error_code = data["error"].get("type") or "UPSTREAM_ERROR"
                             run.error_message = data["error"].get("message")
+                            run.response_payload = {"error": data["error"]} if isinstance(data.get("error"), dict) else None
+                            if run.cost_credits is None:
+                                run.cost_credits = cost_credits
                             run.finished_at = datetime.now(UTC)
                             db.add(run)
                             db.commit()
@@ -513,20 +535,68 @@ async def execute_run_stream(
             except Exception:
                 pass
 
+            if not cost_persisted and selected.get("provider_id") and selected.get("model_id"):
+                cost_credits = estimate_streaming_precharge_cost_credits(
+                    db,
+                    logical_model_name=requested_logical_model,
+                    provider_id=selected.get("provider_id"),
+                    provider_model_id=selected.get("model_id"),
+                    request_payload=payload,
+                )
+                run.selected_provider_id = selected.get("provider_id")
+                run.selected_provider_model = selected.get("model_id")
+                run.cost_credits = cost_credits
+                db.add(run)
+                db.commit()
+                cost_persisted = True
+
             yield {
                 "run_id": run_id_str,
                 "type": "run.delta",
                 "status": "running",
                 "provider_id": selected.get("provider_id"),
+                "provider_model": selected.get("model_id"),
+                "cost_credits": cost_credits,
                 "delta": text_delta,
             }
 
         full_text = "".join(full_text_list)
         output_preview = full_text[:380].rstrip() if full_text else None
         
+        response_payload: dict[str, Any] = {
+            "id": stream_id,
+            "object": "chat.completion",
+            "created": stream_created,
+            "model": stream_model or requested_logical_model,
+            "choices": [
+                {
+                    "index": 0,
+                    "message": {"role": "assistant", "content": full_text},
+                    "finish_reason": "stop",
+                }
+            ],
+        }
+        if isinstance(stream_usage, dict):
+            response_payload["usage"] = stream_usage
+
         run.status = "succeeded"
         run.selected_provider_id = selected.get("provider_id")
         run.selected_provider_model = selected.get("model_id")
+        run.response_payload = response_payload
+        if isinstance(stream_usage, dict):
+            computed = compute_chat_completion_cost_credits(
+                db,
+                logical_model_name=requested_logical_model,
+                provider_id=run.selected_provider_id,
+                provider_model_id=run.selected_provider_model,
+                response_payload={"usage": stream_usage},
+                request_payload=payload,
+            )
+            if computed is not None:
+                cost_credits = computed
+                run.cost_credits = computed
+        if run.cost_credits is None:
+            run.cost_credits = cost_credits
         run.output_text = full_text
         run.output_preview = output_preview
         run.latency_ms = int(max(0, (time.time() - start) * 1000))
@@ -540,6 +610,7 @@ async def execute_run_stream(
             "status": "succeeded",
             "provider_id": selected.get("provider_id"),
             "provider_model": selected.get("model_id"),
+            "cost_credits": run.cost_credits,
             "latency_ms": run.latency_ms,
             "full_text": full_text,
         }
@@ -549,6 +620,8 @@ async def execute_run_stream(
         run.status = "cancelled"
         run.selected_provider_id = selected.get("provider_id")
         run.selected_provider_model = selected.get("model_id")
+        if run.cost_credits is None:
+            run.cost_credits = cost_credits
         run.finished_at = datetime.now(UTC)
         db.add(run)
         db.commit()
@@ -561,6 +634,8 @@ async def execute_run_stream(
         run.selected_provider_model = selected.get("model_id")
         run.error_code = "INTERNAL_ERROR"
         run.error_message = str(exc)
+        if run.cost_credits is None:
+            run.cost_credits = cost_credits
         run.latency_ms = int(max(0, (time.time() - start) * 1000))
         run.finished_at = datetime.now(UTC)
         db.add(run)
@@ -569,6 +644,7 @@ async def execute_run_stream(
             "run_id": run_id_str,
             "type": "run.error",
             "status": "failed",
+            "error_code": run.error_code,
             "error": {"message": str(exc)},
         }
 
@@ -715,7 +791,7 @@ def submit_rating(
         run_rows = db.execute(select(Run).where(Run.id.in_(allowed_uuids))).scalars().all()
         model_by_run = {str(r.id): r.requested_logical_model for r in run_rows}
         winner_model = model_by_run.get(str(winner_run_id))
-        if winner_model:
+        if winner_model and context_key:
             candidate_models = [model_by_run[rid] for rid in allowed if rid in model_by_run]
             from app.services.bandit_policy_service import apply_winner_update
 
@@ -727,6 +803,55 @@ def submit_rating(
                 candidate_models=candidate_models,
                 winner_model=winner_model,
             )
+
+        winner_run = next((r for r in run_rows if str(r.id) == str(winner_run_id)), None)
+        if (
+            winner_run is not None
+            and isinstance(winner_run.selected_provider_id, str)
+            and winner_run.selected_provider_id.strip()
+        ):
+            from app.services.bandit_policy_service import build_context_key
+            from app.services.bandit_routing_weight_service import build_provider_arm_key
+
+            user_text = _extract_user_text_from_run(winner_run)
+            features = build_rule_context_features(
+                user_text=user_text,
+                request_payload=winner_run.request_payload
+                if isinstance(winner_run.request_payload, dict)
+                else None,
+            )
+            routing_context_key = build_context_key(
+                project_id=UUID(str(eval_obj.api_key_id)),
+                assistant_id=UUID(str(eval_obj.assistant_id)),
+                features=features,
+            )
+
+            winner_arm = build_provider_arm_key(
+                logical_model_id=winner_run.requested_logical_model,
+                provider_id=winner_run.selected_provider_id,
+            )
+            candidate_arms: list[str] = []
+            for r in run_rows:
+                pid = getattr(r, "selected_provider_id", None)
+                if not isinstance(pid, str) or not pid.strip():
+                    continue
+                candidate_arms.append(
+                    build_provider_arm_key(
+                        logical_model_id=r.requested_logical_model,
+                        provider_id=pid,
+                    )
+                )
+            if candidate_arms and winner_arm:
+                from app.services.bandit_policy_service import apply_winner_update
+
+                apply_winner_update(
+                    db,
+                    project_id=UUID(str(eval_obj.api_key_id)),
+                    assistant_id=UUID(str(eval_obj.assistant_id)),
+                    context_key=routing_context_key,
+                    candidate_models=candidate_arms,
+                    winner_model=winner_arm,
+                )
     except Exception:
         logger.exception("eval_service: failed to update bandit stats (eval_id=%s)", eval_id)
 

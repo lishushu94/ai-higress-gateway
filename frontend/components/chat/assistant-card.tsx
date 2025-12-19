@@ -70,6 +70,15 @@ export function AssistantCard({
     setShowDeleteDialog(false);
   };
 
+  // 处理键盘事件
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Enter 或 Space 键选择助手
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      handleCardClick();
+    }
+  };
+
   return (
     <>
       <Card
@@ -77,6 +86,11 @@ export function AssistantCard({
           isSelected ? "ring-2 ring-primary" : ""
         }`}
         onClick={handleCardClick}
+        onKeyDown={handleKeyDown}
+        tabIndex={0}
+        role="button"
+        aria-label={`${t("chat.assistant.select")} ${assistant.name}`}
+        aria-pressed={isSelected}
       >
         <CardHeader>
           <CardTitle>{assistant.name}</CardTitle>
@@ -86,7 +100,11 @@ export function AssistantCard({
           <CardAction>
             <DropdownMenu>
               <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button variant="ghost" size="icon-sm">
+                <Button 
+                  variant="ghost" 
+                  size="icon-sm"
+                  aria-label={t("chat.assistant.actions")}
+                >
                   <MoreVertical className="w-4 h-4" />
                 </Button>
               </DropdownMenuTrigger>
@@ -123,10 +141,10 @@ export function AssistantCard({
 
       {/* 归档确认对话框 */}
       <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <DialogContent>
+        <DialogContent aria-describedby="archive-dialog-description">
           <DialogHeader>
             <DialogTitle>{t("chat.assistant.archive")}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription id="archive-dialog-description">
               {t("chat.assistant.archive_confirm")}
             </DialogDescription>
           </DialogHeader>
@@ -137,7 +155,7 @@ export function AssistantCard({
             >
               {t("chat.action.cancel")}
             </Button>
-            <Button onClick={handleArchiveConfirm}>
+            <Button onClick={handleArchiveConfirm} autoFocus>
               {t("chat.action.confirm")}
             </Button>
           </DialogFooter>
@@ -146,10 +164,10 @@ export function AssistantCard({
 
       {/* 删除确认对话框 */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-        <DialogContent>
+        <DialogContent aria-describedby="delete-dialog-description">
           <DialogHeader>
             <DialogTitle>{t("chat.assistant.delete")}</DialogTitle>
-            <DialogDescription>
+            <DialogDescription id="delete-dialog-description">
               {t("chat.assistant.delete_confirm")}
             </DialogDescription>
           </DialogHeader>
@@ -160,7 +178,7 @@ export function AssistantCard({
             >
               {t("chat.action.cancel")}
             </Button>
-            <Button variant="destructive" onClick={handleDeleteConfirm}>
+            <Button variant="destructive" onClick={handleDeleteConfirm} autoFocus>
               {t("chat.action.delete")}
             </Button>
           </DialogFooter>

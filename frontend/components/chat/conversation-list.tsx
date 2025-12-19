@@ -1,9 +1,12 @@
 "use client";
 
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Plus } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import { ConversationItem } from "./conversation-item";
+import { useCachePreloader } from "@/lib/swr/cache";
+import { conversationService } from "@/http/conversation";
 import type { Conversation } from "@/lib/api-types";
 
 interface ConversationListProps {
@@ -16,6 +19,8 @@ interface ConversationListProps {
   onDeleteConversation?: (conversationId: string) => void;
   onLoadMore?: () => void;
   hasMore?: boolean;
+  nextCursor?: string;
+  assistantId?: string;
 }
 
 /**
@@ -32,8 +37,31 @@ export function ConversationList({
   onDeleteConversation,
   onLoadMore,
   hasMore = false,
+  nextCursor,
+  assistantId,
 }: ConversationListProps) {
   const { t } = useI18n();
+  const { preloadData } = useCachePreloader();
+
+  // 预加载下一页数据（缓存优化）
+  useEffect(() => {
+    if (nextCursor && assistantId && !isLoading) {
+      const nextPageKey = {
+        url: '/v1/conversations',
+        params: { assistant_id: assistantId, cursor: nextCursor, limit: 20 },
+      };
+      
+      // 预加载下一页，但不触发重新验证
+      preloadData(
+        JSON.stringify(nextPageKey),
+        () => conversationService.getConversations({
+          assistant_id: assistantId,
+          cursor: nextCursor,
+          limit: 20,
+        })
+      );
+    }
+  }, [nextCursor, assistantId, isLoading, preloadData]);
 
   // 加载状态
   if (isLoading && conversations.length === 0) {
@@ -41,13 +69,18 @@ export function ConversationList({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t("chat.conversation.title")}</h2>
-          <Button size="sm" disabled>
-            <Plus className="w-4 h-4 mr-1" />
+          <Button size="sm" disabled aria-label={t("chat.conversation.create")}>
+            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
             {t("chat.conversation.create")}
           </Button>
         </div>
-        <div className="flex items-center justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary"></div>
+        <div 
+          className="flex items-center justify-center py-12"
+          role="status"
+          aria-live="polite"
+          aria-label={t("chat.conversation.loading")}
+        >
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" aria-hidden="true"></div>
         </div>
       </div>
     );
@@ -59,12 +92,16 @@ export function ConversationList({
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">{t("chat.conversation.title")}</h2>
-          <Button size="sm" onClick={onCreateConversation}>
-            <Plus className="w-4 h-4 mr-1" />
+          <Button size="sm" onClick={onCreateConversation} aria-label={t("chat.conversation.create")}>
+            <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
             {t("chat.conversation.create")}
           </Button>
         </div>
-        <div className="flex flex-col items-center justify-center py-12 text-center">
+        <div 
+          className="flex flex-col items-center justify-center py-12 text-center"
+          role="status"
+          aria-live="polite"
+        >
           <div className="text-muted-foreground mb-4">
             <div className="text-lg font-medium mb-2">
               {t("chat.conversation.empty")}
@@ -73,8 +110,8 @@ export function ConversationList({
               {t("chat.conversation.empty_description")}
             </div>
           </div>
-          <Button onClick={onCreateConversation}>
-            <Plus className="w-4 h-4 mr-2" />
+          <Button onClick={onCreateConversation} aria-label={t("chat.conversation.create")}>
+            <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
             {t("chat.conversation.create")}
           </Button>
         </div>
@@ -83,27 +120,28 @@ export function ConversationList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" role="region" aria-label={t("chat.conversation.list_label")}>
       {/* 标题和创建按钮 */}
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold">{t("chat.conversation.title")}</h2>
-        <Button size="sm" onClick={onCreateConversation}>
-          <Plus className="w-4 h-4 mr-1" />
+        <Button size="sm" onClick={onCreateConversation} aria-label={t("chat.conversation.create")}>
+          <Plus className="w-4 h-4 mr-1" aria-hidden="true" />
           {t("chat.conversation.create")}
         </Button>
       </div>
 
       {/* 会话列表 */}
-      <div className="space-y-3">
+      <div className="space-y-3" role="list" aria-label={t("chat.conversation.list")}>
         {conversations.map((conversation) => (
-          <ConversationItem
-            key={conversation.conversation_id}
-            conversation={conversation}
-            isSelected={selectedConversationId === conversation.conversation_id}
-            onSelect={onSelectConversation}
-            onArchive={onArchiveConversation}
-            onDelete={onDeleteConversation}
-          />
+          <div key={conversation.conversation_id} role="listitem">
+            <ConversationItem
+              conversation={conversation}
+              isSelected={selectedConversationId === conversation.conversation_id}
+              onSelect={onSelectConversation}
+              onArchive={onArchiveConversation}
+              onDelete={onDeleteConversation}
+            />
+          </div>
         ))}
       </div>
 
@@ -115,6 +153,7 @@ export function ConversationList({
             size="sm"
             onClick={onLoadMore}
             disabled={isLoading}
+            aria-label={isLoading ? t("chat.conversation.loading") : t("chat.message.load_more")}
           >
             {isLoading ? t("chat.conversation.loading") : t("chat.message.load_more")}
           </Button>

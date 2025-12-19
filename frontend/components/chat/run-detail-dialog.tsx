@@ -79,18 +79,26 @@ export function RunDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent 
+        className="max-w-3xl max-h-[90vh] overflow-y-auto"
+        aria-describedby="run-detail-description"
+      >
         <DialogHeader>
           <DialogTitle>{t("chat.run.title")}</DialogTitle>
-          <DialogDescription>
+          <DialogDescription id="run-detail-description">
             {runId}
           </DialogDescription>
         </DialogHeader>
 
         {/* 加载状态 */}
         {isLoading && (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="size-6 animate-spin text-muted-foreground" />
+          <div 
+            className="flex items-center justify-center py-12"
+            role="status"
+            aria-live="polite"
+            aria-label={t("chat.run.loading")}
+          >
+            <Loader2 className="size-6 animate-spin text-muted-foreground" aria-hidden="true" />
             <span className="ml-2 text-muted-foreground">
               {t("chat.run.loading")}
             </span>
@@ -99,8 +107,12 @@ export function RunDetailDialog({
 
         {/* 错误状态 */}
         {isError && (
-          <div className="flex items-center justify-center py-12 text-destructive">
-            <XCircle className="size-6 mr-2" />
+          <div 
+            className="flex items-center justify-center py-12 text-destructive"
+            role="alert"
+            aria-live="assertive"
+          >
+            <XCircle className="size-6 mr-2" aria-hidden="true" />
             {t("chat.run.error")}
           </div>
         )}

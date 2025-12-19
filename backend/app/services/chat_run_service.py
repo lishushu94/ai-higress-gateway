@@ -20,6 +20,7 @@ from app.auth import AuthenticatedAPIKey
 from app.logging_config import logger
 from app.models import AssistantPreset, Conversation, Message, Run
 from app.upstream import detect_request_format
+from app.services.credit_service import compute_chat_completion_cost_credits
 
 
 def _safe_text_from_message_content(content: dict) -> str:
@@ -208,6 +209,7 @@ async def execute_run_non_stream(
             api_style=api_style,
             effective_provider_ids=effective_provider_ids,
             session_id=str(conversation.id),
+            assistant_id=UUID(str(assistant.id)),
             provider_id_sink=_sink,
         )
 
@@ -229,9 +231,29 @@ async def execute_run_non_stream(
         else:
             output_preview = None
 
-        run.status = "succeeded" if response.status_code < 400 else "failed"
+        is_failed = response.status_code >= 400
+        run.status = "failed" if is_failed else "succeeded"
         run.selected_provider_id = selected.get("provider_id")
         run.selected_provider_model = selected.get("model_id")
+        run.cost_credits = compute_chat_completion_cost_credits(
+            db,
+            logical_model_name=requested_logical_model,
+            provider_id=run.selected_provider_id,
+            provider_model_id=run.selected_provider_model,
+            response_payload=response_payload,
+            request_payload=payload,
+        )
+        if is_failed:
+            run.error_code = "UPSTREAM_ERROR"
+            if isinstance(response_payload, dict):
+                err = response_payload.get("error")
+                if isinstance(err, dict):
+                    err_type = err.get("type")
+                    if isinstance(err_type, str) and err_type.strip():
+                        run.error_code = err_type.strip()
+                    run.error_message = str(err.get("message") or err.get("type") or "upstream_error")
+                elif err is not None:
+                    run.error_message = str(err)
         run.response_payload = response_payload
         run.output_text = output_text
         run.output_preview = output_preview
