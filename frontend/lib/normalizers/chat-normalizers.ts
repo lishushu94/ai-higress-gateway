@@ -61,6 +61,7 @@ export function normalizeAssistant(backend: AssistantBackend): Assistant {
     name: backend.name,
     system_prompt: backend.system_prompt,
     default_logical_model: backend.default_logical_model,
+    title_logical_model: backend.title_logical_model ?? null,
     model_preset: backend.model_preset,
     archived: backend.archived_at != null, // 转换为 boolean（兼容 undefined）
     created_at: backend.created_at,

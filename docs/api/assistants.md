@@ -23,6 +23,7 @@ Response:
       "name": "默认助手",
       "system_prompt": "你是一个严谨的助手",
       "default_logical_model": "gpt-4.1",
+      "title_logical_model": "gpt-4.1",
       "created_at": "2025-12-19T00:00:00Z",
       "updated_at": "2025-12-19T00:00:00Z"
     }
@@ -47,9 +48,15 @@ Request:
   "name": "默认助手",
   "system_prompt": "你是一个严谨的助手",
   "default_logical_model": "gpt-4.1",
+  "title_logical_model": "gpt-4.1",
   "model_preset": {"temperature": 0.2}
 }
 ```
+
+说明：
+- `title_logical_model`（可选）：会话标题生成模型。
+  - 当创建会话时不传 `title`，并且在该会话发送第一条用户消息后，后端会使用该模型基于“首问”自动生成 `Conversation.title`（尽力而为，不影响主聊天流程）。
+  - 若不传该字段，则不会自动生成标题（保持 `title` 为空，前端可按无标题展示）。
 
 Errors:
 - `404 not_found`：项目不存在或无权访问（`project_id` 传错）
@@ -61,6 +68,11 @@ Errors:
 ### PUT `/v1/assistants/{assistant_id}`
 
 更新助手（支持归档 `archived=true`）。
+
+可选字段（部分）：
+- `title_logical_model`: string | null
+  - 传具体模型：开启会话首问自动命名。
+  - 传 `null`：关闭自动命名（恢复为跟随/不启用）。
 
 ### DELETE `/v1/assistants/{assistant_id}`
 

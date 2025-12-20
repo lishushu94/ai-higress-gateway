@@ -18,6 +18,7 @@ import { useChatLayoutStore } from "@/lib/stores/chat-layout-store";
 import { useChatStore } from "@/lib/stores/chat-store";
 import { useConversationFromList } from "@/lib/swr/use-conversations";
 import { useCreateEval } from "@/lib/swr/use-evals";
+import { ConversationHeader } from "./conversation-header";
 
 const EvalPanel = dynamic(
   () =>
@@ -45,7 +46,12 @@ export function ConversationPageClient({
   const { user } = useAuth();
 
   const conversation = useConversationFromList(conversationId, assistantId);
-  const { selectedProjectId, activeEvalId, setActiveEval } = useChatStore();
+  const {
+    selectedProjectId,
+    activeEvalId,
+    setActiveEval,
+    conversationModelOverrides,
+  } = useChatStore();
   const storedVerticalLayout = useChatLayoutStore((s) => s.chatVerticalLayout);
   const setChatVerticalLayout = useChatLayoutStore((s) => s.setChatVerticalLayout);
   const createEval = useCreateEval();
@@ -100,9 +106,16 @@ export function ConversationPageClient({
   }
 
   const isArchived = conversation.archived;
+  const overrideLogicalModel = conversationModelOverrides[conversationId] ?? null;
 
   return (
     <div className="flex flex-col h-full">
+      <ConversationHeader
+        assistantId={assistantId}
+        conversationId={conversationId}
+        title={conversation.title}
+      />
+
       {isArchived && (
         <div className="bg-muted/50 border-b px-4 py-2 text-sm text-muted-foreground text-center">
           {t("chat.conversation.archived_notice")}
@@ -142,6 +155,8 @@ export function ConversationPageClient({
               <div className="flex-1" />
               <MessageInput
                 conversationId={conversationId}
+                assistantId={assistantId}
+                overrideLogicalModel={overrideLogicalModel}
                 disabled={isArchived}
                 className="border-t-0"
               />
@@ -158,4 +173,3 @@ export function ConversationPageClient({
     </div>
   );
 }
-

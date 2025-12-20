@@ -11,6 +11,12 @@ class AssistantPresetCreateRequest(BaseModel):
     name: str = Field(..., min_length=1, max_length=120)
     system_prompt: str = Field(default="", max_length=20000)
     default_logical_model: str = Field(..., min_length=1, max_length=128)
+    title_logical_model: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="会话标题生成模型；为空表示跟随 default_logical_model",
+    )
     model_preset: dict | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -20,6 +26,12 @@ class AssistantPresetUpdateRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=120)
     system_prompt: str | None = Field(default=None, max_length=20000)
     default_logical_model: str | None = Field(default=None, min_length=1, max_length=128)
+    title_logical_model: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+        description="会话标题生成模型；为空表示跟随 default_logical_model",
+    )
     model_preset: dict | None = None
     archived: bool | None = None
 
@@ -32,6 +44,7 @@ class AssistantPresetItem(BaseModel):
     name: str
     system_prompt: str = Field(default="", max_length=20000)
     default_logical_model: str
+    title_logical_model: str | None = None
     created_at: datetime
     updated_at: datetime
 

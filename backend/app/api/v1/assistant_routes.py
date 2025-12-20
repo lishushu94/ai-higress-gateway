@@ -56,6 +56,7 @@ def _assistant_to_response(obj) -> AssistantPresetResponse:
         name=obj.name,
         system_prompt=obj.system_prompt,
         default_logical_model=obj.default_logical_model,
+        title_logical_model=getattr(obj, "title_logical_model", None),
         model_preset=obj.model_preset,
         archived_at=obj.archived_at,
         created_at=obj.created_at,
@@ -113,6 +114,7 @@ def list_assistants_endpoint(
                 "name": it.name,
                 "system_prompt": it.system_prompt or "",
                 "default_logical_model": it.default_logical_model,
+                "title_logical_model": getattr(it, "title_logical_model", None),
                 "created_at": it.created_at,
                 "updated_at": it.updated_at,
             }
@@ -135,6 +137,7 @@ def create_assistant_endpoint(
         name=payload.name,
         system_prompt=payload.system_prompt,
         default_logical_model=payload.default_logical_model,
+        title_logical_model=payload.title_logical_model,
         model_preset=payload.model_preset,
     )
     return _assistant_to_response(assistant)
@@ -168,6 +171,8 @@ def update_assistant_endpoint(
         name=payload.name,
         system_prompt=payload.system_prompt,
         default_logical_model=payload.default_logical_model,
+        title_logical_model=payload.title_logical_model,
+        title_logical_model_set="title_logical_model" in payload.model_fields_set,
         model_preset=payload.model_preset,
         archived=payload.archived,
     )

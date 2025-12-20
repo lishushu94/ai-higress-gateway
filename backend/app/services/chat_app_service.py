@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 from uuid import UUID
 
@@ -31,6 +32,7 @@ from app.services.project_eval_config_service import (
     resolve_project_context,
 )
 from app.api.v1.chat.provider_selector import ProviderSelector
+from app.api.v1.chat.request_handler import RequestHandler
 
 
 def _to_authenticated_api_key(
@@ -49,6 +51,157 @@ def _to_authenticated_api_key(
         has_provider_restrictions=bool(api_key.has_provider_restrictions),
         allowed_provider_ids=list(api_key.allowed_provider_ids),
     )
+
+def _sanitize_conversation_title(value: str) -> str:
+    title = (value or "").strip()
+    if not title:
+        return ""
+
+    # Remove common wrapping quotes
+    if len(title) >= 2 and title[0] == title[-1] and title[0] in {"'", '"', "“", "”", "‘", "’", "《", "》"}:
+        title = title[1:-1].strip()
+
+    # Collapse whitespace
+    title = " ".join(title.split())
+
+    # Conservative max length (DB: 255)
+    if len(title) > 60:
+        title = title[:60].rstrip()
+    return title
+
+
+def _extract_first_choice_text(payload: dict[str, Any] | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    choices = payload.get("choices")
+    if not isinstance(choices, list) or not choices:
+        return None
+    first = choices[0]
+    if not isinstance(first, dict):
+        return None
+    message = first.get("message")
+    if isinstance(message, dict):
+        content = message.get("content")
+        if isinstance(content, str) and content.strip():
+            return content
+    content = first.get("text")
+    if isinstance(content, str) and content.strip():
+        return content
+    return None
+
+
+def _truncate_title_input(value: str, *, max_len: int = 1000) -> str:
+    text = (value or "").strip()
+    if not text:
+        return ""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len].rstrip()
+
+
+async def _maybe_auto_title_conversation(
+    db: Session,
+    *,
+    redis: Redis,
+    client: Any,
+    current_user: AuthenticatedUser,
+    conv: Any,
+    assistant: Any,
+    effective_provider_ids: set[str],
+    user_text: str,
+    user_sequence: int,
+    requested_model_for_title_fallback: str,
+) -> None:
+    """
+    在首条 user 消息发送后，若会话尚无 title，则尝试用“标题模型”自动生成标题（尽力而为）。
+    """
+    if (conv.title or "").strip():
+        return
+
+    # Only auto-title on first user message (sequence=1)
+    if int(user_sequence or 0) != 1:
+        return
+
+    try:
+        # Optional second check: avoid going negative right after baseline if credit check is enabled.
+        ensure_account_usable(db, user_id=UUID(str(current_user.id)))
+    except InsufficientCreditsError:
+        return
+    except Exception:
+        # Credit check failures should never block message sending.
+        return
+
+    title_model_raw = (getattr(assistant, "title_logical_model", None) or "").strip()
+    if not title_model_raw:
+        return
+
+    title_model = requested_model_for_title_fallback if title_model_raw == "auto" else title_model_raw
+    if not title_model:
+        return
+
+    system_prompt = (
+        "You are a conversation title generator.\n"
+        "Task: Generate a short title for the conversation based on the user's FIRST message.\n"
+        "Language: The title MUST be in the same language as the user's message (match script/locale). "
+        "If the user's message is mixed-language, use the dominant language.\n"
+        "Rules:\n"
+        "- Output ONLY the title.\n"
+        "- No quotes, no markdown, no emojis, no extra punctuation at the end.\n"
+        "- Single line.\n"
+        "- Length: <= 20 CJK characters OR <= 8 English words; for other languages keep it short (<= 10 words).\n"
+    )
+
+    user_text = _truncate_title_input(user_text, max_len=1000)
+    if not user_text:
+        return
+
+    payload: dict[str, Any] = {
+        "model": title_model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_text},
+        ],
+        "temperature": 0.2,
+        "max_tokens": 48,
+    }
+
+    # Use the same project context for billing/provider access.
+    ctx = resolve_project_context(db, project_id=UUID(str(conv.api_key_id)), current_user=current_user)
+    auth_key = _to_authenticated_api_key(api_key=ctx.api_key, current_user=current_user)
+
+    handler = RequestHandler(api_key=auth_key, db=db, redis=redis, client=client)
+    resp = await handler.handle(
+        payload=payload,
+        requested_model=title_model,
+        lookup_model_id=title_model,
+        api_style="openai",
+        effective_provider_ids=effective_provider_ids,
+        session_id=str(conv.id),
+        assistant_id=UUID(str(getattr(assistant, "id", None))) if getattr(assistant, "id", None) else None,
+        billing_reason="conversation_title",
+    )
+
+    if int(getattr(resp, "status_code", 500)) >= 400:
+        return
+
+    response_payload: dict[str, Any] | None = None
+    try:
+        raw = resp.body.decode("utf-8", errors="ignore")
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            response_payload = parsed
+    except Exception:
+        response_payload = None
+
+    raw_title = _extract_first_choice_text(response_payload)
+    title = _sanitize_conversation_title(raw_title or "")
+    if not title:
+        return
+
+    conv.title = title
+    db.add(conv)
+    db.commit()
+    db.refresh(conv)
 
 
 async def send_message_and_run_baseline(
@@ -189,6 +342,25 @@ async def send_message_and_run_baseline(
             user_sequence=int(user_message.sequence or 0),
             content_text=run.output_text,
         )
+
+    # Auto-title conversation based on the first user question (best-effort)
+    try:
+        if int(user_message.sequence or 0) == 1 and not (conv.title or "").strip():
+            await _maybe_auto_title_conversation(
+                db,
+                redis=redis,
+                client=client,
+                current_user=current_user,
+                conv=conv,
+                assistant=assistant,
+                effective_provider_ids=effective_provider_ids,
+                user_text=content,
+                user_sequence=int(user_message.sequence or 0),
+                requested_model_for_title_fallback=requested_model,
+            )
+    except Exception:  # pragma: no cover - best-effort only
+        # Never break the main chat flow for title generation.
+        pass
 
     return UUID(str(user_message.id)), UUID(str(run.id))
 

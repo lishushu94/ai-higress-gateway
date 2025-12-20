@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
+import { AdaptiveCard } from "@/components/cards/adaptive-card";
+import { CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -81,8 +82,9 @@ export function AssistantCard({
 
   return (
     <>
-      <Card
-        className={`cursor-pointer transition-all hover:shadow-md ${
+      <AdaptiveCard
+        showDecor={false}
+        className={`cursor-pointer transition-all hover:shadow-md hover:scale-100 ${
           isSelected ? "ring-2 ring-primary" : ""
         }`}
         onClick={handleCardClick}
@@ -137,7 +139,7 @@ export function AssistantCard({
             </DropdownMenu>
           </CardAction>
         </CardHeader>
-      </Card>
+      </AdaptiveCard>
 
       {/* 归档确认对话框 */}
       <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>

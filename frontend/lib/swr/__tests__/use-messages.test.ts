@@ -144,6 +144,33 @@ describe('useSendMessage', () => {
     });
   });
 
+  it('should pass override_logical_model when provided', async () => {
+    const mockResponse: SendMessageResponse = {
+      message_id: 'msg-2',
+      baseline_run: {
+        run_id: 'run-2',
+        requested_logical_model: 'gpt-4',
+        status: 'succeeded',
+        output_preview: 'Hi there!',
+        latency: 1200,
+      },
+    };
+
+    vi.mocked(messageService.sendMessage).mockResolvedValue(mockResponse);
+
+    const { result } = renderHook(
+      () => useSendMessage('conv-1', undefined, 'test-model'),
+      { wrapper }
+    );
+
+    await result.current({ content: 'Hello' });
+
+    expect(messageService.sendMessage).toHaveBeenCalledWith('conv-1', {
+      content: 'Hello',
+      override_logical_model: 'test-model',
+    });
+  });
+
   it('should throw error when conversationId is null', async () => {
     const { result } = renderHook(() => useSendMessage(null), { wrapper });
 

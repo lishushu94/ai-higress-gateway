@@ -22,6 +22,8 @@ type MessageFormData = z.infer<typeof messageSchema>;
 
 export interface MessageInputProps {
   conversationId: string;
+  assistantId?: string;
+  overrideLogicalModel?: string | null;
   disabled?: boolean;
   onMessageSent?: (message: Message) => void;
   className?: string;
@@ -29,6 +31,8 @@ export interface MessageInputProps {
 
 export function MessageInput({
   conversationId,
+  assistantId,
+  overrideLogicalModel,
   disabled = false,
   onMessageSent,
   className,
@@ -36,7 +40,7 @@ export function MessageInput({
   const { t } = useI18n();
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const sendMessage = useSendMessage(conversationId);
+  const sendMessage = useSendMessage(conversationId, assistantId, overrideLogicalModel);
 
   // 表单管理
   const {

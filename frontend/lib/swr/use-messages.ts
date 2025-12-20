@@ -74,7 +74,11 @@ export function useRun(runId: string | null) {
  * - 新消息应该插入到列表开头（因为后端是倒序）
  * - 分页加载的旧消息应该插入到列表末尾（因为后端是倒序）
  */
-export function useSendMessage(conversationId: string | null) {
+export function useSendMessage(
+  conversationId: string | null,
+  assistantId?: string | null,
+  overrideLogicalModel?: string | null
+) {
   const { mutate: globalMutate } = useSWRConfig();
 
   return async (request: SendMessageRequest) => {
@@ -113,10 +117,24 @@ export function useSendMessage(conversationId: string | null) {
       );
 
       // 发送消息到服务器
-      const response = await messageService.sendMessage(conversationId, request);
+      const payload: SendMessageRequest = { ...request };
+      if (overrideLogicalModel) {
+        payload.override_logical_model = overrideLogicalModel;
+      }
+      const response = await messageService.sendMessage(conversationId, payload);
 
       // 更新为真实数据（包含 baseline run 结果）
       await globalMutate(messagesKey);
+
+      // 刷新会话列表（用于更新 last_activity_at / title 等）
+      // key 与 useConversations(assistant_id, limit=50) 保持一致
+      // 注意：assistantId 可能为空（深链场景），此时跳过即可。
+      if (assistantId) {
+        const queryParams = new URLSearchParams();
+        queryParams.set('assistant_id', assistantId);
+        queryParams.set('limit', '50');
+        await globalMutate(`/v1/conversations?${queryParams.toString()}`);
+      }
 
       return response;
     } catch (error) {

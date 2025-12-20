@@ -55,7 +55,7 @@ export function useConversationFromList(
   conversationId: string | null,
   assistantId: string
 ): Conversation | undefined {
-  const { conversations } = useConversations({ assistant_id: assistantId });
+  const { conversations } = useConversations({ assistant_id: assistantId, limit: 50 });
   
   if (!conversationId) {
     return undefined;

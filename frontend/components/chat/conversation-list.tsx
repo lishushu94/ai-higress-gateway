@@ -16,6 +16,7 @@ interface ConversationListProps {
   onSelectConversation?: (conversationId: string) => void;
   onCreateConversation?: () => void;
   onArchiveConversation?: (conversationId: string) => void;
+  onRenameConversation?: (conversationId: string, title: string) => void;
   onDeleteConversation?: (conversationId: string) => void;
   onLoadMore?: () => void;
   hasMore?: boolean;
@@ -34,6 +35,7 @@ export function ConversationList({
   onSelectConversation,
   onCreateConversation,
   onArchiveConversation,
+  onRenameConversation,
   onDeleteConversation,
   onLoadMore,
   hasMore = false,
@@ -139,6 +141,7 @@ export function ConversationList({
               isSelected={selectedConversationId === conversation.conversation_id}
               onSelect={onSelectConversation}
               onArchive={onArchiveConversation}
+              onRename={onRenameConversation}
               onDelete={onDeleteConversation}
             />
           </div>

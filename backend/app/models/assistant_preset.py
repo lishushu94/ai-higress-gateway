@@ -33,6 +33,11 @@ class AssistantPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
     name: Mapped[str] = Column(String(120), nullable=False)
     system_prompt: Mapped[str] = Column(Text, nullable=False, default="")
     default_logical_model: Mapped[str] = Column(String(128), nullable=False)
+    title_logical_model: Mapped[str | None] = Column(
+        String(128),
+        nullable=True,
+        doc="会话标题生成使用的逻辑模型；为空表示跟随 default_logical_model。",
+    )
     model_preset = Column(
         JSONBCompat(),
         nullable=True,
@@ -42,4 +47,3 @@ class AssistantPreset(UUIDPrimaryKeyMixin, TimestampMixin, Base):
 
 
 __all__ = ["AssistantPreset"]
-

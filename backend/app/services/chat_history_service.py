@@ -48,6 +48,7 @@ def create_assistant(
     name: str,
     system_prompt: str,
     default_logical_model: str,
+    title_logical_model: str | None,
     model_preset: dict | None,
 ) -> AssistantPreset:
     if project_id is not None:
@@ -59,6 +60,7 @@ def create_assistant(
         name=name,
         system_prompt=system_prompt or "",
         default_logical_model=default_logical_model,
+        title_logical_model=title_logical_model,
         model_preset=model_preset,
         archived_at=None,
     )
@@ -81,6 +83,8 @@ def update_assistant(
     name: str | None = None,
     system_prompt: str | None = None,
     default_logical_model: str | None = None,
+    title_logical_model: str | None = None,
+    title_logical_model_set: bool = False,
     model_preset: dict | None = None,
     archived: bool | None = None,
 ) -> AssistantPreset:
@@ -99,6 +103,8 @@ def update_assistant(
         assistant.system_prompt = system_prompt
     if default_logical_model is not None:
         assistant.default_logical_model = default_logical_model
+    if title_logical_model_set:
+        assistant.title_logical_model = title_logical_model
     if model_preset is not None:
         assistant.model_preset = model_preset
     if archived is not None:

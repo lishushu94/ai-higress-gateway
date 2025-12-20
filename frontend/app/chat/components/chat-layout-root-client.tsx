@@ -45,6 +45,7 @@ import {
   useConversations,
   useCreateConversation,
   useDeleteConversation,
+  useUpdateConversation,
 } from "@/lib/swr/use-conversations";
 import { useLogicalModels } from "@/lib/swr/use-logical-models";
 
@@ -149,11 +150,28 @@ export function ChatLayoutRootClient({
     return ["auto", ...Array.from(modelSet).filter((m) => m !== "auto").sort()];
   }, [logicalModels, editingAssistant?.default_logical_model]);
 
+  const availableTitleModels = useMemo(() => {
+    const modelSet = new Set<string>();
+    for (const model of logicalModels) {
+      if (!model.enabled) continue;
+      if (!model.capabilities?.includes("chat")) continue;
+      if (model.logical_id === "auto") continue;
+      modelSet.add(model.logical_id);
+    }
+
+    if (editingAssistant?.title_logical_model) {
+      modelSet.add(editingAssistant.title_logical_model);
+    }
+
+    return Array.from(modelSet).sort();
+  }, [logicalModels, editingAssistant?.title_logical_model]);
+
   const createAssistant = useCreateAssistant();
   const updateAssistant = useUpdateAssistant();
   const deleteAssistant = useDeleteAssistant();
   const createConversation = useCreateConversation();
   const deleteConversation = useDeleteConversation();
+  const updateConversation = useUpdateConversation();
 
   useEffect(() => {
     if (!isLoading && !user) {
@@ -269,6 +287,28 @@ export function ChatLayoutRootClient({
     }
   };
 
+  const handleArchiveConversation = async (conversationId: string) => {
+    try {
+      await updateConversation(conversationId, { archived: true });
+      toast.success(t("chat.conversation.archived"));
+      mutateConversations();
+    } catch (error) {
+      console.error("Failed to archive conversation:", error);
+      toast.error(t("chat.errors.invalid_config"));
+    }
+  };
+
+  const handleRenameConversation = async (conversationId: string, title: string) => {
+    try {
+      await updateConversation(conversationId, { title });
+      toast.success(t("chat.conversation.renamed"));
+      mutateConversations();
+    } catch (error) {
+      console.error("Failed to rename conversation:", error);
+      toast.error(t("chat.conversation.rename_failed"));
+    }
+  };
+
   const handleDeleteConversation = async (conversationId: string) => {
     setDeleteConfirmConversation(conversationId);
   };
@@ -362,6 +402,8 @@ export function ChatLayoutRootClient({
                         isLoading={isLoadingConversations}
                         onSelectConversation={handleSelectConversation}
                         onCreateConversation={handleCreateConversation}
+                        onArchiveConversation={handleArchiveConversation}
+                        onRenameConversation={handleRenameConversation}
                         onDeleteConversation={handleDeleteConversation}
                       />
                     )}
@@ -403,6 +445,7 @@ export function ChatLayoutRootClient({
           projectId={selectedProjectId}
           onSubmit={handleSaveAssistant}
           availableModels={availableAssistantModels}
+          availableTitleModels={availableTitleModels}
         />
       )}
 

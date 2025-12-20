@@ -822,6 +822,7 @@ export interface Assistant {
   name: string;
   system_prompt?: string;
   default_logical_model: string; // 可以是 "auto" 或具体模型 ID
+  title_logical_model?: string | null; // 用于会话首问自动命名
   model_preset?: Record<string, any>;
   archived: boolean;
   created_at: string;
@@ -833,6 +834,7 @@ export interface CreateAssistantRequest {
   name: string;
   system_prompt?: string;
   default_logical_model: string;
+  title_logical_model?: string | null;
   model_preset?: Record<string, any>;
 }
 
@@ -840,6 +842,7 @@ export interface UpdateAssistantRequest {
   name?: string;
   system_prompt?: string;
   default_logical_model?: string;
+  title_logical_model?: string | null;
   model_preset?: Record<string, any>;
   archived?: boolean;
 }
