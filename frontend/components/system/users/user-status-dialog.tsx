@@ -12,7 +12,7 @@ import {
     AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useI18n } from "@/lib/i18n-context";
-import { userService } from "@/http/user";
+import { useUpdateUserStatus } from "@/lib/swr/use-users";
 import type { UserInfo } from "@/lib/api-types";
 import { toast } from "sonner";
 
@@ -32,6 +32,7 @@ export function UserStatusDialog({
     onSuccess,
 }: UserStatusDialogProps) {
     const { t } = useI18n();
+    const updateUserStatus = useUpdateUserStatus();
     const [updating, setUpdating] = useState(false);
 
     const handleConfirm = async () => {
@@ -39,7 +40,7 @@ export function UserStatusDialog({
 
         try {
             setUpdating(true);
-            const updated = await userService.updateUserStatus(targetUser.id, {
+            const updated = await updateUserStatus(targetUser.id, {
                 is_active: targetActive,
             });
 

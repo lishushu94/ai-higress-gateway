@@ -32,6 +32,15 @@ const resolveRemember = (remember?: boolean): boolean => {
   const stored = getStoredPersistence();
   if (stored !== null) return stored;
 
+  // 检查 Cookie 中是否有 token（新方案）
+  if (typeof window !== 'undefined') {
+    if (Cookies.get(ACCESS_TOKEN_KEY)) {
+      // 如果 Cookie 有过期时间，说明是 remember
+      return true;
+    }
+  }
+
+  // 兼容旧方案：检查 localStorage/sessionStorage
   if (typeof window !== 'undefined') {
     if (localStorage.getItem(ACCESS_TOKEN_KEY)) return true;
     if (sessionStorage.getItem(ACCESS_TOKEN_KEY)) return false;
@@ -40,39 +49,65 @@ const resolveRemember = (remember?: boolean): boolean => {
   return true;
 };
 
-// 根据记住与否选择存储介质；若未指定则复用已有介质
-const resolveAccessTokenStorage = (remember?: boolean): Storage | null => {
-  if (typeof window === 'undefined') return null;
-
-  const rememberChoice = resolveRemember(remember);
-  if (rememberChoice === true) return localStorage;
-  if (rememberChoice === false) return sessionStorage;
-
-  return localStorage;
-};
-
 export const tokenManager = {
-  // Access Token - 记住时存 localStorage，不记住时存 sessionStorage
+  /**
+   * 设置 Access Token
+   * 新方案：存储到 Cookie 中（非 HttpOnly），支持 SSR 预取
+   * 同时保留 localStorage/sessionStorage 作为 fallback（兼容性）
+   */
   setAccessToken: (token: string, options?: RememberOption) => {
-    const storage = resolveAccessTokenStorage(options?.remember);
-    if (!storage) return;
+    const remember = resolveRemember(options?.remember);
+    
+    // 主方案：存储到 Cookie（非 HttpOnly，支持 SSR）
+    Cookies.set(ACCESS_TOKEN_KEY, token, {
+      expires: remember ? 7 : undefined, // remember: 7天，否则 session
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+      // 注意：不设置 httpOnly，让客户端 JS 可以读取
+    });
 
-    storage.setItem(ACCESS_TOKEN_KEY, token);
+    // Fallback：同时存储到 localStorage/sessionStorage（兼容旧代码）
+    if (typeof window !== 'undefined') {
+      const storage = remember ? localStorage : sessionStorage;
+      storage.setItem(ACCESS_TOKEN_KEY, token);
+      
+      // 清理另一个存储
+      const otherStorage = storage === localStorage ? sessionStorage : localStorage;
+      otherStorage.removeItem(ACCESS_TOKEN_KEY);
+    }
 
-    // 保持单一存储位置，避免残留旧值
-    const otherStorage = storage === localStorage ? sessionStorage : localStorage;
-    otherStorage.removeItem(ACCESS_TOKEN_KEY);
     if (options?.remember !== undefined) {
       setPersistence(options.remember);
     }
   },
 
+  /**
+   * 获取 Access Token
+   * 优先从 Cookie 读取，fallback 到 localStorage/sessionStorage
+   */
   getAccessToken: (): string | null => {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem(ACCESS_TOKEN_KEY) ?? sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    // 优先从 Cookie 读取（支持 SSR）
+    const tokenFromCookie = Cookies.get(ACCESS_TOKEN_KEY);
+    if (tokenFromCookie) return tokenFromCookie;
+
+    // Fallback：从 localStorage/sessionStorage 读取（兼容旧数据）
+    if (typeof window !== 'undefined') {
+      return localStorage.getItem(ACCESS_TOKEN_KEY) ?? sessionStorage.getItem(ACCESS_TOKEN_KEY);
+    }
+
+    return null;
   },
 
+  /**
+   * 清除 Access Token
+   * 同时清除 Cookie 和 localStorage/sessionStorage
+   */
   clearAccessToken: () => {
+    // 清除 Cookie
+    Cookies.remove(ACCESS_TOKEN_KEY, { path: '/' });
+
+    // 清除 localStorage/sessionStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem(ACCESS_TOKEN_KEY);
       sessionStorage.removeItem(ACCESS_TOKEN_KEY);
@@ -81,31 +116,52 @@ export const tokenManager = {
 
   // Refresh Token - 仅存储标记，实际 Token 存 HttpOnly Cookie
   setRefreshToken: (token: string | null | undefined, options?: RememberOption) => {
-    const storage = resolveAccessTokenStorage(options?.remember);
-    if (!storage) return;
-
-    // 存储标记，表示我们拥有 refresh token (在 HttpOnly cookie 中)
-    storage.setItem(REFRESH_TOKEN_KEY, 'true');
-
-    // 保持单一存储位置
-    const otherStorage = storage === localStorage ? sessionStorage : localStorage;
-    otherStorage.removeItem(REFRESH_TOKEN_KEY);
-
     const remember = resolveRemember(options?.remember);
+
+    // 存储标记到 Cookie
+    Cookies.set(REFRESH_TOKEN_KEY, 'true', {
+      expires: remember ? 7 : undefined,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'strict',
+      path: '/',
+    });
+
+    // Fallback：存储到 localStorage/sessionStorage
+    if (typeof window !== 'undefined') {
+      const storage = remember ? localStorage : sessionStorage;
+      storage.setItem(REFRESH_TOKEN_KEY, 'true');
+      
+      const otherStorage = storage === localStorage ? sessionStorage : localStorage;
+      otherStorage.removeItem(REFRESH_TOKEN_KEY);
+    }
+
     setPersistence(remember);
   },
 
   getRefreshToken: (): string | undefined => {
-    if (typeof window === 'undefined') return undefined;
-    const val = localStorage.getItem(REFRESH_TOKEN_KEY) ?? sessionStorage.getItem(REFRESH_TOKEN_KEY);
-    return val ? 'true' : undefined;
+    // 优先从 Cookie 读取
+    const tokenFromCookie = Cookies.get(REFRESH_TOKEN_KEY);
+    if (tokenFromCookie) return 'true';
+
+    // Fallback：从 localStorage/sessionStorage 读取
+    if (typeof window !== 'undefined') {
+      const val = localStorage.getItem(REFRESH_TOKEN_KEY) ?? sessionStorage.getItem(REFRESH_TOKEN_KEY);
+      return val ? 'true' : undefined;
+    }
+
+    return undefined;
   },
 
   clearRefreshToken: () => {
+    // 清除 Cookie
+    Cookies.remove(REFRESH_TOKEN_KEY, { path: '/' });
+
+    // 清除 localStorage/sessionStorage
     if (typeof window !== 'undefined') {
       localStorage.removeItem(REFRESH_TOKEN_KEY);
       sessionStorage.removeItem(REFRESH_TOKEN_KEY);
     }
+    
     clearPersistence();
   },
 

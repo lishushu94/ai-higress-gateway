@@ -4,6 +4,7 @@ import useSWR from "swr";
 import { adminService } from "@/http/admin";
 import type { UserInfo } from "@/lib/api-types";
 import { useAuthStore } from "@/lib/stores/auth-store";
+import { swrKeys } from "./keys";
 
 /**
  * 获取所有用户列表（仅超级管理员可见）。
@@ -13,7 +14,7 @@ export function useAdminUsers() {
   const isSuperUser = user?.is_superuser === true;
 
   const { data, error, isLoading, mutate } = useSWR<UserInfo[]>(
-    isSuperUser ? "/admin/users" : null,
+    isSuperUser ? swrKeys.adminUsers() : null,
     () => adminService.getAllUsers(),
     {
       revalidateOnFocus: false,

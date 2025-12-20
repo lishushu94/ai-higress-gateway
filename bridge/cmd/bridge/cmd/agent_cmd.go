@@ -17,9 +17,11 @@ import (
 	"bridge/internal/config"
 	"bridge/internal/logging"
 	"bridge/internal/mcpbridge"
+	"bridge/internal/mcpserver"
 	"bridge/internal/protocol"
 
 	"github.com/google/uuid"
+	sdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/spf13/cobra"
 	"nhooyr.io/websocket"
 )
@@ -30,6 +32,7 @@ func NewAgentCmd() *cobra.Command {
 		Short: "Bridge agent (runs on user machines)",
 	}
 	agentCmd.AddCommand(newAgentStartCmd())
+	agentCmd.AddCommand(newAgentServeMCPCmd())
 	return agentCmd
 }
 
@@ -41,6 +44,18 @@ func newAgentStartCmd() *cobra.Command {
 			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
 			defer stop()
 			return runAgent(ctx, GetConfigFileFlag())
+		},
+	}
+}
+
+func newAgentServeMCPCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "serve-mcp",
+		Short: "Run as a local stdio MCP server (aggregate configured MCP servers)",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			return runAgentServeMCP(ctx, GetConfigFileFlag())
 		},
 	}
 }
@@ -163,6 +178,26 @@ func runAgent(ctx context.Context, configFile string) error {
 			backoff = maxBackoff
 		}
 	}
+}
+
+func runAgentServeMCP(ctx context.Context, configFile string) error {
+	logger := logging.FromContext(ctx)
+
+	cfg, err := config.Load(config.LoadOptions{ConfigFile: configFile})
+	if err != nil {
+		return err
+	}
+	if err := cfg.ValidateForMCPServe(); err != nil {
+		return err
+	}
+
+	agg := mcpbridge.NewAggregator(logger)
+	if err := agg.Start(ctx, cfg.MCPServers); err != nil {
+		logger.Warn("mcp aggregator start failed", "err", err.Error())
+	}
+
+	srv := mcpserver.NewAggregatorStdioServer(logger, agg)
+	return srv.Run(ctx, &sdk.StdioTransport{})
 }
 
 func connectAndServe(ctx context.Context, cfg *config.Config, rt *agentRuntime) error {

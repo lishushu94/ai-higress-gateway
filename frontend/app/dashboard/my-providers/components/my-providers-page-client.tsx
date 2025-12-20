@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useCallback, useEffect } from "react";
+import { useState, useMemo, useCallback } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
@@ -9,7 +9,7 @@ import { Provider, providerService } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
 import { useErrorDisplay } from "@/lib/errors";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { usePrivateProviderQuota } from "@/lib/swr/use-private-providers";
+import { usePrivateProviders, usePrivateProviderQuota } from "@/lib/swr/use-private-providers";
 import { useUserDashboardProvidersMetrics } from "@/lib/swr/use-dashboard-v2";
 import { DeleteProviderDialog } from "./delete-provider-dialog";
 import { PrivateProvidersCards } from "./private-providers-cards";
@@ -24,7 +24,7 @@ const ProviderModelsDialog = dynamic(() => import("@/components/dashboard/provid
  * 私有 Provider 页面客户端组件
  *
  * - 使用前端 auth store 判断登录态
- * - 登录后在客户端拉取当前用户的私有 Provider 列表
+ * - 使用 SWR hooks 获取私有 Provider 列表和配额信息
  * - 未登录时展示登录提示，并唤起全局登录对话框
  * - 处理所有业务逻辑：搜索、刷新、创建、编辑、删除
  */
@@ -41,9 +41,21 @@ export function MyProvidersPageClient() {
 
   const userId = user?.id ?? null;
 
+  // 使用 SWR hooks 获取数据（会自动使用服务端预取的 fallback）
+  const {
+    providers,
+    loading: isLoadingProviders,
+    refresh,
+  } = usePrivateProviders({ userId });
+
+  // 私有 Provider 配额信息
+  const {
+    limit: quotaLimit,
+    isUnlimited,
+    loading: isQuotaLoading,
+  } = usePrivateProviderQuota(userId);
+
   // 状态管理
-  const [providers, setProviders] = useState<Provider[]>([]);
-  const [isLoadingProviders, setIsLoadingProviders] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -54,26 +66,6 @@ export function MyProvidersPageClient() {
   const [modelsDialogOpen, setModelsDialogOpen] = useState(false);
   const [viewingModelsProviderId, setViewingModelsProviderId] = useState<string | null>(null);
   const [modelsPathByProvider, setModelsPathByProvider] = useState<Record<string, string>>({});
-
-  // 初始加载私有 Provider 列表
-  useEffect(() => {
-    // 未登录时不拉取数据
-    if (!isAuthenticated || !userId) return;
-
-    setIsLoadingProviders(true);
-
-    providerService
-      .getUserPrivateProviders(userId)
-      .then((data) => {
-        setProviders(data);
-      })
-      .catch((error) => {
-        console.error("Failed to load private providers on client:", error);
-      })
-      .finally(() => {
-        setIsLoadingProviders(false);
-      });
-  }, [isAuthenticated, userId]);
 
   const providerIdsParam = useMemo(() => {
     const ids = providers
@@ -100,27 +92,17 @@ export function MyProvidersPageClient() {
     return map;
   }, [providerMetricItems]);
 
-  // 私有 Provider 配额信息
-  const {
-    limit: quotaLimit,
-    isUnlimited,
-    loading: isQuotaLoading,
-  } = usePrivateProviderQuota(userId);
-
   // 刷新提供商列表
-  const refresh = useCallback(async () => {
-    if (!userId) return;
-
+  const handleRefresh = useCallback(async () => {
     setIsRefreshing(true);
     try {
-      const data = await providerService.getUserPrivateProviders(userId);
-      setProviders(data);
+      await refresh();
     } catch (error) {
       showError(error, { context: t("providers.error_loading") });
     } finally {
       setIsRefreshing(false);
     }
-  }, [userId, t, showError]);
+  }, [refresh, t, showError]);
 
   // 本地搜索过滤
   const filteredProviders = useMemo(() => {
@@ -253,7 +235,7 @@ export function MyProvidersPageClient() {
         searchQuery={searchQuery}
         onSearchQueryChange={setSearchQuery}
         isRefreshing={isRefreshing}
-        onRefresh={refresh}
+        onRefresh={handleRefresh}
         onCreate={handleCreate}
       />
 

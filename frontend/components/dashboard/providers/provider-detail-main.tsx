@@ -20,7 +20,7 @@ import type {
 } from "@/http/provider";
 import { providerService } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
-import { useApiGet } from "@/lib/swr";
+import { useMyProviderSubmissions } from "@/lib/swr";
 import { providerSubmissionService } from "@/http/provider-submission";
 import type { ProviderSubmission, SubmissionStatus } from "@/http/provider-submission";
 import { toast } from "sonner";
@@ -260,15 +260,10 @@ export function ProviderDetailMain({ providerId, currentUserId, translations }: 
   const shouldLoadSubmissionStatus = !!provider?.provider_id && !!effectiveUserId;
 
   const {
-    data: mySubmissions,
+    submissions: mySubmissions,
     loading: submissionStatusLoading,
     refresh: refreshSubmissionStatus,
-  } = useApiGet<ProviderSubmission[]>(
-    shouldLoadSubmissionStatus ? "/providers/submissions/me" : null,
-    {
-      strategy: "default",
-    },
-  );
+  } = useMyProviderSubmissions(shouldLoadSubmissionStatus);
 
   const latestSubmissionFromApi = useMemo(() => {
     if (!shouldLoadSubmissionStatus || !provider?.provider_id || !mySubmissions?.length) {

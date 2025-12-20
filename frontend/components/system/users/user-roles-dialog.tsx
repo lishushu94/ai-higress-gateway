@@ -4,9 +4,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n } from "@/lib/i18n-context";
-import { adminService, Role } from "@/http/admin";
+import type { Role } from "@/http/admin";
 import type { UserInfo } from "@/lib/api-types";
 import { toast } from "sonner";
+import { useSetUserRoles } from "@/lib/swr/use-user-roles";
 
 interface UserRolesDialogProps {
     open: boolean;
@@ -28,6 +29,7 @@ export function UserRolesDialog({
     onSuccess,
 }: UserRolesDialogProps) {
     const { t } = useI18n();
+    const setUserRoles = useSetUserRoles();
 
     const toggleRole = (roleId: string) => {
         onSelectedRoleIdsChange(
@@ -40,7 +42,7 @@ export function UserRolesDialog({
     const handleSave = async () => {
         if (!currentUser) return;
         try {
-            await adminService.setUserRoles(currentUser.id, selectedRoleIds);
+            await setUserRoles(currentUser.id, selectedRoleIds);
             toast.success("User roles updated successfully");
             onOpenChange(false);
             onSuccess();

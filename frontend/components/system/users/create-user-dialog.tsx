@@ -5,8 +5,8 @@ import dynamic from "next/dynamic";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useI18n } from "@/lib/i18n-context";
-import { userService } from "@/http/user";
 import { toast } from "sonner";
+import { useCreateUser } from "@/lib/swr/use-users";
 
 // 动态加载 Dialog 组件
 const Dialog = dynamic(() => import("@/components/ui/dialog").then(mod => ({ default: mod.Dialog })), { ssr: false });
@@ -24,6 +24,7 @@ interface CreateUserDialogProps {
 
 export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDialogProps) {
     const { t } = useI18n();
+    const createUser = useCreateUser();
     const [formData, setFormData] = useState({
         email: "",
         password: "",
@@ -32,7 +33,7 @@ export function CreateUserDialog({ open, onOpenChange, onSuccess }: CreateUserDi
 
     const handleCreate = async () => {
         try {
-            await userService.createUser(formData);
+            await createUser(formData);
             toast.success("User created successfully");
             onOpenChange(false);
             onSuccess();

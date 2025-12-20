@@ -3,6 +3,11 @@ import { cookies } from 'next/headers';
 /**
  * 服务端数据获取工具
  * 用于在 Next.js 服务端组件中预取数据，避免客户端初始加载闪烁
+ * 
+ * Token 存储方案：
+ * - access_token 存储在 Cookie 中（非 HttpOnly）
+ * - 服务端可以通过 cookies() 读取
+ * - 客户端可以通过 js-cookie 读取
  */
 export async function serverFetch<T>(
   endpoint: string,
@@ -10,7 +15,7 @@ export async function serverFetch<T>(
 ): Promise<T | null> {
   try {
     const cookieStore = await cookies();
-    const token = cookieStore.get('token')?.value;
+    const token = cookieStore.get('access_token')?.value;
     
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
     const url = `${apiUrl}${endpoint}`;
@@ -26,7 +31,11 @@ export async function serverFetch<T>(
     });
     
     if (!res.ok) {
-      console.error(`[serverFetch] Failed: ${endpoint}`, res.status);
+      if (res.status === 401) {
+        console.log(`[serverFetch] 401 Unauthorized: ${endpoint} (token may be expired)`);
+      } else {
+        console.error(`[serverFetch] Failed: ${endpoint}`, res.status);
+      }
       return null;
     }
     

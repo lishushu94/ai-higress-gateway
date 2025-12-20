@@ -117,7 +117,12 @@ def test_linuxdo_callback_creates_user_and_returns_tokens(app_with_inmemory_db, 
     assert callback_resp.status_code == 200, callback_resp.text
     data = callback_resp.json()
     assert data["access_token"]
-    assert data["refresh_token"]
+    
+    # Refresh token should be in cookie, not body
+    from app.api.auth_routes import REFRESH_TOKEN_COOKIE_NAME
+    assert data.get("refresh_token") is None
+    assert REFRESH_TOKEN_COOKIE_NAME in callback_resp.cookies
+    
     assert data["user"]["username"]
 
     with SessionLocal() as session:

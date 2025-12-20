@@ -2,13 +2,14 @@
 
 import useSWR from "swr";
 import { adminService, type Permission, type RolePermissionsResponse } from "@/http/admin";
+import { swrKeys } from "./keys";
 
 /**
  * 获取系统中定义的全部权限列表
  */
 export function usePermissions() {
   const { data, error, isLoading, mutate } = useSWR<Permission[]>(
-    "/admin/permissions",
+    swrKeys.adminPermissions(),
     () => adminService.getPermissions(),
     {
       revalidateOnFocus: false,
@@ -44,4 +45,3 @@ export function useRolePermissions(roleId: string | null) {
     refresh: mutate,
   };
 }
-

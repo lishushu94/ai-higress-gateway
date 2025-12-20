@@ -1,7 +1,6 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import useSWR from "swr";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -24,10 +23,10 @@ import { Search, AlertCircle } from "lucide-react";
 import { toast } from "sonner";
 import { useI18n } from "@/lib/i18n-context";
 import {
-  providerSubmissionService,
   ProviderSubmission,
   SubmissionStatus,
 } from "@/http/provider-submission";
+import { useCancelProviderSubmission, useMyProviderSubmissions } from "@/lib/swr";
 import { SubmissionsTable } from "./submissions-table";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { useErrorDisplay } from "@/lib/errors";
@@ -35,6 +34,7 @@ import { useErrorDisplay } from "@/lib/errors";
 export function MySubmissionsClient() {
   const { t } = useI18n();
   const { showError } = useErrorDisplay();
+  const cancelSubmission = useCancelProviderSubmission();
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancellingId, setCancellingId] = useState<string | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -42,16 +42,7 @@ export function MySubmissionsClient() {
   const [statusFilter, setStatusFilter] = useState<SubmissionStatus | "all">("all");
   const [viewingSubmission, setViewingSubmission] = useState<ProviderSubmission | null>(null);
 
-  // 使用 SWR 获取数据
-  const {
-    data: submissions = [],
-    error,
-    isLoading,
-    mutate,
-  } = useSWR<ProviderSubmission[]>(
-    "/providers/submissions/me",
-    () => providerSubmissionService.getMySubmissions()
-  );
+  const { submissions, error, loading: isLoading, refresh } = useMyProviderSubmissions();
 
   // 筛选和搜索
   const filteredSubmissions = useMemo(() => {
@@ -98,9 +89,8 @@ export function MySubmissionsClient() {
 
     setIsCancelling(true);
     try {
-      await providerSubmissionService.cancelSubmission(cancellingId);
+      await cancelSubmission(cancellingId);
       toast.success(t("submissions.toast_cancel_success"));
-      mutate();
       setCancelDialogOpen(false);
       setCancellingId(null);
     } catch (error) {
@@ -126,7 +116,7 @@ export function MySubmissionsClient() {
             {t("submissions.error_loading")}: {error.message}
           </AlertDescription>
         </Alert>
-        <Button onClick={() => mutate()}>{t("submissions.retry")}</Button>
+        <Button onClick={() => refresh()}>{t("submissions.retry")}</Button>
       </div>
     );
   }

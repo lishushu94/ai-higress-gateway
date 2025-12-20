@@ -5,10 +5,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useI18n } from "@/lib/i18n-context";
-import { adminService, Permission } from "@/http/admin";
+import type { Permission } from "@/http/admin";
 import type { UserInfo } from "@/lib/api-types";
 import type { UserPermission } from "@/lib/api-types";
 import { toast } from "sonner";
+import { useGrantUserPermission, useRevokeUserPermission } from "@/lib/swr/use-user-permissions";
 
 interface UserPermissionsDialogProps {
     open: boolean;
@@ -32,6 +33,8 @@ export function UserPermissionsDialog({
     onSuccess,
 }: UserPermissionsDialogProps) {
     const { t } = useI18n();
+    const grantUserPermission = useGrantUserPermission();
+    const revokeUserPermission = useRevokeUserPermission();
     const [saving, setSaving] = useState(false);
 
     const togglePermission = (code: string) => {
@@ -54,10 +57,10 @@ export function UserPermissionsDialog({
 
             await Promise.all([
                 ...toAdd.map((code) =>
-                    adminService.grantUserPermission(currentUser.id, { permission_type: code })
+                    grantUserPermission(currentUser.id, { permission_type: code })
                 ),
                 ...toRemove.map((perm) =>
-                    adminService.revokeUserPermission(currentUser.id, perm.id)
+                    revokeUserPermission(currentUser.id, perm.id)
                 ),
             ]);
 

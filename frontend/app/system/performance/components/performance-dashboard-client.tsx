@@ -102,6 +102,14 @@ export function PerformanceDashboardClient() {
 
   return (
     <div className="space-y-6">
+      {/* 页面标题 */}
+      <div>
+        <h1 className="text-3xl font-bold mb-2">{t('performance.title')}</h1>
+        <p className="text-muted-foreground">
+          {t('performance.subtitle')}
+        </p>
+      </div>
+
       {/* 操作按钮 */}
       <div className="flex gap-2">
         <Button onClick={loadMetrics} variant="outline" size="sm">

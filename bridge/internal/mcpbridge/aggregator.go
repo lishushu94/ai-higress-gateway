@@ -22,6 +22,8 @@ import (
 
 var validNameRe = regexp.MustCompile(`[^a-zA-Z0-9_]+`)
 
+var ErrToolNotFound = errors.New("tool not found")
+
 type ProgressEvent struct {
 	ReqID      string
 	ServerName string
@@ -205,7 +207,7 @@ func (a *Aggregator) CallTool(ctx context.Context, reqID string, namespacedTool 
 	a.mu.RUnlock()
 
 	if !ok || ref.serverName == "" || ref.toolName == "" || s == nil || s.session == nil {
-		return nil, fmt.Errorf("tool not found: %s", namespacedTool)
+		return nil, fmt.Errorf("%w: %s", ErrToolNotFound, namespacedTool)
 	}
 
 	params := &sdk.CallToolParams{

@@ -127,6 +127,32 @@ func (c *Config) Validate() error {
 	return nil
 }
 
+// ValidateForMCPServe validates the subset of config required to run the agent
+// as a local stdio MCP server (without connecting to the cloud tunnel).
+func (c *Config) ValidateForMCPServe() error {
+	if c == nil {
+		return errors.New("config is nil")
+	}
+	if c.Agent.ChunkBufferBytes <= 0 {
+		return errors.New("agent.chunk_buffer_bytes must be > 0")
+	}
+	if c.Agent.ChunkMaxFrameBytes <= 0 {
+		return errors.New("agent.chunk_max_frame_bytes must be > 0")
+	}
+	if c.Agent.ChunkMaxFrameBytes < 1024 || c.Agent.ChunkMaxFrameBytes > 256*1024 {
+		return errors.New("agent.chunk_max_frame_bytes must be between 1024 and 262144")
+	}
+	for i, s := range c.MCPServers {
+		if s.Name == "" {
+			return fmt.Errorf("mcp_servers[%d].name is required", i)
+		}
+		if s.Command == "" && s.URL == "" {
+			return fmt.Errorf("mcp_servers[%d] must set command or url", i)
+		}
+	}
+	return nil
+}
+
 func ApplyFile(srcPath string, dstPath string) error {
 	srcFile, err := os.Open(srcPath)
 	if err != nil {

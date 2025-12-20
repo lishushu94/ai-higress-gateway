@@ -1,20 +1,14 @@
-'use client';
-
-import { useI18n } from '@/lib/i18n-context';
 import { PerformanceDashboardClient } from './components/performance-dashboard-client';
 
+/**
+ * 系统性能监控页面 - 服务端组件
+ * 
+ * 注意：此页面展示的是客户端性能指标（Web Vitals），
+ * 数据存储在浏览器 localStorage 中，不需要服务端预取。
+ */
 export default function PerformancePage() {
-  const { t } = useI18n();
-  
   return (
     <div className="space-y-8 max-w-7xl">
-      <div>
-        <h1 className="text-3xl font-bold mb-2">{t('performance.title')}</h1>
-        <p className="text-muted-foreground">
-          {t('performance.subtitle')}
-        </p>
-      </div>
-      
       <PerformanceDashboardClient />
     </div>
   );

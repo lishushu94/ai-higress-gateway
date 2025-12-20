@@ -2,8 +2,7 @@
 
 import { useState, FormEvent } from 'react';
 import { useI18n } from '@/lib/i18n-context';
-import { useRoutingDecision } from '@/lib/swr';
-import { useApiGet } from '@/lib/swr';
+import { useRoutingDecision, useLogicalModels } from '@/lib/swr';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -19,7 +18,7 @@ export function RoutingDecision() {
   const { makeDecision, decision, loading, error } = useRoutingDecision();
   
   // 获取逻辑模型列表
-  const { data: modelsData, loading: modelsLoading } = useApiGet<{ models: Array<{ logical_id: string; name: string }> }>('/logical-models');
+  const { models, loading: modelsLoading } = useLogicalModels();
   
   // 表单状态
   const [formData, setFormData] = useState<RoutingDecisionRequest>({
@@ -93,9 +92,9 @@ export function RoutingDecision() {
                     <SelectValue placeholder={t('routing.decision.logical_model_placeholder')} />
                   </SelectTrigger>
                   <SelectContent>
-                    {modelsData?.models?.map((model) => (
+                    {models?.map((model) => (
                       <SelectItem key={model.logical_id} value={model.logical_id}>
-                        {model.name || model.logical_id}
+                        {model.display_name || model.logical_id}
                       </SelectItem>
                     ))}
                   </SelectContent>
