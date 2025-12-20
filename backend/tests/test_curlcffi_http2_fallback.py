@@ -1,6 +1,6 @@
 import httpx
 import pytest
-from curl_cffi.const import CurlECode
+from curl_cffi.const import CurlECode, CurlHttpVersion
 from curl_cffi.curl import CurlError
 
 from app.http_client import CurlCffiClient
@@ -33,7 +33,7 @@ async def test_curlcffi_client_retries_http2_stream_error_with_http1(monkeypatch
     assert resp.status_code == 200
     assert len(calls) == 2
     assert calls[0]["kwargs"].get("http_version") is None
-    assert calls[1]["kwargs"]["http_version"] == "1.1"
+    assert calls[1]["kwargs"]["http_version"] == int(CurlHttpVersion.V1_1)
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,33 @@ async def test_curlcffi_stream_retries_http2_stream_error_with_http1(monkeypatch
 
     assert len(stream_calls) == 2
     assert stream_calls[0]["kwargs"].get("http_version") is None
-    assert stream_calls[1]["kwargs"]["http_version"] == "1.1"
+    assert stream_calls[1]["kwargs"]["http_version"] == int(CurlHttpVersion.V1_1)
+
+
+@pytest.mark.asyncio
+async def test_curlcffi_client_normalizes_string_http_version_before_call(monkeypatch):
+    calls: list[dict] = []
+
+    class FakeResponse:
+        status_code = 200
+        headers = {}
+
+    class FakeSession:
+        async def close(self):
+            return None
+
+        async def post(self, url, **kwargs):
+            calls.append({"url": url, "kwargs": kwargs})
+            return FakeResponse()
+
+    monkeypatch.setattr("app.http_client.AsyncSession", lambda: FakeSession(), raising=True)
+
+    async with CurlCffiClient() as client:
+        resp = await client.post("https://example.invalid", json={"x": 1}, http_version="1.1")
+
+    assert resp.status_code == 200
+    assert len(calls) == 1
+    assert calls[0]["kwargs"]["http_version"] == int(CurlHttpVersion.V1_1)
 
 
 @pytest.mark.asyncio

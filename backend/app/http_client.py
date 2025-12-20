@@ -8,11 +8,79 @@ HTTP 客户端抽象层，使用 curl-cffi 支持 TLS 指纹伪装。
 from typing import AsyncIterator, Any, Optional
 from curl_cffi.requests import AsyncSession, Response
 from curl_cffi.curl import CurlError
-from curl_cffi.const import CurlECode
+from curl_cffi.const import CurlECode, CurlHttpVersion
 import httpx
 import logging
 
 logger = logging.getLogger(__name__)
+
+_HTTP_VERSION_ALIASES: dict[str, CurlHttpVersion] = {
+    "1": CurlHttpVersion.V1_0,
+    "1.0": CurlHttpVersion.V1_0,
+    "http/1": CurlHttpVersion.V1_0,
+    "http/1.0": CurlHttpVersion.V1_0,
+    "v1_0": CurlHttpVersion.V1_0,
+    "v1.0": CurlHttpVersion.V1_0,
+    "1.1": CurlHttpVersion.V1_1,
+    "http/1.1": CurlHttpVersion.V1_1,
+    "v1_1": CurlHttpVersion.V1_1,
+    "v1.1": CurlHttpVersion.V1_1,
+    "2": CurlHttpVersion.V2_0,
+    "2.0": CurlHttpVersion.V2_0,
+    "http/2": CurlHttpVersion.V2_0,
+    "http/2.0": CurlHttpVersion.V2_0,
+    "h2": CurlHttpVersion.V2_0,
+    "v2_0": CurlHttpVersion.V2_0,
+    "v2.0": CurlHttpVersion.V2_0,
+    "2tls": CurlHttpVersion.V2TLS,
+    "v2tls": CurlHttpVersion.V2TLS,
+    "2_prior_knowledge": CurlHttpVersion.V2_PRIOR_KNOWLEDGE,
+    "2-prior-knowledge": CurlHttpVersion.V2_PRIOR_KNOWLEDGE,
+    "v2_prior_knowledge": CurlHttpVersion.V2_PRIOR_KNOWLEDGE,
+    "3": CurlHttpVersion.V3,
+    "3.0": CurlHttpVersion.V3,
+    "http/3": CurlHttpVersion.V3,
+    "http/3.0": CurlHttpVersion.V3,
+    "h3": CurlHttpVersion.V3,
+    "v3": CurlHttpVersion.V3,
+    "3only": CurlHttpVersion.V3ONLY,
+    "v3only": CurlHttpVersion.V3ONLY,
+}
+
+
+def _normalize_http_version(value: Any) -> Any:
+    """
+    curl-cffi 的 `http_version` 最终会传给 libcurl 的 `CURLOPT_HTTP_VERSION`，
+    需要是 int（或可被当作 int 使用的 IntEnum），不能是字符串。
+    """
+    if value is None:
+        return None
+    if isinstance(value, CurlHttpVersion):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str):
+        key = value.strip().lower()
+        if key in _HTTP_VERSION_ALIASES:
+            return int(_HTTP_VERSION_ALIASES[key])
+        raise TypeError(
+            f"Unsupported http_version string: {value!r}. "
+            "Use CurlHttpVersion (recommended) or an int value."
+        )
+    raise TypeError(
+        f"Unsupported http_version type: {type(value)!r}. "
+        "Use CurlHttpVersion (recommended) or an int value."
+    )
+
+
+def _normalize_http_version_in_kwargs(request_kwargs: dict[str, Any]) -> dict[str, Any]:
+    if "http_version" not in request_kwargs:
+        return request_kwargs
+    if request_kwargs.get("http_version") is None:
+        return request_kwargs
+    normalized = dict(request_kwargs)
+    normalized["http_version"] = _normalize_http_version(normalized["http_version"])
+    return normalized
 
 
 class StreamResponse:
@@ -184,7 +252,8 @@ class CurlCffiClient:
         session = self._ensure_session()
         try:
             requester = getattr(session, method.lower())
-            return await requester(url, **request_kwargs)
+            normalized_kwargs = _normalize_http_version_in_kwargs(request_kwargs)
+            return await requester(url, **normalized_kwargs)
         except CurlError as exc:
             code = getattr(exc, "code", None)
             if (
@@ -200,7 +269,8 @@ class CurlCffiClient:
                 retry_kwargs["http_version"] = "1.1"
                 try:
                     requester = getattr(session, method.lower())
-                    return await requester(url, **retry_kwargs)
+                    normalized_retry_kwargs = _normalize_http_version_in_kwargs(retry_kwargs)
+                    return await requester(url, **normalized_retry_kwargs)
                 except CurlError as retry_exc:
                     raise httpx.HTTPError(str(retry_exc)) from retry_exc
             raise httpx.HTTPError(str(exc)) from exc
@@ -412,10 +482,11 @@ class StreamContextManager:
             StreamResponse: 包装后的流式响应对象
         """
         try:
+            normalized_kwargs = _normalize_http_version_in_kwargs(self._request_kwargs)
             self._stream_context = self._session.stream(
                 self._method,
                 self._url,
-                **self._request_kwargs,
+                **normalized_kwargs,
             )
             response = await self._stream_context.__aenter__()
         except CurlError as exc:
@@ -431,10 +502,11 @@ class StreamContextManager:
                 retry_kwargs = dict(self._request_kwargs)
                 retry_kwargs["http_version"] = "1.1"
                 try:
+                    normalized_retry_kwargs = _normalize_http_version_in_kwargs(retry_kwargs)
                     self._stream_context = self._session.stream(
                         self._method,
                         self._url,
-                        **retry_kwargs,
+                        **normalized_retry_kwargs,
                     )
                     response = await self._stream_context.__aenter__()
                 except CurlError as retry_exc:
