@@ -28,7 +28,7 @@ export function HeroSection() {
               <ArrowRight className="w-4 h-4" />
             </Button>
           </Link>
-          <Link href="/login">
+          <Link href="/chat">
             <Button variant="outline" size="lg">
               {t("home.btn_get_started")}
             </Button>
