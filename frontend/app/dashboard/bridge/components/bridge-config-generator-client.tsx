@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
+import { Loader2 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,6 +10,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 
 import { useI18n } from "@/lib/i18n-context";
+import { useBridgeAgentToken } from "@/lib/swr/use-bridge";
 
 type MCPServerForm = {
   id: string;
@@ -128,6 +130,7 @@ function buildConfigYaml(input: {
 
 export function BridgeConfigGeneratorClient() {
   const { t } = useI18n();
+  const agentToken = useBridgeAgentToken();
 
   const [serverUrl, setServerUrl] = useState(() => defaultTunnelUrl());
   const [token, setToken] = useState("");
@@ -205,6 +208,17 @@ export function BridgeConfigGeneratorClient() {
     URL.revokeObjectURL(url);
   };
 
+  const generateToken = async () => {
+    try {
+      const resp = await agentToken.trigger({ agent_id: agentId.trim() || undefined });
+      if (resp?.agent_id) setAgentId(resp.agent_id);
+      if (resp?.token) setToken(resp.token);
+      toast.success(t("bridge.config.token_generated"));
+    } catch (err: any) {
+      toast.error(err?.message || t("bridge.error.generate_token_failed"));
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -219,11 +233,28 @@ export function BridgeConfigGeneratorClient() {
           </div>
           <div className="grid gap-2">
             <div className="text-sm font-medium">{t("bridge.config.token")}</div>
-            <Input
-              value={token}
-              onChange={(e) => setToken(e.target.value)}
-              placeholder={t("bridge.config.token_placeholder")}
-            />
+            <div className="flex gap-2">
+              <Input
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder={t("bridge.config.token_placeholder")}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                onClick={generateToken}
+                disabled={agentToken.submitting}
+              >
+                {agentToken.submitting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span className="ml-2">{t("bridge.config.token_generating")}</span>
+                  </>
+                ) : (
+                  t("bridge.config.token_generate")
+                )}
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
             <div className="grid gap-2">

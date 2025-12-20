@@ -745,6 +745,15 @@ class Settings(BaseSettings):
         ge=60,
     )
 
+    # Chat context window (assistant conversation mode)
+    chat_context_max_messages: int = Field(
+        50,
+        alias="CHAT_CONTEXT_MAX_MESSAGES",
+        description="会话模式下构建上游 messages 时最多携带的历史消息条数（不含 system；不含本次新 user 消息）。0 表示不限制。",
+        ge=0,
+        le=1000,
+    )
+
     # User avatar storage configuration
     avatar_local_dir: str = Field(
         default=str(_project_root / "backend" / "media" / "avatars"),

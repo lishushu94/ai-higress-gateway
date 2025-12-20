@@ -19,6 +19,7 @@ from app.api.v1.chat.request_handler import RequestHandler
 from app.auth import AuthenticatedAPIKey
 from app.logging_config import logger
 from app.models import AssistantPreset, Conversation, Message, Run
+from app.settings import settings
 from app.upstream import detect_request_format
 from app.services.credit_service import compute_chat_completion_cost_credits
 
@@ -66,12 +67,24 @@ def _build_openai_messages(
     - 取历史 messages（按 sequence 升序）
     - 最后追加本次 user message（若还未入库也可直接拼接）
     """
-    stmt = (
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.sequence.asc())
-    )
-    history = list(db.execute(stmt).scalars().all())
+    max_history_messages = int(getattr(settings, "chat_context_max_messages", 0) or 0)
+    if max_history_messages > 0:
+        # 只取最近 N 条历史消息（额外 +1 是为了包含并跳过本次 new_user_message 后仍能保留 N 条历史）
+        stmt = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.sequence.desc())
+            .limit(max_history_messages + 1)
+        )
+        history_desc = list(db.execute(stmt).scalars().all())
+        history = list(reversed(history_desc))
+    else:
+        stmt = (
+            select(Message)
+            .where(Message.conversation_id == conversation_id)
+            .order_by(Message.sequence.asc())
+        )
+        history = list(db.execute(stmt).scalars().all())
 
     messages: list[dict[str, Any]] = []
     system_prompt = (assistant.system_prompt or "").strip()

@@ -4,6 +4,7 @@
 .pytest_cache/
 .ruff_cache/
 .venv/
+security/
 __pycache__/
 backend/__pycache__
 backend/*.py[oc]
@@ -100,6 +101,8 @@ dist/
 specs/
 .specs/
 plans/
+
+.kiro/
 # ============================================
 # Old directories (can be removed after migration)
 # ============================================

@@ -45,6 +45,31 @@ Response:
 
 ## Invoke / Cancel
 
+## Agent Token（配置辅助）
+
+### POST `/v1/bridge/agent-token`
+
+为当前登录用户签发 Bridge Agent 连接 Tunnel Gateway 用的 token（JWT HS256）。
+
+说明：
+- 该 token **不包含用户 MCP 密钥**（MCP 密钥仍只存在用户本地 `config.yaml` / env）。
+- 若 Tunnel Gateway 启用了 `--agent-token-secret`，则 Agent 连接时必须发送该 token（AUTH），否则会被拒绝。
+- token 默认不落库（MVP）；后续如需吊销/轮换，可引入 revocation 机制。
+
+Request:
+```json
+{ "agent_id": "my-agent" }
+```
+
+Response:
+```json
+{
+  "agent_id": "my-agent",
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9....",
+  "expires_at": "2026-01-01T00:00:00+00:00"
+}
+```
+
 ### POST `/v1/bridge/invoke`
 
 下发一次工具调用（会返回 `req_id` 用于关联事件流）。
@@ -110,4 +135,3 @@ Response:
 ```json
 { "req_id": "req_xxx", "agent_id": "aws-dev-server", "ok": true, "exit_code": 0, "canceled": false, "result_json": {}, "error": null }
 ```
-

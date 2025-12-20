@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"bridge/internal/logging"
 	"bridge/internal/protocol"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
@@ -35,6 +37,7 @@ func newGatewayServeCmd() *cobra.Command {
 	var listen string
 	var tunnelPath string
 	var internalToken string
+	var agentTokenSecret string
 	var gatewayID string
 	var redisURL string
 	var redisKeyPrefix string
@@ -53,6 +56,7 @@ func newGatewayServeCmd() *cobra.Command {
 				ListenAddr:           listen,
 				TunnelPath:           tunnelPath,
 				InternalToken:        internalToken,
+				AgentTokenSecret:     agentTokenSecret,
 				GatewayID:            gatewayID,
 				RedisURL:             redisURL,
 				RedisKeyPrefix:       redisKeyPrefix,
@@ -66,6 +70,7 @@ func newGatewayServeCmd() *cobra.Command {
 	c.Flags().StringVar(&listen, "listen", ":8088", "listen address")
 	c.Flags().StringVar(&tunnelPath, "tunnel-path", "/bridge/tunnel", "websocket tunnel path")
 	c.Flags().StringVar(&internalToken, "internal-token", "", "shared token for internal HTTP APIs (optional)")
+	c.Flags().StringVar(&agentTokenSecret, "agent-token-secret", "", "shared secret to verify agent AUTH token (optional; if set, token is required)")
 	c.Flags().StringVar(&gatewayID, "gateway-id", "", "gateway instance id (default: auto)")
 	c.Flags().StringVar(&redisURL, "redis-url", "", "redis connection URL for HA routing (optional)")
 	c.Flags().StringVar(&redisKeyPrefix, "redis-key-prefix", "agent_online:", "redis key prefix for registry")
@@ -76,13 +81,14 @@ func newGatewayServeCmd() *cobra.Command {
 }
 
 type gatewayOptions struct {
-	ListenAddr     string
-	TunnelPath     string
-	InternalToken  string
-	GatewayID      string
-	RedisURL       string
-	RedisKeyPrefix string
-	RedisTTL       time.Duration
+	ListenAddr       string
+	TunnelPath       string
+	InternalToken    string
+	AgentTokenSecret string
+	GatewayID        string
+	RedisURL         string
+	RedisKeyPrefix   string
+	RedisTTL         time.Duration
 
 	RedisResultKeyPrefix string
 	RedisResultTTL       time.Duration
@@ -103,6 +109,7 @@ type gatewayServer struct {
 type agentConn struct {
 	agentID       string
 	connSessionID string
+	userID        string
 	connectedAt   time.Time
 	lastSeenAt    time.Time
 	conn          *websocket.Conn
@@ -197,6 +204,7 @@ func (s *gatewayServer) handleTunnelWS(w http.ResponseWriter, r *http.Request) {
 	logger.Info("agent connected", "remote", r.RemoteAddr, "conn_session_id", tmpSessionID)
 
 	var registered *agentConn
+	var pendingHello *agentConn
 	for {
 		_, data, err := conn.Read(ctx)
 		if err != nil {
@@ -218,18 +226,54 @@ func (s *gatewayServer) handleTunnelWS(w http.ResponseWriter, r *http.Request) {
 				logger.Warn("hello missing agent_id")
 				continue
 			}
-			registered = &agentConn{
+			pendingHello = &agentConn{
 				agentID:       env.AgentID,
 				connSessionID: firstNonEmpty(env.ConnSessionID, tmpSessionID),
 				connectedAt:   time.Now(),
 				lastSeenAt:    time.Now(),
 				conn:          conn,
 			}
+			if strings.TrimSpace(s.opts.AgentTokenSecret) == "" {
+				registered = pendingHello
+				pendingHello = nil
+				s.mu.Lock()
+				s.agents[env.AgentID] = registered
+				s.mu.Unlock()
+				s.upsertRegistry(ctx, env.AgentID, registered.connSessionID)
+				logger.Info("agent registered", "agent_id", env.AgentID, "conn_session_id", registered.connSessionID)
+			} else {
+				logger.Info("agent hello received (awaiting auth)", "agent_id", env.AgentID)
+			}
+		case protocol.TypeAuth:
+			if strings.TrimSpace(s.opts.AgentTokenSecret) == "" {
+				continue
+			}
+			if pendingHello == nil {
+				_ = conn.Close(websocket.StatusPolicyViolation, "missing hello")
+				return
+			}
+			if registered != nil {
+				continue
+			}
+			var payload protocol.AuthPayload
+			if err := json.Unmarshal(env.Payload, &payload); err != nil {
+				_ = conn.Close(websocket.StatusPolicyViolation, "invalid auth payload")
+				return
+			}
+			userID, err := verifyAgentToken(s.opts.AgentTokenSecret, payload.Token, pendingHello.agentID)
+			if err != nil {
+				logger.Warn("agent auth failed", "agent_id", pendingHello.agentID, "err", err.Error())
+				_ = conn.Close(websocket.StatusPolicyViolation, "invalid token")
+				return
+			}
+			pendingHello.userID = userID
+			registered = pendingHello
+			pendingHello = nil
 			s.mu.Lock()
-			s.agents[env.AgentID] = registered
+			s.agents[registered.agentID] = registered
 			s.mu.Unlock()
-			s.upsertRegistry(ctx, env.AgentID, registered.connSessionID)
-			logger.Info("agent registered", "agent_id", env.AgentID, "conn_session_id", registered.connSessionID)
+			s.upsertRegistry(ctx, registered.agentID, registered.connSessionID)
+			logger.Info("agent authenticated", "agent_id", registered.agentID, "user_id", registered.userID)
 		case protocol.TypePing:
 			_ = s.sendToConn(ctx, conn, protocol.Envelope{
 				V:       1,
@@ -297,6 +341,52 @@ func (s *gatewayServer) handleTunnelWS(w http.ResponseWriter, r *http.Request) {
 			Ts:      time.Now().Unix(),
 		})
 	}
+}
+
+type bridgeAgentClaims struct {
+	Type    string `json:"type"`
+	AgentID string `json:"agent_id"`
+	jwt.RegisteredClaims
+}
+
+func verifyAgentToken(secret string, tokenString string, agentID string) (string, error) {
+	secret = strings.TrimSpace(secret)
+	tokenString = strings.TrimSpace(tokenString)
+	if secret == "" {
+		return "", errors.New("missing secret")
+	}
+	if tokenString == "" {
+		return "", errors.New("missing token")
+	}
+	if strings.TrimSpace(agentID) == "" {
+		return "", errors.New("missing agent_id")
+	}
+
+	claims := &bridgeAgentClaims{}
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	parsed, err := parser.ParseWithClaims(tokenString, claims, func(t *jwt.Token) (any, error) {
+		if t.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method: %s", t.Method.Alg())
+		}
+		return []byte(secret), nil
+	})
+	if err != nil || parsed == nil || !parsed.Valid {
+		return "", fmt.Errorf("invalid token: %w", err)
+	}
+	if claims.Type != "bridge_agent" {
+		return "", fmt.Errorf("invalid token type: %s", claims.Type)
+	}
+	if claims.AgentID != agentID {
+		return "", fmt.Errorf("agent_id mismatch")
+	}
+	if claims.ExpiresAt != nil && time.Now().After(claims.ExpiresAt.Time) {
+		return "", fmt.Errorf("token expired")
+	}
+	userID := strings.TrimSpace(claims.Subject)
+	if userID == "" {
+		return "", fmt.Errorf("missing sub")
+	}
+	return userID, nil
 }
 
 func (s *gatewayServer) handleListAgents(w http.ResponseWriter, r *http.Request) {
