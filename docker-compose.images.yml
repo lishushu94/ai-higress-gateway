@@ -1,6 +1,28 @@
 version: "3.9"
 
 services:
+  bridge_gateway:
+    image: marshalleriksen/mcpproxy-gateway:${IMAGE_TAG:-latest}
+    container_name: apiproxy-bridge-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8088:8088"
+    command:
+      [
+        "gateway",
+        "serve",
+        "--listen",
+        ":8088",
+        "--tunnel-path",
+        "/bridge/tunnel",
+        "--agent-token-secret",
+        "${SECRET_KEY}",
+        "--internal-token",
+        "${BRIDGE_GATEWAY_INTERNAL_TOKEN}",
+      ]
+
   postgres:
     image: postgres:16-alpine
     container_name: apiproxy-postgres
@@ -38,11 +60,13 @@ services:
       retries: 5
 
   api:
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-api
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     ports:
       - "8000:8000"
     depends_on:
@@ -50,6 +74,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
       interval: 30s
@@ -62,30 +88,38 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000
 
   celery_worker:
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-celery-worker
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     depends_on:
       postgres:
         condition: service_healthy
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/backend/media
     command: celery -A app.celery_app.celery_app worker -l info
 
   celery_beat:
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-celery-beat
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     depends_on:
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/backend/media

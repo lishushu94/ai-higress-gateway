@@ -106,7 +106,7 @@ pytest
 ### 🐳 Docker Compose (dev vs deploy)
 - Dev/local tryout (images):  
   `IMAGE_TAG=latest docker compose -f docker-compose.develop.yml --env-file .env up -d`
-- Deploy (images): use `docker-compose-deploy.yml` + your `.env`/`.env.deploy`, with prebuilt image `marshalleriksen/mcpproxy-api:<tag>` (see GitHub Actions workflow `Publish Backend Image`). Run:
+- Deploy (images): use `docker-compose-deploy.yml` + your `.env`/`.env.deploy`, with prebuilt image `marshalleriksen/apiproxy-api:<tag>` (see GitHub Actions workflow `Publish Backend Image`). Run:
 ```bash
 IMAGE_TAG=latest docker compose -f docker-compose-deploy.yml --env-file .env up -d
 ```

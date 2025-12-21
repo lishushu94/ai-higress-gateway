@@ -5,7 +5,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
-import { Eye, EyeOff, Copy, Check } from "lucide-react";
+import { Eye, EyeOff, Copy, Check, ChevronLeft, ChevronRight, Pause, Play, Maximize2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -22,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 
 type MessageRole = "user" | "assistant" | "system";
 
@@ -218,6 +219,152 @@ function autoEmbedImageUrls(markdown: string) {
     .replace(dataUrlPattern, (_m, prefix: string, url: string) => `${prefix}![](${url})`);
 }
 
+function splitThinkForCarousel(think: string): string[] {
+  const normalized = (think ?? "").replace(/\r\n/g, "\n").trim();
+  if (!normalized) return [];
+
+  const paragraphs = normalized
+    .split(/\n{2,}/g)
+    .map((p) => p.trim())
+    .filter(Boolean);
+  if (paragraphs.length > 1) return paragraphs;
+
+  const lines = normalized
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (lines.length > 1) return lines;
+
+  // 句子级切分（中英文标点），用于超长单段内容
+  const sentenceMatches = normalized.match(/[^。！？.!?]+[。！？.!?]+|[^。！？.!?]+$/g);
+  const sentences = (sentenceMatches ?? []).map((s) => s.trim()).filter(Boolean);
+  if (sentences.length <= 1) return [normalized];
+
+  const grouped: string[] = [];
+  for (let index = 0; index < sentences.length; index += 2) {
+    grouped.push(sentences.slice(index, index + 2).join(" "));
+  }
+  return grouped;
+}
+
+function ThinkCarousel({
+  items,
+  className,
+  onOpenFull,
+}: {
+  items: string[];
+  className?: string;
+  onOpenFull: () => void;
+}) {
+  const { t } = useI18n();
+  const [index, setIndex] = useState(0);
+  const [playing, setPlaying] = useState(() => items.length > 1);
+
+  useEffect(() => {
+    setIndex(0);
+    setPlaying(items.length > 1);
+  }, [items]);
+
+  useEffect(() => {
+    if (!playing || items.length <= 1) return;
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % items.length);
+    }, 1800);
+    return () => window.clearInterval(timer);
+  }, [playing, items.length]);
+
+  const current = items[index] ?? "";
+  const canNavigate = items.length > 1;
+
+  return (
+    <div className={cn("space-y-2", className)}>
+      <div
+        key={`${index}-${current.length}`}
+        className="animate-in fade-in-0 duration-200"
+        aria-live="polite"
+      >
+        <div className="whitespace-pre-wrap text-xs leading-relaxed text-foreground/90 line-clamp-4">
+          {current}
+        </div>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 text-[11px] text-muted-foreground">
+        <div className="tabular-nums">
+          {items.length ? `${index + 1}/${items.length}` : "0/0"}
+        </div>
+        <div className="flex items-center gap-1">
+          {canNavigate ? (
+            <>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => setIndex((v) => (v - 1 + items.length) % items.length)}
+                    aria-label={t("chat.message.thoughts_prev")}
+                  >
+                    <ChevronLeft className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={6}>{t("chat.message.thoughts_prev")}</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => setIndex((v) => (v + 1) % items.length)}
+                    aria-label={t("chat.message.thoughts_next")}
+                  >
+                    <ChevronRight className="size-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={6}>{t("chat.message.thoughts_next")}</TooltipContent>
+              </Tooltip>
+
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 w-7"
+                    onClick={() => setPlaying((v) => !v)}
+                    aria-label={playing ? t("chat.message.thoughts_pause") : t("chat.message.thoughts_play")}
+                    aria-pressed={playing}
+                  >
+                    {playing ? <Pause className="size-4" /> : <Play className="size-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent sideOffset={6}>
+                  {playing ? t("chat.message.thoughts_pause") : t("chat.message.thoughts_play")}
+                </TooltipContent>
+              </Tooltip>
+            </>
+          ) : null}
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="h-7 w-7"
+                onClick={onOpenFull}
+                aria-label={t("chat.message.thoughts_full")}
+              >
+                <Maximize2 className="size-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent sideOffset={6}>{t("chat.message.thoughts_full")}</TooltipContent>
+          </Tooltip>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function MessageContent({ content, role, options, className }: MessageContentProps) {
   const { t } = useI18n();
   const thinkPanelId = useId();
@@ -264,10 +411,13 @@ export function MessageContent({ content, role, options, className }: MessageCon
   const mergedThink = thinkSegments.map((s) => s.content).join("\n\n").trim();
 
   const [showThink, setShowThink] = useState(() => resolved.default_show_think);
+  const [thinkDialogOpen, setThinkDialogOpen] = useState(false);
 
   useEffect(() => {
     setShowThink(resolved.default_show_think);
   }, [resolved.default_show_think, content]);
+
+  const thinkCarouselItems = useMemo(() => splitThinkForCarousel(mergedThink), [mergedThink]);
 
   return (
     <div className={cn("text-sm break-words", className)}>
@@ -299,11 +449,22 @@ export function MessageContent({ content, role, options, className }: MessageCon
           {showThink ? (
             <div
               id={thinkPanelId}
-              className="mt-2 rounded-md border-l-2 bg-muted/10 px-3 py-2 text-xs leading-relaxed"
+              className="mt-2 rounded-md border-l-2 bg-muted/10 px-3 py-2"
             >
-              {renderBody(mergedThink, true)}
+              <ThinkCarousel items={thinkCarouselItems} onOpenFull={() => setThinkDialogOpen(true)} />
             </div>
           ) : null}
+
+          <Dialog open={thinkDialogOpen} onOpenChange={setThinkDialogOpen}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{t("chat.message.thoughts_full")}</DialogTitle>
+              </DialogHeader>
+              <div className="rounded-md border-l-2 bg-muted/10 px-3 py-2 text-xs leading-relaxed">
+                {renderBody(mergedThink, true)}
+              </div>
+            </DialogContent>
+          </Dialog>
         </div>
       ) : null}
 

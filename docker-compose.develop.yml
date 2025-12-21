@@ -1,4 +1,29 @@
 services:
+  bridge_gateway:
+    image: marshalleriksen/mcpproxy-gateway:${IMAGE_TAG:-latest}
+    container_name: apiproxy-bridge-gateway
+    restart: unless-stopped
+    env_file:
+      - .env
+    ports:
+      - "8088:8088"
+    networks:
+      apiproxy-net:
+        ipv4_address: 172.20.0.12
+    command:
+      [
+        "gateway",
+        "serve",
+        "--listen",
+        ":8088",
+        "--tunnel-path",
+        "/bridge/tunnel",
+        "--agent-token-secret",
+        "${SECRET_KEY}",
+        "--internal-token",
+        "${BRIDGE_GATEWAY_INTERNAL_TOKEN}",
+      ]
+
   postgres:
     image: postgres:16-alpine
     container_name: apiproxy-postgres
@@ -47,11 +72,13 @@ services:
 
   api:
     # 开发环境后端默认直接拉取预构建镜像（与 deploy 一致），避免新手本地构建
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-api
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/backend/media
@@ -63,6 +90,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     ports:
       - "8000:8000"
     networks:
@@ -78,11 +107,13 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   celery_worker:
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-celery-worker
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/backend/media
@@ -93,17 +124,21 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     networks:
       apiproxy-net:
         ipv4_address: 172.20.0.14
     command: celery -A app.celery_app.celery_app worker -l info
 
   celery_beat:
-    image: marshalleriksen/mcpproxy-api:${IMAGE_TAG:-latest}
+    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
     container_name: apiproxy-celery-beat
     restart: unless-stopped
     env_file:
       - .env
+    environment:
+      - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
     volumes:
       - ./backend/logs:/app/logs
       - ./backend/media:/app/backend/media
@@ -112,6 +147,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      bridge_gateway:
+        condition: service_started
     networks:
       apiproxy-net:
         ipv4_address: 172.20.0.15

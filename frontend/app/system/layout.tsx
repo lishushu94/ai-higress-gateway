@@ -1,6 +1,7 @@
 import { AdaptiveSidebar } from "@/components/sidebars/adaptive-sidebar";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { TopNav } from "@/components/layout/top-nav";
+import { BodyScrollLock } from "@/components/layout/body-scroll-lock";
 
 export default function SystemLayout({
     children,
@@ -10,6 +11,7 @@ export default function SystemLayout({
     return (
         <SidebarProvider>
             <div className="flex h-screen bg-background overflow-hidden w-full">
+                <BodyScrollLock />
                 <AdaptiveSidebar />
                 <div className="flex-1 flex flex-col overflow-hidden">
                     <TopNav />
