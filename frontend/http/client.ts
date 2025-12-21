@@ -31,7 +31,9 @@ const triggerAuthError = () => {
 };
 
 // 环境变量
-const BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+export const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000';
+const BASE_URL = API_BASE_URL;
 
 // 刷新 token 的状态管理
 let isRefreshing = false;

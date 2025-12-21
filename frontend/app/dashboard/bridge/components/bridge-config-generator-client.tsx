@@ -7,6 +7,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 
 import { useI18n } from "@/lib/i18n-context";
@@ -28,9 +29,12 @@ function generateUUID(): string {
 type MCPServerForm = {
   id: string;
   name: string;
+  transport: "command" | "streamable" | "sse";
   command: string;
   argsText: string;
   envText: string;
+  url: string;
+  headersText: string;
 };
 
 function defaultTunnelUrl(): string {
@@ -83,6 +87,20 @@ function parseEnvJSON(value: string): Record<string, string> {
   return out;
 }
 
+function parseHeadersJSON(value: string): Record<string, string> {
+  if (!value.trim()) return {};
+  const parsed = JSON.parse(value);
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new Error("headers must be an object");
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(parsed as Record<string, any>)) {
+    if (!k) continue;
+    out[String(k)] = String(v ?? "");
+  }
+  return out;
+}
+
 function buildConfigYaml(input: {
   serverUrl: string;
   token: string;
@@ -94,9 +112,12 @@ function buildConfigYaml(input: {
   chunkMaxFrameBytes: number;
   servers: Array<{
     name: string;
-    command: string;
-    args: string[];
-    env: Record<string, string>;
+    type?: "command" | "streamable" | "sse";
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
   }>;
 }): string {
   const lines: string[] = [];
@@ -123,19 +144,42 @@ function buildConfigYaml(input: {
 
   for (const s of input.servers) {
     lines.push(`  - name: ${yamlQuoted(s.name)}`);
-    lines.push(`    command: ${yamlQuoted(s.command)}`);
-    lines.push("    args:");
-    if (s.args.length) {
-      for (const arg of s.args) {
-        lines.push(`      - ${yamlQuoted(arg)}`);
-      }
-    } else {
-      lines.push("      []");
+
+    if (s.type && s.type !== "command") {
+      lines.push(`    type: ${yamlQuoted(s.type)}`);
     }
+
+    if (s.url) {
+      lines.push(`    url: ${yamlQuoted(s.url)}`);
+    }
+    if (s.command) {
+      lines.push(`    command: ${yamlQuoted(s.command)}`);
+    }
+
+    const args = s.args || [];
+    if (s.command) {
+      lines.push("    args:");
+      if (args.length) {
+        for (const arg of args) {
+          lines.push(`      - ${yamlQuoted(arg)}`);
+        }
+      } else {
+        lines.push("      []");
+      }
+    }
+
     const envEntries = Object.entries(s.env || {}).filter(([k]) => k);
     if (envEntries.length) {
       lines.push("    env:");
       for (const [k, v] of envEntries) {
+        lines.push(`      ${k}: ${yamlQuoted(v)}`);
+      }
+    }
+
+    const headerEntries = Object.entries(s.headers || {}).filter(([k]) => k);
+    if (headerEntries.length) {
+      lines.push("    headers:");
+      for (const [k, v] of headerEntries) {
         lines.push(`      ${k}: ${yamlQuoted(v)}`);
       }
     }
@@ -163,25 +207,54 @@ export function BridgeConfigGeneratorClient() {
     {
       id: generateUUID(),
       name: "filesystem",
+      transport: "command",
       command: "npx",
       argsText: "-y\n@modelcontextprotocol/server-filesystem\n/Users/me/Documents",
       envText: "",
+      url: "",
+      headersText: "",
     },
   ]);
 
   const computed = useMemo(() => {
     const parsedServers = servers
       .map((s) => {
-        const args = splitLines(s.argsText);
-        const env = parseEnvJSON(s.envText);
+        const name = s.name.trim();
+        if (!name) return null;
+
+        if (s.transport === "command") {
+          const command = s.command.trim();
+          if (!command) return null;
+          const args = splitLines(s.argsText);
+          const env = parseEnvJSON(s.envText);
+          return {
+            name,
+            type: "command" as const,
+            command,
+            args,
+            env,
+          };
+        }
+
+        const url = s.url.trim();
+        if (!url) return null;
+        const headers = parseHeadersJSON(s.headersText);
         return {
-          name: s.name.trim(),
-          command: s.command.trim(),
-          args,
-          env,
+          name,
+          type: s.transport,
+          url,
+          headers,
         };
       })
-      .filter((s) => s.name && s.command);
+      .filter(Boolean) as Array<{
+      name: string;
+      type: "command" | "streamable" | "sse";
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+      url?: string;
+      headers?: Record<string, string>;
+    }>;
 
     return buildConfigYaml({
       serverUrl,
@@ -209,7 +282,11 @@ export function BridgeConfigGeneratorClient() {
   const download = () => {
     try {
       for (const s of servers) {
-        parseEnvJSON(s.envText);
+        if (s.transport === "command") {
+          parseEnvJSON(s.envText);
+        } else {
+          parseHeadersJSON(s.headersText);
+        }
       }
     } catch {
       toast.error(t("bridge.error.invalid_json"));
@@ -325,9 +402,12 @@ export function BridgeConfigGeneratorClient() {
                   {
                     id: generateUUID(),
                     name: "",
+                    transport: "command",
                     command: "",
                     argsText: "",
                     envText: "",
+                    url: "",
+                    headersText: "",
                   },
                 ])
               }
@@ -367,42 +447,103 @@ export function BridgeConfigGeneratorClient() {
                     />
                   </div>
                   <div className="grid gap-2">
-                    <div className="text-sm font-medium">{t("bridge.config.server_command")}</div>
-                    <Input
-                      value={s.command}
-                      onChange={(e) =>
+                    <div className="text-sm font-medium">{t("bridge.config.server_transport")}</div>
+                    <Select
+                      value={s.transport}
+                      onValueChange={(value) =>
                         setServers((prev) =>
-                          prev.map((x) => (x.id === s.id ? { ...x, command: e.target.value } : x))
+                          prev.map((x) =>
+                            x.id === s.id
+                              ? {
+                                  ...x,
+                                  transport: value as MCPServerForm["transport"],
+                                }
+                              : x
+                          )
                         )
                       }
-                    />
+                    >
+                      <SelectTrigger>
+                        <SelectValue placeholder={t("bridge.config.server_transport")} />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="command">{t("bridge.config.transport_command")}</SelectItem>
+                        <SelectItem value="streamable">{t("bridge.config.transport_streamable")}</SelectItem>
+                        <SelectItem value="sse">{t("bridge.config.transport_sse")}</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
-                <div className="grid gap-2">
-                  <div className="text-sm font-medium">{t("bridge.config.server_args")}</div>
-                  <Textarea
-                    value={s.argsText}
-                    onChange={(e) =>
-                      setServers((prev) =>
-                        prev.map((x) => (x.id === s.id ? { ...x, argsText: e.target.value } : x))
-                      )
-                    }
-                    className="min-h-20 font-mono text-xs"
-                  />
-                </div>
-                <div className="grid gap-2">
-                  <div className="text-sm font-medium">{t("bridge.config.server_env")}</div>
-                  <Textarea
-                    value={s.envText}
-                    onChange={(e) =>
-                      setServers((prev) =>
-                        prev.map((x) => (x.id === s.id ? { ...x, envText: e.target.value } : x))
-                      )
-                    }
-                    placeholder={t("bridge.config.env_placeholder")}
-                    className="min-h-16 font-mono text-xs"
-                  />
-                </div>
+                {s.transport === "command" ? (
+                  <>
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">{t("bridge.config.server_command")}</div>
+                      <Input
+                        value={s.command}
+                        onChange={(e) =>
+                          setServers((prev) =>
+                            prev.map((x) => (x.id === s.id ? { ...x, command: e.target.value } : x))
+                          )
+                        }
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">{t("bridge.config.server_args")}</div>
+                      <Textarea
+                        value={s.argsText}
+                        onChange={(e) =>
+                          setServers((prev) =>
+                            prev.map((x) => (x.id === s.id ? { ...x, argsText: e.target.value } : x))
+                          )
+                        }
+                        className="min-h-20 font-mono text-xs"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">{t("bridge.config.server_env")}</div>
+                      <Textarea
+                        value={s.envText}
+                        onChange={(e) =>
+                          setServers((prev) =>
+                            prev.map((x) => (x.id === s.id ? { ...x, envText: e.target.value } : x))
+                          )
+                        }
+                        placeholder={t("bridge.config.env_placeholder")}
+                        className="min-h-16 font-mono text-xs"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">{t("bridge.config.server_remote_url")}</div>
+                      <Input
+                        value={s.url}
+                        onChange={(e) =>
+                          setServers((prev) =>
+                            prev.map((x) => (x.id === s.id ? { ...x, url: e.target.value } : x))
+                          )
+                        }
+                        placeholder="https://example.com/mcp"
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <div className="text-sm font-medium">{t("bridge.config.server_headers")}</div>
+                      <Textarea
+                        value={s.headersText}
+                        onChange={(e) =>
+                          setServers((prev) =>
+                            prev.map((x) =>
+                              x.id === s.id ? { ...x, headersText: e.target.value } : x
+                            )
+                          )
+                        }
+                        placeholder={t("bridge.config.headers_placeholder")}
+                        className="min-h-16 font-mono text-xs"
+                      />
+                    </div>
+                  </>
+                )}
               </CardContent>
             </Card>
           ))}

@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { MessageItem } from '../message-item';
 import type { Message, RunSummary } from '@/lib/api-types';
+import type { ComparisonVariant } from '@/lib/stores/chat-comparison-store';
 
 // Mock i18n
 vi.mock('@/lib/i18n-context', () => ({
@@ -90,5 +91,36 @@ describe('MessageItem', () => {
 
     render(<MessageItem message={messageWithImages} runs={[mockRun]} />);
     expect(screen.getAllByRole('img').length).toBeGreaterThanOrEqual(2);
+  });
+
+  it('renders comparison variants as tabs and allows switching', () => {
+    const comparisons: ComparisonVariant[] = [
+      {
+        id: 'cmp-1',
+        model: 'claude-3-opus',
+        status: 'succeeded',
+        created_at: new Date().toISOString(),
+        content: 'Alternative answer.',
+      },
+    ];
+
+    render(
+      <MessageItem
+        message={mockAssistantMessage}
+        runs={[mockRun]}
+        runSourceMessageId={mockUserMessage.message_id}
+        comparisonVariants={comparisons}
+        onAddComparison={() => undefined}
+      />
+    );
+
+    expect(screen.getByText('gpt-4')).toBeInTheDocument();
+    expect(screen.getByText('claude-3-opus')).toBeInTheDocument();
+
+    // default shows baseline content
+    expect(screen.getByText('Hello! How can I help you?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('tab', { name: 'claude-3-opus' }));
+    expect(screen.getByText('Alternative answer.')).toBeInTheDocument();
   });
 });

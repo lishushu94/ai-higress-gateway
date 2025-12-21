@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AdaptiveCard } from "@/components/cards/adaptive-card";
 import { CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,17 +12,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { MoreVertical, Archive, Trash2, Pencil } from "lucide-react";
 import { useI18n } from "@/lib/i18n-context";
 import type { Conversation } from "@/lib/api-types";
+import { ConversationItemDialogs } from "./conversation-item-dialogs";
 
 interface ConversationItemProps {
   conversation: Conversation;
@@ -106,9 +99,8 @@ export function ConversationItem({
     <>
       <AdaptiveCard
         showDecor={false}
-        className={`cursor-pointer transition-all hover:shadow-md hover:scale-100 ${
-          isSelected ? "ring-2 ring-primary" : ""
-        }`}
+        selected={isSelected}
+        className="cursor-pointer transition-all hover:shadow-md hover:scale-100"
         onClick={handleCardClick}
         onKeyDown={handleKeyDown}
         tabIndex={0}
@@ -124,106 +116,77 @@ export function ConversationItem({
             {t("chat.conversation.last_activity")}: {formatLastActivity(conversation.last_activity_at)}
           </CardDescription>
           <CardAction>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button 
-                  variant="ghost" 
-                  size="icon-sm"
-                  aria-label={t("chat.conversation.actions")}
+            <div className="flex items-center gap-2">
+              {isSelected ? (
+                <Badge
+                  variant="default"
+                  className="h-5 px-2 text-[10px] leading-none"
                 >
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setDraftTitle(conversation.title || "");
-                    setShowRenameDialog(true);
-                  }}
-                >
-                  <Pencil className="w-4 h-4 mr-2" />
-                  {t("chat.conversation.rename")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowArchiveDialog(true);
-                  }}
-                >
-                  <Archive className="w-4 h-4 mr-2" />
-                  {t("chat.conversation.archive")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    if (onDelete) {
-                      onDelete(conversation.conversation_id);
-                    }
-                  }}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  {t("chat.conversation.delete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {t("chat.action.selected")}
+                </Badge>
+              ) : null}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon-sm"
+                    aria-label={t("chat.conversation.actions")}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setDraftTitle(conversation.title || "");
+                      setShowRenameDialog(true);
+                    }}
+                  >
+                    <Pencil className="w-4 h-4 mr-2" />
+                    {t("chat.conversation.rename")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowArchiveDialog(true);
+                    }}
+                  >
+                    <Archive className="w-4 h-4 mr-2" />
+                    {t("chat.conversation.archive")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (onDelete) {
+                        onDelete(conversation.conversation_id);
+                      }
+                    }}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {t("chat.conversation.delete")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </CardAction>
         </CardHeader>
       </AdaptiveCard>
 
-      {/* 改名对话框 */}
-      <Dialog open={showRenameDialog} onOpenChange={setShowRenameDialog}>
-        <DialogContent aria-describedby="rename-conversation-dialog-description">
-          <DialogHeader>
-            <DialogTitle>{t("chat.conversation.rename")}</DialogTitle>
-            <DialogDescription id="rename-conversation-dialog-description">
-              {t("chat.conversation.rename_description")}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-2">
-            <Input
-              value={draftTitle}
-              onChange={(e) => setDraftTitle(e.target.value)}
-              placeholder={t("chat.conversation.rename_placeholder")}
-              autoFocus
-            />
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShowRenameDialog(false)}>
-              {t("chat.action.cancel")}
-            </Button>
-            <Button onClick={handleRenameConfirm}>
-              {t("chat.action.save")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* 归档确认对话框 */}
-      <Dialog open={showArchiveDialog} onOpenChange={setShowArchiveDialog}>
-        <DialogContent aria-describedby="archive-conversation-dialog-description">
-          <DialogHeader>
-            <DialogTitle>{t("chat.conversation.archive")}</DialogTitle>
-            <DialogDescription id="archive-conversation-dialog-description">
-              {t("chat.conversation.archive_confirm")}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowArchiveDialog(false)}
-            >
-              {t("chat.action.cancel")}
-            </Button>
-            <Button onClick={handleArchiveConfirm} autoFocus>
-              {t("chat.action.confirm")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <ConversationItemDialogs
+        showRenameDialog={showRenameDialog}
+        setShowRenameDialog={setShowRenameDialog}
+        draftTitle={draftTitle}
+        setDraftTitle={setDraftTitle}
+        onRenameConfirm={handleRenameConfirm}
+        showArchiveDialog={showArchiveDialog}
+        setShowArchiveDialog={setShowArchiveDialog}
+        onArchiveConfirm={handleArchiveConfirm}
+      />
     </>
   );
 }

@@ -1,7 +1,7 @@
 "use client";
 
 import useSWR, { useSWRConfig } from 'swr';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { evalService } from '@/http/eval';
 import { cacheStrategies } from './cache';
 import type {
@@ -139,9 +139,9 @@ export function useEval(evalId: string | null, options?: UseEvalOptions) {
  * 创建评测的 mutation hook
  */
 export function useCreateEval() {
-  return async (request: CreateEvalRequest) => {
+  return useCallback(async (request: CreateEvalRequest) => {
     return await evalService.createEval(request);
-  };
+  }, []);
 }
 
 /**

@@ -37,6 +37,11 @@ interface AdaptiveCardProps extends Omit<React.ComponentProps<typeof Card>, "cla
    */
   showDecor?: boolean;
   /**
+   * 是否处于选中态（用于列表中高亮当前项）
+   * @default false
+   */
+  selected?: boolean;
+  /**
    * 卡片标题（可选）
    */
   title?: React.ReactNode;
@@ -76,6 +81,7 @@ export function AdaptiveCard({
   hoverScale = true,
   wrapperClassName,
   showDecor = true,
+  selected = false,
   title,
   description,
   headerAction,
@@ -92,8 +98,12 @@ export function AdaptiveCard({
           variant === "theme" ? "theme-adaptive-card border-white/20" : undefined,
           "transition-all duration-300",
           hoverScale ? "hover:scale-[1.02]" : undefined,
+          selected
+            ? "border-primary/60 ring-2 ring-primary/60 ring-offset-2 ring-offset-background"
+            : undefined,
           className,
         )}
+        data-state={selected ? "selected" : undefined}
         {...props}
       >
         {/* 圣诞装饰 - 右上角（通过 CSS 类自动控制） */}
@@ -114,6 +124,20 @@ export function AdaptiveCard({
             />
           </div>
         )}
+
+        {/* 选中态叠层：增强对比度，避免在玻璃/节日背景下不明显 */}
+        {selected ? (
+          <>
+            <div
+              className="pointer-events-none absolute inset-0 z-10 bg-primary/5"
+              aria-hidden="true"
+            />
+            <div
+              className="pointer-events-none absolute inset-y-3 left-0 z-[25] w-1 rounded-full bg-primary/70"
+              aria-hidden="true"
+            />
+          </>
+        ) : null}
 
         {/* 卡片内容 */}
         <div className="relative z-20">

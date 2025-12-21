@@ -403,6 +403,79 @@ def create_assistant_message_after_user(
     return msg
 
 
+def create_assistant_message_placeholder_after_user(
+    db: Session,
+    *,
+    conversation_id: UUID,
+    user_sequence: int,
+) -> Message:
+    """
+    创建一个 assistant 占位消息（空文本），用于流式生成时“预占位”会话序列：
+    - 避免用户在生成过程中再次发送消息导致 sequence 混乱；
+    - 不更新 conversation 的 last_message_content / unread_count（等最终文本写入时再更新）。
+    """
+    seq = int(user_sequence) + 1
+    msg = Message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content={"type": "text", "text": ""},
+        sequence=seq,
+    )
+    db.add(msg)
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
+def finalize_assistant_message_after_user_sequence(
+    db: Session,
+    *,
+    conversation_id: UUID,
+    user_sequence: int,
+    content_text: str,
+) -> Message:
+    """
+    将 assistant 占位消息写入最终文本，并同步更新 conversation 的预览与未读计数。
+    若占位消息不存在（极端情况），退化为创建一条新的 assistant 消息。
+    """
+    assistant_seq = int(user_sequence) + 1
+    msg = db.execute(
+        select(Message).where(
+            Message.conversation_id == conversation_id,
+            Message.sequence == assistant_seq,
+            Message.role == "assistant",
+        )
+    ).scalars().first()
+
+    if msg is None:
+        return create_assistant_message_after_user(
+            db,
+            conversation_id=conversation_id,
+            user_sequence=user_sequence,
+            content_text=content_text,
+        )
+
+    previous_text = ""
+    if isinstance(msg.content, dict):
+        previous_text = str(msg.content.get("text") or "")
+
+    msg.content = {"type": "text", "text": content_text}
+    db.add(msg)
+
+    conv = db.get(Conversation, conversation_id)
+    if conv:
+        conv.last_message_content = content_text
+        conv.last_activity_at = datetime.now(UTC)
+        # 仅在占位为空时补一次未读计数，避免重复累加。
+        if not previous_text.strip():
+            conv.unread_count += 1
+        db.add(conv)
+
+    db.commit()
+    db.refresh(msg)
+    return msg
+
+
 def update_assistant_message_for_user_sequence(
     db: Session,
     *,
@@ -489,11 +562,13 @@ def get_run_detail(db: Session, *, run_id: UUID, user_id: UUID) -> Run:
 __all__ = [
     "create_assistant",
     "create_assistant_message_after_user",
+    "create_assistant_message_placeholder_after_user",
     "create_conversation",
     "create_user_message",
     "delete_assistant",
     "delete_conversation",
     "clear_conversation_messages",
+    "finalize_assistant_message_after_user_sequence",
     "get_assistant",
     "get_conversation",
     "get_conversation_any",

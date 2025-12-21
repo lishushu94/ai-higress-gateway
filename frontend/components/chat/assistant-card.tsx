@@ -4,6 +4,7 @@ import { useState } from "react";
 import { AdaptiveCard } from "@/components/cards/adaptive-card";
 import { CardHeader, CardTitle, CardDescription, CardAction } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -84,9 +85,8 @@ export function AssistantCard({
     <>
       <AdaptiveCard
         showDecor={false}
-        className={`cursor-pointer transition-all hover:shadow-md hover:scale-100 ${
-          isSelected ? "ring-2 ring-primary" : ""
-        }`}
+        selected={isSelected}
+        className="cursor-pointer transition-all hover:shadow-md hover:scale-100"
         onClick={handleCardClick}
         onKeyDown={handleKeyDown}
         tabIndex={0}
@@ -100,43 +100,54 @@ export function AssistantCard({
             {t("chat.assistant.default_model")}: {assistant.default_logical_model}
           </CardDescription>
           <CardAction>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
-                <Button 
-                  variant="ghost" 
-                  size="icon-sm"
-                  aria-label={t("chat.assistant.actions")}
+            <div className="flex items-center gap-2">
+              {isSelected ? (
+                <Badge
+                  variant="default"
+                  className="h-5 px-2 text-[10px] leading-none"
                 >
-                  <MoreVertical className="w-4 h-4" />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={handleEdit}>
-                  <Edit className="w-4 h-4 mr-2" />
-                  {t("chat.assistant.edit")}
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowArchiveDialog(true);
-                  }}
-                >
-                  <Archive className="w-4 h-4 mr-2" />
-                  {t("chat.assistant.archive")}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setShowDeleteDialog(true);
-                  }}
-                  className="text-destructive focus:text-destructive"
-                >
-                  <Trash2 className="w-4 h-4 mr-2" />
-                  {t("chat.assistant.delete")}
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {t("chat.action.selected")}
+                </Badge>
+              ) : null}
+
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild onClick={(e) => e.stopPropagation()}>
+                  <Button 
+                    variant="ghost" 
+                    size="icon-sm"
+                    aria-label={t("chat.assistant.actions")}
+                  >
+                    <MoreVertical className="w-4 h-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={handleEdit}>
+                    <Edit className="w-4 h-4 mr-2" />
+                    {t("chat.assistant.edit")}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowArchiveDialog(true);
+                    }}
+                  >
+                    <Archive className="w-4 h-4 mr-2" />
+                    {t("chat.assistant.archive")}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowDeleteDialog(true);
+                    }}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-4 h-4 mr-2" />
+                    {t("chat.assistant.delete")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </CardAction>
         </CardHeader>
       </AdaptiveCard>

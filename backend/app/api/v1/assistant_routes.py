@@ -3,7 +3,8 @@ from __future__ import annotations
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query, Response, status
+from fastapi import APIRouter, Depends, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 try:
@@ -278,15 +279,37 @@ def list_conversations_endpoint(
     )
 
 
-@router.post("/v1/conversations/{conversation_id}/messages", response_model=MessageCreateResponse)
+@router.post("/v1/conversations/{conversation_id}/messages")
 async def create_message_endpoint(
     conversation_id: UUID,
+    request: Request,
     payload: MessageCreateRequest,
     db: Session = Depends(get_db),
     redis: Redis = Depends(get_redis),
     client: Any = Depends(get_http_client),
     current_user: AuthenticatedUser = Depends(require_jwt_token),
-) -> MessageCreateResponse:
+) -> Any:
+    accept_header = request.headers.get("accept", "")
+    wants_event_stream = "text/event-stream" in accept_header.lower()
+
+    # streaming=true 或 Accept:text/event-stream 均触发 SSE；但当使用 bridge 工具时回退到 non-stream（tool loop 依赖非流式路径）。
+    stream = bool(payload.streaming) or wants_event_stream
+    has_bridge_tools = bool((payload.bridge_agent_id or "").strip()) or bool(payload.bridge_agent_ids)
+    if stream and not has_bridge_tools:
+        return StreamingResponse(
+            chat_app_service.stream_message_and_run_baseline(
+                db,
+                redis=redis,
+                client=client,
+                current_user=current_user,
+                conversation_id=conversation_id,
+                content=payload.content,
+                override_logical_model=payload.override_logical_model,
+                model_preset=payload.model_preset,
+            ),
+            media_type="text/event-stream",
+        )
+
     message_id, run_id = await chat_app_service.send_message_and_run_baseline(
         db,
         redis=redis,

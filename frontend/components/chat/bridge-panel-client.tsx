@@ -18,6 +18,8 @@ import { useBridgeEvents } from "@/lib/hooks/use-bridge-events";
 import { useBridgeAgents, useBridgeCancel, useBridgeInvoke, useBridgeTools } from "@/lib/swr/use-bridge";
 import { useChatStore } from "@/lib/stores/chat-store";
 
+const EMPTY_STRING_ARRAY: string[] = [];
+
 export function BridgePanelClient({
   onClose,
   conversationId,
@@ -29,7 +31,9 @@ export function BridgePanelClient({
 
   const { agents } = useBridgeAgents();
   const storedAgentIds = useChatStore((s) =>
-    conversationId ? (s.conversationBridgeAgentIds[conversationId] ?? []) : []
+    conversationId
+      ? (s.conversationBridgeAgentIds[conversationId] ?? EMPTY_STRING_ARRAY)
+      : EMPTY_STRING_ARRAY
   );
   const setConversationBridgeAgentIds = useChatStore((s) => s.setConversationBridgeAgentIds);
 
@@ -158,7 +162,7 @@ export function BridgePanelClient({
   };
 
   return (
-    <div className="h-full w-full bg-background">
+    <div className="flex h-full w-full flex-col bg-background">
       <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
         <div className="min-w-0">
           <div className="truncate text-sm font-medium">{t("bridge.title")}</div>
@@ -174,8 +178,9 @@ export function BridgePanelClient({
         </div>
       </div>
 
-      <div className="grid gap-3 p-3">
-        <Card>
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <div className="grid gap-3 p-3">
+          <Card>
           <CardHeader className="pb-3">
             <CardTitle className="text-sm">{t("bridge.agents")}</CardTitle>
             <CardDescription>{t("bridge.agents.select")}</CardDescription>
@@ -334,6 +339,7 @@ export function BridgePanelClient({
             </ScrollArea>
           </CardContent>
         </Card>
+        </div>
       </div>
     </div>
   );

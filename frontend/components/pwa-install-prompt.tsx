@@ -9,6 +9,30 @@ interface BeforeInstallPromptEvent extends Event {
   userChoice: Promise<{ outcome: 'accepted' | 'dismissed' }>;
 }
 
+const DISMISSED_KEY = 'pwa-install-dismissed';
+const SHOWN_SESSION_KEY = 'pwa-install-prompt-shown';
+const DISMISS_DAYS = 7;
+
+let shownThisSessionMemory = false;
+
+function hasShownThisSession() {
+  if (shownThisSessionMemory) return true;
+  try {
+    return sessionStorage.getItem(SHOWN_SESSION_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function markShownThisSession() {
+  shownThisSessionMemory = true;
+  try {
+    sessionStorage.setItem(SHOWN_SESSION_KEY, '1');
+  } catch {
+    // ignore
+  }
+}
+
 export function PWAInstallPrompt() {
   const [deferredPrompt, setDeferredPrompt] = useState<BeforeInstallPromptEvent | null>(null);
   const [showPrompt, setShowPrompt] = useState(false);
@@ -22,24 +46,31 @@ export function PWAInstallPrompt() {
     }
 
     // 检查是否之前被拒绝
-    const dismissedTime = localStorage.getItem('pwa-install-dismissed');
+    const dismissedTime = localStorage.getItem(DISMISSED_KEY);
     if (dismissedTime) {
-      const daysSinceDismissed = (Date.now() - parseInt(dismissedTime)) / (1000 * 60 * 60 * 24);
-      if (daysSinceDismissed < 7) { // 7天后重新显示
-        return;
+      const dismissedAt = Number(dismissedTime);
+      if (Number.isFinite(dismissedAt)) {
+        const daysSinceDismissed = (Date.now() - dismissedAt) / (1000 * 60 * 60 * 24);
+        if (daysSinceDismissed < DISMISS_DAYS) { // 7天后重新显示
+          return;
+        }
+      } else {
+        localStorage.removeItem(DISMISSED_KEY);
       }
     }
 
     const handleBeforeInstallPrompt = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e as BeforeInstallPromptEvent);
+      if (hasShownThisSession()) return;
+      markShownThisSession();
       setShowPrompt(true);
     };
 
     const handleAppInstalled = () => {
       setDeferredPrompt(null);
       setShowPrompt(false);
-      localStorage.removeItem('pwa-install-dismissed');
+      localStorage.removeItem(DISMISSED_KEY);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -60,10 +91,11 @@ export function PWAInstallPrompt() {
 
       if (outcome === 'accepted') {
         console.log('用户接受了安装提示');
+        localStorage.removeItem(DISMISSED_KEY);
       } else {
         console.log('用户拒绝了安装提示');
         // 用户拒绝时也记录，避免频繁弹出
-        localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+        localStorage.setItem(DISMISSED_KEY, Date.now().toString());
       }
     } catch (error) {
       console.error('安装提示失败:', error);
@@ -76,20 +108,24 @@ export function PWAInstallPrompt() {
   const handleDismiss = () => {
     setShowPrompt(false);
     // 记录用户关闭的时间，7天内不再显示
-    localStorage.setItem('pwa-install-dismissed', Date.now().toString());
+    localStorage.setItem(DISMISSED_KEY, Date.now().toString());
+    markShownThisSession();
   };
 
   if (!showPrompt) return null;
 
   return (
     <div className="fixed bottom-4 left-4 right-4 z-50 bg-white border border-gray-200 rounded-lg shadow-lg p-4 max-w-sm mx-auto">
-      <button
+      <Button
+        type="button"
         onClick={handleDismiss}
+        variant="ghost"
+        size="icon-sm"
         className="absolute top-2 right-2 text-gray-400 hover:text-gray-600"
         aria-label="关闭"
       >
-        <X size={16} />
-      </button>
+        <X />
+      </Button>
 
       <div className="pr-6">
         <h3 className="text-sm font-medium text-gray-900 mb-1">

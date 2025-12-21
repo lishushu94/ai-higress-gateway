@@ -164,24 +164,26 @@
 /* 圣诞主题 - Christmas Theme */
 html.christmas {
   color-scheme: light;
-  --foreground: #1a1a1a; /* 深色文字 - 默认 */
+  /* 圣诞主题字体：用“深松绿/墨绿”替代纯黑，弱化文字用更柔和的灰绿 */
+  --foreground: #0f2a1f; /* 深松绿 */
   --card: #ffffff;
-  --card-foreground: #1a1a1a; /* 深色文字 */
+  --card-foreground: #0f2a1f;
   --popover: #ffffff;
-  --popover-foreground: #1a1a1a; /* 深色文字 */
+  --popover-foreground: #0f2a1f;
   --primary: #dc2626; /* 圣诞红 */
   --primary-foreground: #ffffff;
   --secondary: #16a34a; /* 圣诞绿 */
   --secondary-foreground: #ffffff;
   --muted: #fef2f2;
-  --muted-foreground: #6b7280; /* 灰色 */
-  --accent: #d4af37; /* 金色 - 用于强调 */
-  --accent-foreground: #1a1a1a;
+  --muted-foreground: #3f5c4a; /* 灰绿 */
+  /* 强调色：避免大面积金黄导致对比刺眼，改为更柔和的浅红 */
+  --accent: #fee2e2;
+  --accent-foreground: #991b1b;
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
   --border: #fecaca;
   --input: #fecaca;
-  --ring: #d4af37;
+  --ring: #dc2626;
   /* Charts - 圣诞主题（HSL 三元组） */
   --chart-1: 0, 72%, 51%;
   --chart-2: 142, 76%, 36%;
@@ -189,13 +191,13 @@ html.christmas {
   --chart-4: 0, 84%, 60%;
   --chart-5: 142, 71%, 45%;
   --sidebar: #fef2f2;
-  --sidebar-foreground: #1a1a1a; /* 深色文字 */
+  --sidebar-foreground: #0f2a1f;
   --sidebar-primary: #dc2626;
   --sidebar-primary-foreground: #ffffff;
   --sidebar-accent: #fee2e2;
-  --sidebar-accent-foreground: #6b7280; /* 灰色 */
+  --sidebar-accent-foreground: #3f5c4a;
   --sidebar-border: #fecaca;
-  --sidebar-ring: #d4af37;
+  --sidebar-ring: #dc2626;
 }
 
 
@@ -210,14 +212,18 @@ html.christmas {
     font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "Noto Sans", sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol", "Noto Color Emoji";
   }
 
-  /* 圣诞主题下 body 背景透明 */
+  /* 圣诞主题下 body 背景透明（让 ThemeBackground 可见） */
   html.christmas body {
     background: transparent !important;
   }
 
-  /* 圣诞主题下, 所有 bg-background 的元素背景透明 */
+  /*
+   * 圣诞主题下，不要让 bg-background 完全透明：
+   * Drawer / Dialog / 输入框等依赖 bg-background 的组件会变得难以阅读。
+   * 这里使用较高不透明度的浅色面板，既能透出背景图，又能保证对比度。
+   */
   html.christmas .bg-background {
-    background: transparent !important;
+    background: rgba(255, 255, 255, 0.86) !important;
   }
 
 
@@ -246,7 +252,7 @@ html.christmas {
 
   /* 圣诞主题特殊效果 */
   .christmas .glass-card {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.82);
     border: 1px solid rgba(220, 38, 38, 0.2);
     box-shadow: 0 8px 32px 0 rgba(220, 38, 38, 0.15);
   }
@@ -263,7 +269,7 @@ html.christmas {
   }
 
   .christmas .neon-glass-card {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.26);
     /* 圣诞主题下稍微增加透明度 */
   }
 
@@ -282,7 +288,7 @@ html.christmas {
   }
 
   .christmas .theme-glass-card {
-    background: rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.82);
     border: 1px solid rgba(220, 38, 38, 0.2);
     box-shadow: 0 8px 32px 0 rgba(220, 38, 38, 0.15);
   }
@@ -301,7 +307,7 @@ html.christmas {
   }
 
   .christmas .neon-glass-dialog {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.28);
   }
 
   /* 主题对话框玻璃拟态效果 */
@@ -316,7 +322,7 @@ html.christmas {
   }
 
   .christmas .theme-glass-dialog {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(255, 255, 255, 0.26);
   }
 
   /* ========== 装饰系统 ========== */
@@ -352,7 +358,7 @@ html.christmas {
   .christmas main.glass-card {
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
-    background: rgba(255, 255, 255, 0.6) !important;
+    background: rgba(255, 255, 255, 0.78) !important;
     border: 1px solid rgba(255, 255, 255, 0.2);
     box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.1);
   }
@@ -371,7 +377,7 @@ html.christmas {
   }
 
   .christmas .theme-adaptive-sidebar [data-slot="sidebar-inner"] {
-    background: rgba(255, 255, 255, 0.08) !important;
+    background: rgba(255, 255, 255, 0.22) !important;
   }
 
   /* 通用玻璃拟态 Card - 根据主题自动调整 */
@@ -386,7 +392,7 @@ html.christmas {
   }
 
   .christmas .theme-adaptive-card {
-    background: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.26);
   }
 
   /* Card 霓虹灯效果 - 通过 CSS 变量控制颜色 */

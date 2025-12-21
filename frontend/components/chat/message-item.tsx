@@ -2,12 +2,15 @@
 
 import { formatDistanceToNow } from "date-fns";
 import { zhCN, enUS } from "date-fns/locale";
-import { User, Bot, Eye, PlugZap, Sparkles } from "lucide-react";
+import { User, Bot, Eye, PlugZap, Sparkles, Plus } from "lucide-react";
+import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { CardContent } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useI18n } from "@/lib/i18n-context";
 import type { Message, RunSummary } from "@/lib/api-types";
+import type { ComparisonVariant } from "@/lib/stores/chat-comparison-store";
 import { cn } from "@/lib/utils";
 import { MessageContent } from "./message-content";
 import { AdaptiveCard } from "@/components/cards/adaptive-card";
@@ -23,6 +26,8 @@ export interface MessageItemProps {
   onViewDetails?: (runId: string) => void;
   onTriggerEval?: (messageId: string, runId: string) => void; // 添加 messageId 参数
   showEvalButton?: boolean;
+  comparisonVariants?: ComparisonVariant[];
+  onAddComparison?: (assistantMessageId: string, sourceUserMessageId: string) => void;
 }
 
 export function MessageItem({
@@ -34,6 +39,8 @@ export function MessageItem({
   onViewDetails,
   onTriggerEval,
   showEvalButton = true,
+  comparisonVariants = [],
+  onAddComparison,
 }: MessageItemProps) {
   const { t, language } = useI18n();
   const isUser = message.role === "user";
@@ -45,6 +52,38 @@ export function MessageItem({
   // 获取第一个 run（通常是 baseline run）
   const primaryRun = runs.length > 0 ? runs[0] : undefined;
   const firstInvocation = primaryRun?.tool_invocations?.[0];
+  const [activeTab, setActiveTab] = useState<string>("baseline");
+
+  const tabItems = useMemo(() => {
+    if (!isAssistant) return [];
+    const items: Array<{
+      key: string;
+      label: string;
+      status?: "queued" | "running" | "succeeded" | "failed";
+      content?: string;
+      errorMessage?: string;
+    }> = [];
+
+    const baselineLabel = primaryRun?.requested_logical_model || "Baseline";
+    items.push({
+      key: "baseline",
+      label: baselineLabel,
+      status: primaryRun?.status,
+      content: message.content,
+    });
+
+    for (const v of comparisonVariants) {
+      items.push({
+        key: v.id,
+        label: v.model,
+        status: v.status,
+        content: v.content,
+        errorMessage: v.error_message,
+      });
+    }
+
+    return items;
+  }, [comparisonVariants, isAssistant, message.content, primaryRun?.requested_logical_model, primaryRun?.status]);
 
   // 格式化时间
   const formattedTime = formatDistanceToNow(new Date(message.created_at), {
@@ -88,6 +127,35 @@ export function MessageItem({
     );
   };
 
+  const getComparisonStatusBadge = (status: "running" | "succeeded" | "failed") => {
+    const statusConfig = {
+      running: {
+        label: t("chat.run.status_running"),
+        className: "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400",
+      },
+      succeeded: {
+        label: t("chat.run.status_succeeded"),
+        className: "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400",
+      },
+      failed: {
+        label: t("chat.run.status_failed"),
+        className: "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400",
+      },
+    } as const;
+
+    const config = statusConfig[status];
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+          config.className
+        )}
+      >
+        {config.label}
+      </span>
+    );
+  };
+
   return (
     <div
       className={cn(
@@ -117,7 +185,39 @@ export function MessageItem({
           )}
         >
           <CardContent className="py-3 px-4">
-            <MessageContent content={message.content} role={message.role} />
+            {isAssistant && comparisonVariants.length > 0 ? (
+              <Tabs value={activeTab} onValueChange={setActiveTab} className="gap-3">
+                <TabsList className="h-8 px-1">
+                  {tabItems.map((item) => (
+                    <TabsTrigger
+                      key={item.key}
+                      value={item.key}
+                      className="text-xs px-2 py-1"
+                    >
+                      {item.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {tabItems.map((item) => (
+                  <TabsContent key={item.key} value={item.key} className="mt-0">
+                    {item.status === "running" ? (
+                      <div className="text-sm text-muted-foreground">
+                        {t("chat.message.add_comparison_generating")}
+                      </div>
+                    ) : item.status === "failed" ? (
+                      <div className="text-sm text-destructive">
+                        {item.errorMessage || t("chat.message.add_comparison_failed")}
+                      </div>
+                    ) : (
+                      <MessageContent content={item.content || ""} role="assistant" />
+                    )}
+                  </TabsContent>
+                ))}
+              </Tabs>
+            ) : (
+              <MessageContent content={message.content} role={message.role} />
+            )}
 
             {/* Run 摘要信息 */}
             {isAssistant && (
@@ -142,6 +242,16 @@ export function MessageItem({
                             {run.latency}ms
                           </span>
                         )}
+                      </div>
+                    ))}
+
+                    {comparisonVariants.map((v) => (
+                      <div
+                        key={v.id}
+                        className="flex items-center gap-2 text-xs text-muted-foreground"
+                      >
+                        <span className="font-medium">{v.model}</span>
+                        {getComparisonStatusBadge(v.status)}
                       </div>
                     ))}
                   </div>
@@ -185,6 +295,21 @@ export function MessageItem({
                   <Eye className="size-3.5" />
                 </Button>
               )}
+
+              {/* 添加对比按钮 */}
+              {onAddComparison &&
+                runSourceMessageId &&
+                primaryRun.status === "succeeded" && (
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    onClick={() => onAddComparison(message.message_id, runSourceMessageId)}
+                    title={t("chat.message.add_comparison")}
+                    aria-label={t("chat.message.add_comparison")}
+                  >
+                    <Plus className="size-3.5" />
+                  </Button>
+                )}
 
               {/* 推荐评测按钮 */}
               {showEvalButton && onTriggerEval && primaryRun.status === "succeeded" && (

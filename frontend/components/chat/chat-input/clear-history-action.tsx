@@ -13,7 +13,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 export type ClearHistoryActionProps = {
   disabled?: boolean;
@@ -42,23 +41,17 @@ export function ClearHistoryAction({
 }: ClearHistoryActionProps) {
   return (
     <>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            onClick={() => onOpenChange(true)}
-            disabled={disabled || isBusy}
-            aria-label={tooltip}
-          >
-            {isBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{tooltip}</p>
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        onClick={() => onOpenChange(true)}
+        disabled={disabled || isBusy}
+        aria-label={tooltip}
+        title={tooltip}
+      >
+        {isBusy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+      </Button>
 
       <AlertDialog open={open} onOpenChange={onOpenChange}>
         <AlertDialogContent>
@@ -77,4 +70,3 @@ export function ClearHistoryAction({
     </>
   );
 }
-

@@ -11,7 +11,6 @@ import {
   Loader2 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useI18n } from "@/lib/i18n-context";
 import { cn } from "@/lib/utils";
 import { toast } from "sonner";
@@ -332,104 +331,100 @@ export function SlateChatInput({
 
         {/* 工具栏 - 在输入框底部 */}
         <div className="flex items-center justify-between px-2 py-2 border-t bg-muted/30">
-          <TooltipProvider>
-            <div className="flex items-center gap-1">
-              <ImageUploadAction
-                disabled={disabled || isSending}
-                onFilesSelected={handleFilesSelected}
-                uploadLabel={t("chat.message.upload_image")}
-              />
+          <div className="flex items-center gap-1">
+            <ImageUploadAction
+              disabled={disabled || isSending}
+              onFilesSelected={handleFilesSelected}
+              uploadLabel={t("chat.message.upload_image")}
+            />
 
-              <ModelParametersPopover
-                idPrefix={`chat-${conversationId}`}
-                disabled={disabled || isSending}
-                enabled={paramEnabled}
-                parameters={parameters}
-                onEnabledChange={setParamEnabled}
-                onParametersChange={setParameters}
-                onReset={() => {
-                  setParameters({ ...DEFAULT_MODEL_PARAMETERS, ...defaultParameters });
-                  setParamEnabled({
-                    temperature: false,
-                    top_p: false,
-                    frequency_penalty: false,
-                    presence_penalty: false,
-                  });
-                }}
-                title={t("chat.message.model_parameters")}
-                resetLabel={t("chat.message.reset_parameters")}
-                labels={{
-                  temperature: t("chat.message.parameter_temperature"),
-                  top_p: t("chat.message.parameter_top_p"),
-                  frequency_penalty: t("chat.message.parameter_frequency_penalty"),
-                  presence_penalty: t("chat.message.parameter_presence_penalty"),
-                }}
-              />
+            <ModelParametersPopover
+              idPrefix={`chat-${conversationId}`}
+              disabled={disabled || isSending}
+              enabled={paramEnabled}
+              parameters={parameters}
+              onEnabledChange={setParamEnabled}
+              onParametersChange={setParameters}
+              onReset={() => {
+                setParameters({ ...DEFAULT_MODEL_PARAMETERS, ...defaultParameters });
+                setParamEnabled({
+                  temperature: false,
+                  top_p: false,
+                  frequency_penalty: false,
+                  presence_penalty: false,
+                });
+              }}
+              title={t("chat.message.model_parameters")}
+              resetLabel={t("chat.message.reset_parameters")}
+              labels={{
+                temperature: t("chat.message.parameter_temperature"),
+                top_p: t("chat.message.parameter_top_p"),
+                frequency_penalty: t("chat.message.parameter_frequency_penalty"),
+                presence_penalty: t("chat.message.parameter_presence_penalty"),
+              }}
+            />
 
-              {/* MCP 按钮 */}
-              {onMcpAction && (
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      onClick={onMcpAction}
-                      disabled={disabled || isSending}
-                    >
-                      <Zap className="size-4" />
-                    </Button>
-                  </TooltipTrigger>
-                  <TooltipContent>
-                    <p>{t("chat.message.mcp_tools")}</p>
-                  </TooltipContent>
-                </Tooltip>
+            {/* MCP 按钮 */}
+            {onMcpAction && (
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="ghost"
+                onClick={onMcpAction}
+                disabled={disabled || isSending}
+                aria-label={t("chat.message.mcp_tools")}
+                title={t("chat.message.mcp_tools")}
+              >
+                <Zap className="size-4" />
+              </Button>
+            )}
+
+            {/* 清空历史 */}
+            {onClearHistory ? (
+              <ClearHistoryAction
+                disabled={disabled || isSending}
+                isBusy={isClearing}
+                onConfirm={() => void handleClearHistory()}
+                title={t("chat.message.clear_history")}
+                description={t("chat.message.clear_history_confirm")}
+                confirmText={t("chat.action.confirm")}
+                cancelText={t("chat.action.cancel")}
+                tooltip={t("chat.message.clear_history")}
+                open={clearDialogOpen}
+                onOpenChange={setClearDialogOpen}
+              />
+            ) : null}
+          </div>
+
+          {/* 右侧：发送状态与按钮 */}
+          <div className="flex items-center gap-2">
+            {isSending ? (
+              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                <Loader2 className="size-3 animate-spin" />
+                <span>{t("chat.message.sending")}</span>
+              </div>
+            ) : null}
+
+            <Button
+              type="button"
+              size="icon-sm"
+              onClick={handleSend}
+              disabled={disabled || isSending}
+              aria-label={isSending ? t("chat.message.sending") : t("chat.message.send")}
+              title={t("chat.message.send_hint")}
+            >
+              {isSending ? (
+                <Loader2 className="size-4 animate-spin" />
+              ) : (
+                <Send className="size-4" />
               )}
-
-              {/* 清空历史 */}
-              {onClearHistory ? (
-                <ClearHistoryAction
-                  disabled={disabled || isSending}
-                  isBusy={isClearing}
-                  onConfirm={() => void handleClearHistory()}
-                  title={t("chat.message.clear_history")}
-                  description={t("chat.message.clear_history_confirm")}
-                  confirmText={t("chat.action.confirm")}
-                  cancelText={t("chat.action.cancel")}
-                  tooltip={t("chat.message.clear_history")}
-                  open={clearDialogOpen}
-                  onOpenChange={setClearDialogOpen}
-                />
-              ) : null}
-            </div>
-
-            {/* 右侧：发送按钮 */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  size="icon-sm"
-                  onClick={handleSend}
-                  disabled={disabled || isSending}
-                  aria-label={isSending ? t("chat.message.sending") : t("chat.message.send")}
-                >
-                  {isSending ? (
-                    <Loader2 className="size-4 animate-spin" />
-                  ) : (
-                    <Send className="size-4" />
-                  )}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>
-                <p>{t("chat.message.send_hint")}</p>
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+            </Button>
+          </div>
         </div>
       </div>
 
       <div className="text-xs text-muted-foreground text-center">
-        {t("chat.message.send_hint")}
+        {isSending ? t("chat.message.sending") : t("chat.message.send_hint")}
       </div>
     </div>
   );

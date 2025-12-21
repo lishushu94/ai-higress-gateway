@@ -7,7 +7,6 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Label } from "@/components/ui/label";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Slider } from "@/components/ui/slider";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 
 import type { TunableModelParameterKey, ModelParameters } from "./types";
 
@@ -56,24 +55,18 @@ export function ModelParametersPopover({
 
   return (
     <Popover>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <PopoverTrigger asChild>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant={hasActive ? "secondary" : "ghost"}
-              disabled={disabled}
-              aria-label={title}
-            >
-              <Settings2 className="size-4" />
-            </Button>
-          </PopoverTrigger>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{title}</p>
-        </TooltipContent>
-      </Tooltip>
+      <PopoverTrigger asChild>
+        <Button
+          type="button"
+          size="icon-sm"
+          variant={hasActive ? "secondary" : "ghost"}
+          disabled={disabled}
+          aria-label={title}
+          title={title}
+        >
+          <Settings2 className="size-4" />
+        </Button>
+      </PopoverTrigger>
 
       <PopoverContent className="w-80" align="start">
         <div className="space-y-4">

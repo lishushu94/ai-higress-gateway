@@ -1,39 +1,67 @@
 "use client";
 
-import { useEffect, useRef, useState, useMemo } from "react";
+import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MessageItem } from "./message-item";
 import { ErrorAlert } from "./error-alert";
+import { AddComparisonDialog } from "./add-comparison-dialog";
 import { useI18n } from "@/lib/i18n-context";
+import { useErrorDisplay } from "@/lib/errors/error-display";
 import { useMessages } from "@/lib/swr/use-messages";
 import { useCachePreloader } from "@/lib/swr/cache";
 import { messageService } from "@/http/message";
+import { conversationService } from "@/http/conversation";
 import { useAuth } from "@/components/providers/auth-provider";
+import { useAssistant } from "@/lib/swr/use-assistants";
+import { useLogicalModels } from "@/lib/swr/use-logical-models";
+import {
+  useChatComparisonStore,
+  type ComparisonVariant,
+} from "@/lib/stores/chat-comparison-store";
 import type { Message, RunSummary } from "@/lib/api-types";
 
 export interface MessageListProps {
+  assistantId: string;
   conversationId: string;
   onViewDetails?: (runId: string) => void;
   onTriggerEval?: (messageId: string, runId: string) => void; // 添加 messageId 参数
   showEvalButton?: boolean;
 }
 
-export function MessageList({
+export const MessageList = memo(function MessageList({
+  assistantId,
   conversationId,
   onViewDetails,
   onTriggerEval,
   showEvalButton = true,
 }: MessageListProps) {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { user } = useAuth();
+  const { assistant } = useAssistant(assistantId);
+  const { models } = useLogicalModels();
+  const { showError } = useErrorDisplay();
   const { preloadData } = useCachePreloader();
   const [cursor, setCursor] = useState<string | undefined>();
   const [allMessages, setAllMessages] = useState<
     Array<{ message: Message; run?: RunSummary }>
   >([]);
   const parentRef = useRef<HTMLDivElement>(null);
+  const variantsByKey = useChatComparisonStore((s) => s.variantsByKey);
+  const addVariant = useChatComparisonStore((s) => s.addVariant);
+  const updateVariant = useChatComparisonStore((s) => s.updateVariant);
+
+  const [compareDialogOpen, setCompareDialogOpen] = useState(false);
+  const [compareBusy, setCompareBusy] = useState(false);
+  const [compareSelectedModel, setCompareSelectedModel] = useState<string | null>(
+    null
+  );
+  const [compareTarget, setCompareTarget] = useState<{
+    assistantMessageId: string;
+    sourceUserMessageId: string;
+    baselineModel?: string;
+  } | null>(null);
 
   // 切换会话时重置本地分页/聚合状态
   useEffect(() => {
@@ -99,6 +127,19 @@ export function MessageList({
     return [...allMessages].reverse();
   }, [allMessages]);
 
+  const availableModels = useMemo(() => {
+    const modelSet = new Set<string>();
+    modelSet.add("auto");
+
+    for (const model of models) {
+      if (!model.enabled) continue;
+      if (!model.capabilities?.includes("chat")) continue;
+      modelSet.add(model.logical_id);
+    }
+
+    return ["auto", ...Array.from(modelSet).filter((m) => m !== "auto").sort()];
+  }, [models]);
+
   // 将 user message 的 run 关联到其后一个 assistant message（便于在回复旁展示，并确保 eval 使用 user message_id）
   const displayRows = useMemo(() => {
     const rows: Array<{
@@ -128,6 +169,164 @@ export function MessageList({
 
     return rows;
   }, [displayMessages]);
+
+  const buildComparisonPrompt = useCallback(
+    (sourceUserMessageId: string) => {
+      const idx = displayMessages.findIndex(
+        (item) =>
+          item.message.message_id === sourceUserMessageId &&
+          item.message.role === "user"
+      );
+      if (idx === -1) return null;
+
+      const roleLabel =
+        language === "zh"
+          ? { user: "用户", assistant: "助手" }
+          : { user: "User", assistant: "Assistant" };
+
+      const instruction =
+        language === "zh"
+          ? "请基于以下对话内容，回答最后一条用户消息。"
+          : "Based on the conversation below, answer the last user message.";
+
+      const lines: string[] = [];
+      for (let i = 0; i <= idx; i += 1) {
+        const row = displayMessages[i];
+        const msg = row?.message;
+        if (!msg) continue;
+        if (msg.role !== "user" && msg.role !== "assistant") continue;
+        const label = msg.role === "user" ? roleLabel.user : roleLabel.assistant;
+        lines.push(`${label}: ${msg.content}`);
+      }
+
+      const maxChars = 18_000;
+      const sep = "\n\n";
+      let remaining = maxChars - instruction.length - sep.length;
+      if (remaining <= 0) return instruction;
+
+      const selected: string[] = [];
+      for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i] ?? "";
+        const needed = line.length + (selected.length ? sep.length : 0);
+        if (needed > remaining) {
+          if (selected.length === 0 && remaining > 20) {
+            selected.unshift(line.slice(-remaining));
+          }
+          break;
+        }
+        selected.unshift(line);
+        remaining -= needed;
+      }
+
+      return `${instruction}${sep}${selected.join(sep)}`.trim();
+    },
+    [displayMessages, language]
+  );
+
+  const openCompareDialog = useCallback(
+    (assistantMessageId: string, sourceUserMessageId: string, baselineModel?: string) => {
+      setCompareTarget({ assistantMessageId, sourceUserMessageId, baselineModel });
+      const preferred =
+        availableModels.find((m) => m !== baselineModel) ?? availableModels[0] ?? null;
+      setCompareSelectedModel(preferred);
+      setCompareDialogOpen(true);
+    },
+    [availableModels]
+  );
+
+  const handleConfirmComparison = useCallback(async () => {
+    if (!compareTarget || !compareSelectedModel) return;
+
+    const prompt = buildComparisonPrompt(compareTarget.sourceUserMessageId);
+    if (!prompt) {
+      showError(new Error("Missing source message for comparison"), {
+        context: t("chat.message.add_comparison_failed"),
+      });
+      return;
+    }
+    const projectId = assistant?.project_id;
+    if (!projectId) {
+      showError(new Error("Missing assistant project_id for comparison"), {
+        context: t("chat.message.add_comparison_failed"),
+      });
+      return;
+    }
+
+    const key = `${conversationId}:${compareTarget.assistantMessageId}`;
+    const variantId = `cmp-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    const createdAt = new Date().toISOString();
+    const baseVariant: ComparisonVariant = {
+      id: variantId,
+      model: compareSelectedModel,
+      status: "running",
+      created_at: createdAt,
+    };
+
+    addVariant(key, baseVariant);
+    setCompareDialogOpen(false);
+    setCompareBusy(true);
+
+    try {
+      const tempConversation = await conversationService.createConversation({
+        assistant_id: assistantId,
+        project_id: projectId,
+        title: undefined,
+      });
+
+      try {
+        await messageService.sendMessage(tempConversation.conversation_id, {
+          content: prompt,
+          override_logical_model: compareSelectedModel,
+          streaming: false,
+        });
+
+        const tempMessages = await messageService.getMessages(
+          tempConversation.conversation_id,
+          { limit: 10 }
+        );
+        const assistantMsg = tempMessages.items.find(
+          (it) =>
+            it.message.role === "assistant" &&
+            typeof it.message.content === "string" &&
+            it.message.content.trim().length > 0
+        )?.message;
+
+        const content = assistantMsg?.content?.trim() || "";
+        if (!content) {
+          updateVariant(key, variantId, {
+            status: "failed",
+            error_message: t("chat.message.add_comparison_empty"),
+          });
+          return;
+        }
+
+        updateVariant(key, variantId, { status: "succeeded", content });
+      } finally {
+        await conversationService
+          .deleteConversation(tempConversation.conversation_id)
+          .catch(() => undefined);
+      }
+    } catch (error) {
+      updateVariant(key, variantId, {
+        status: "failed",
+        error_message: t("chat.message.add_comparison_failed"),
+      });
+      showError(error, { context: t("chat.message.add_comparison_failed") });
+    } finally {
+      setCompareBusy(false);
+    }
+  }, [
+    addVariant,
+    buildComparisonPrompt,
+    compareSelectedModel,
+    compareTarget,
+    conversationId,
+    assistant?.project_id,
+    assistantId,
+    showError,
+    t,
+    updateVariant,
+  ]);
 
   // 虚拟列表配置
   const rowVirtualizer = useVirtualizer({
@@ -267,6 +466,16 @@ export function MessageList({
                     onViewDetails={onViewDetails}
                     onTriggerEval={onTriggerEval}
                     showEvalButton={showEvalButton}
+                    comparisonVariants={
+                      variantsByKey[`${conversationId}:${item.message.message_id}`] ?? []
+                    }
+                    onAddComparison={(_, sourceUserMessageId) =>
+                      openCompareDialog(
+                        item.message.message_id,
+                        sourceUserMessageId,
+                        item.runs?.[0]?.requested_logical_model
+                      )
+                    }
                   />
                 </div>
               </div>
@@ -288,6 +497,19 @@ export function MessageList({
           </span>
         </div>
       )}
+
+      <AddComparisonDialog
+        open={compareDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) setCompareTarget(null);
+          setCompareDialogOpen(open);
+        }}
+        availableModels={availableModels}
+        selectedModel={compareSelectedModel}
+        onSelectedModelChange={setCompareSelectedModel}
+        onConfirm={() => void handleConfirmComparison()}
+        isBusy={compareBusy}
+      />
     </div>
   );
-}
+});

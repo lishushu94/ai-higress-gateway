@@ -4,8 +4,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/viper"
@@ -123,6 +125,22 @@ func (c *Config) Validate() error {
 		if s.Command == "" && s.URL == "" {
 			return fmt.Errorf("mcp_servers[%d] must set command or url", i)
 		}
+		if strings.TrimSpace(s.Type) != "" {
+			switch strings.ToLower(strings.TrimSpace(s.Type)) {
+			case "command", "auto", "streamable", "streamable_http", "http", "sse", "legacy_sse":
+			default:
+				return fmt.Errorf("mcp_servers[%d].type is unsupported: %q", i, s.Type)
+			}
+		}
+		if strings.TrimSpace(s.URL) != "" {
+			u, err := url.Parse(s.URL)
+			if err != nil {
+				return fmt.Errorf("mcp_servers[%d].url is invalid: %w", i, err)
+			}
+			if u.Scheme != "http" && u.Scheme != "https" {
+				return fmt.Errorf("mcp_servers[%d].url must start with http:// or https://", i)
+			}
+		}
 	}
 	return nil
 }
@@ -148,6 +166,22 @@ func (c *Config) ValidateForMCPServe() error {
 		}
 		if s.Command == "" && s.URL == "" {
 			return fmt.Errorf("mcp_servers[%d] must set command or url", i)
+		}
+		if strings.TrimSpace(s.Type) != "" {
+			switch strings.ToLower(strings.TrimSpace(s.Type)) {
+			case "command", "auto", "streamable", "streamable_http", "http", "sse", "legacy_sse":
+			default:
+				return fmt.Errorf("mcp_servers[%d].type is unsupported: %q", i, s.Type)
+			}
+		}
+		if strings.TrimSpace(s.URL) != "" {
+			u, err := url.Parse(s.URL)
+			if err != nil {
+				return fmt.Errorf("mcp_servers[%d].url is invalid: %w", i, err)
+			}
+			if u.Scheme != "http" && u.Scheme != "https" {
+				return fmt.Errorf("mcp_servers[%d].url must start with http:// or https://", i)
+			}
 		}
 	}
 	return nil

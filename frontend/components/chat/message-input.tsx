@@ -14,6 +14,8 @@ import type { Message } from "@/lib/api-types";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/stores/chat-store";
 
+const EMPTY_STRING_ARRAY: string[] = [];
+
 // 表单验证 schema
 const messageSchema = z.object({
   content: z.string().min(1, "chat.message.input_placeholder"),
@@ -44,7 +46,10 @@ export function MessageInput({
   const [isSending, setIsSending] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const sendMessage = useSendMessage(conversationId, assistantId, overrideLogicalModel);
-  const bridgeAgentIds = useChatStore((s) => s.conversationBridgeAgentIds[conversationId] ?? []);
+  const bridgeAgentIds =
+    useChatStore((s) => s.conversationBridgeAgentIds[conversationId]) ??
+    EMPTY_STRING_ARRAY;
+  const chatStreamingEnabled = useChatStore((s) => s.chatStreamingEnabled);
 
   // 表单管理
   const {
@@ -90,7 +95,7 @@ export function MessageInput({
       const response = await sendMessage({
         content: data.content.trim(),
         bridge_agent_ids: bridgeAgentIds.length ? bridgeAgentIds : undefined,
-      });
+      }, { streaming: chatStreamingEnabled });
 
       // 清空输入框
       reset();

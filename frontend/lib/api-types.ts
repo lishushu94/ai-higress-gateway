@@ -946,6 +946,7 @@ export interface SendMessageRequest {
   model_preset?: Record<string, any>;
   bridge_agent_id?: string;
   bridge_agent_ids?: string[];
+  streaming?: boolean;
 }
 
 export interface SendMessageResponse {
@@ -1000,6 +1001,7 @@ export interface CreateEvalRequest {
   conversation_id: string;
   message_id: string;
   baseline_run_id: string;
+  streaming?: boolean;
 }
 
 export type ReasonTag = 'accurate' | 'complete' | 'concise' | 'safe' | 'fast' | 'cheap';

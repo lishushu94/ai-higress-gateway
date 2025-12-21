@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from typing import Any
+from typing import Any, AsyncIterator
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -27,7 +27,9 @@ from app.jwt_auth import AuthenticatedUser
 from app.models import APIKey
 from app.services.chat_history_service import (
     create_assistant_message_after_user,
+    create_assistant_message_placeholder_after_user,
     create_user_message,
+    finalize_assistant_message_after_user_sequence,
     get_assistant,
     get_conversation,
 )
@@ -44,9 +46,39 @@ from app.services.project_eval_config_service import (
 from app.services.project_chat_settings_service import DEFAULT_PROJECT_CHAT_MODEL
 from app.api.v1.chat.provider_selector import ProviderSelector
 from app.api.v1.chat.request_handler import RequestHandler
+from app.services.eval_service import execute_run_stream
 
 
 PROJECT_INHERIT_SENTINEL = "__project__"
+
+
+def _encode_sse_event(*, event_type: str, data: Any) -> bytes:
+    lines: list[str] = []
+    event = str(event_type or "").strip()
+    if event:
+        lines.append(f"event: {event}")
+
+    if isinstance(data, (bytes, bytearray)):
+        payload = data.decode("utf-8", errors="ignore")
+        lines.append(f"data: {payload}")
+    elif isinstance(data, str):
+        lines.append(f"data: {data}")
+    else:
+        lines.append(f"data: {json.dumps(data, ensure_ascii=False)}")
+
+    return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+def _run_to_summary(run) -> dict[str, Any]:
+    return {
+        "run_id": str(run.id),
+        "requested_logical_model": run.requested_logical_model,
+        "status": run.status,
+        "output_preview": run.output_preview,
+        "latency_ms": run.latency_ms,
+        "error_code": run.error_code,
+        "tool_invocations": getattr(run, "tool_invocations", None),
+    }
 
 
 def _to_authenticated_api_key(
@@ -542,4 +574,203 @@ async def send_message_and_run_baseline(
     return UUID(str(user_message.id)), UUID(str(run.id))
 
 
-__all__ = ["send_message_and_run_baseline"]
+async def stream_message_and_run_baseline(
+    db: Session,
+    *,
+    redis: Redis,
+    client: Any,
+    current_user: AuthenticatedUser,
+    conversation_id: UUID,
+    content: str,
+    override_logical_model: str | None = None,
+    model_preset: dict | None = None,
+) -> AsyncIterator[bytes]:
+    """
+    创建 user message 并以 SSE 流式执行 baseline run。
+
+    注意：当前流式模式不支持 bridge 工具调用（tool loop）。
+    """
+    conv = get_conversation(db, conversation_id=conversation_id, user_id=UUID(str(current_user.id)))
+    ctx = resolve_project_context(db, project_id=UUID(str(conv.api_key_id)), current_user=current_user)
+
+    try:
+        ensure_account_usable(db, user_id=UUID(str(current_user.id)))
+    except InsufficientCreditsError as exc:
+        raise bad_request(
+            "积分不足",
+            details={"code": "CREDIT_NOT_ENOUGH", "balance": exc.balance},
+        )
+
+    assistant = get_assistant(db, assistant_id=UUID(str(conv.assistant_id)), user_id=UUID(str(current_user.id)))
+    requested_model = override_logical_model or assistant.default_logical_model
+    if requested_model == PROJECT_INHERIT_SENTINEL:
+        requested_model = (getattr(ctx.api_key, "chat_default_logical_model", None) or "").strip() or DEFAULT_PROJECT_CHAT_MODEL
+    if not requested_model:
+        raise bad_request("未指定模型")
+
+    cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
+    effective_provider_ids = get_effective_provider_ids_for_user(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key=ctx.api_key,
+        provider_scopes=list(getattr(cfg, "provider_scopes", None) or DEFAULT_PROVIDER_SCOPES),
+    )
+
+    if requested_model == "auto":
+        candidates = list(cfg.candidate_logical_models or [])
+        if not candidates:
+            raise bad_request(
+                "当前助手默认模型为 auto，但项目未配置 candidate_logical_models",
+                details={"project_id": str(ctx.project_id)},
+            )
+
+        preset_payload: dict[str, Any] = {}
+        if isinstance(assistant.model_preset, dict):
+            preset_payload.update(assistant.model_preset)
+        if isinstance(model_preset, dict):
+            preset_payload.update(model_preset)
+
+        selector = ProviderSelector(client=client, redis=redis, db=db)
+        candidates = await selector.check_candidate_availability(
+            candidate_logical_models=candidates,
+            effective_provider_ids=effective_provider_ids,
+            api_style="openai",
+            user_id=UUID(str(current_user.id)),
+            is_superuser=current_user.is_superuser,
+            request_payload=preset_payload or None,
+            budget_credits=cfg.budget_per_eval_credits,
+        )
+
+        if not candidates:
+            raise bad_request(
+                "auto 模式下无可用的候选模型（均被禁用或无健康上游）",
+                details={"project_id": str(ctx.project_id)},
+            )
+
+        rec = recommend_challengers(
+            db,
+            project_id=ctx.project_id,
+            assistant_id=UUID(str(assistant.id)),
+            baseline_logical_model="auto",
+            user_text=content,
+            context_features=build_rule_context_features(user_text=content, request_payload=None),
+            candidate_logical_models=candidates,
+            k=1,
+            policy_version="ts-v1",
+        )
+        if not rec.candidates:
+            raise bad_request(
+                "auto 模式下无法选择候选模型",
+                details={"project_id": str(ctx.project_id)},
+            )
+        requested_model = rec.candidates[0].logical_model
+
+    user_message = create_user_message(db, conversation=conv, content_text=content)
+    assistant_message = create_assistant_message_placeholder_after_user(
+        db,
+        conversation_id=UUID(str(conv.id)),
+        user_sequence=int(user_message.sequence or 0),
+    )
+
+    payload = build_openai_request_payload(
+        db,
+        conversation=conv,
+        assistant=assistant,
+        user_message=user_message,
+        requested_logical_model=requested_model,
+        model_preset_override=model_preset,
+    )
+
+    run = create_run_record(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key_id=ctx.project_id,
+        message_id=UUID(str(user_message.id)),
+        requested_logical_model=requested_model,
+        request_payload=payload,
+    )
+
+    yield _encode_sse_event(
+        event_type="message.created",
+        data={
+            "type": "message.created",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "assistant_message_id": str(assistant_message.id),
+            "baseline_run": _run_to_summary(run),
+        },
+    )
+
+    auth_key = _to_authenticated_api_key(api_key=ctx.api_key, current_user=current_user)
+    parts: list[str] = []
+    errored = False
+
+    async for item in execute_run_stream(
+        db,
+        redis=redis,
+        client=client,
+        api_key=auth_key,
+        effective_provider_ids=effective_provider_ids,
+        conversation=conv,
+        assistant=assistant,
+        user_message=user_message,
+        run=run,
+        requested_logical_model=requested_model,
+        payload_override=payload,
+    ):
+        if not isinstance(item, dict):
+            continue
+        itype = str(item.get("type") or "")
+
+        if itype == "run.delta":
+            delta = item.get("delta")
+            if isinstance(delta, str) and delta:
+                parts.append(delta)
+                yield _encode_sse_event(
+                    event_type="message.delta",
+                    data={
+                        "type": "message.delta",
+                        "conversation_id": str(conv.id),
+                        "assistant_message_id": str(assistant_message.id),
+                        "run_id": str(run.id),
+                        "delta": delta,
+                    },
+                )
+        elif itype == "run.error":
+            errored = True
+            yield _encode_sse_event(
+                event_type="message.error",
+                data={
+                    "type": "message.error",
+                    "conversation_id": str(conv.id),
+                    "assistant_message_id": str(assistant_message.id),
+                    "run_id": str(run.id),
+                    "error_code": item.get("error_code"),
+                    "error": item.get("error"),
+                },
+            )
+            break
+
+    db.refresh(run)
+    if not errored and run.status == "succeeded" and run.output_text:
+        finalize_assistant_message_after_user_sequence(
+            db,
+            conversation_id=UUID(str(conv.id)),
+            user_sequence=int(user_message.sequence or 0),
+            content_text=run.output_text,
+        )
+
+    yield _encode_sse_event(
+        event_type="message.completed" if run.status == "succeeded" else "message.failed",
+        data={
+            "type": "message.completed" if run.status == "succeeded" else "message.failed",
+            "conversation_id": str(conv.id),
+            "assistant_message_id": str(assistant_message.id),
+            "baseline_run": _run_to_summary(run),
+            "output_text": "".join(parts) if parts else None,
+        },
+    )
+    yield _encode_sse_event(event_type="done", data="[DONE]")
+
+
+__all__ = ["send_message_and_run_baseline", "stream_message_and_run_baseline"]

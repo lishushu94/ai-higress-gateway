@@ -5,7 +5,6 @@ import { useId } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 export type ImageUploadActionProps = {
@@ -38,26 +37,20 @@ export function ImageUploadAction({
         disabled={disabled}
       />
 
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            size="icon-sm"
-            variant="ghost"
-            disabled={disabled}
-            aria-label={uploadLabel}
-            onClick={() => {
-              const el = document.getElementById(inputId);
-              if (el instanceof HTMLInputElement) el.click();
-            }}
-          >
-            <ImageIcon className="size-4" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>
-          <p>{uploadLabel}</p>
-        </TooltipContent>
-      </Tooltip>
+      <Button
+        type="button"
+        size="icon-sm"
+        variant="ghost"
+        disabled={disabled}
+        aria-label={uploadLabel}
+        title={uploadLabel}
+        onClick={() => {
+          const el = document.getElementById(inputId);
+          if (el instanceof HTMLInputElement) el.click();
+        }}
+      >
+        <ImageIcon className="size-4" />
+      </Button>
     </div>
   );
 }

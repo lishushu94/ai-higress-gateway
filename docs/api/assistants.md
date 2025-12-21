@@ -178,7 +178,11 @@ Request:
 
 ### POST `/v1/conversations/{conversation_id}/messages`
 
-发送一条用户消息并同步执行 baseline（non-stream）。
+发送一条用户消息并执行 baseline。
+
+支持两种模式：
+- **默认 non-stream**：等待 baseline run 完成后返回 JSON。
+- **streaming=true（SSE）**：以 `text/event-stream` 返回流式事件，前端可实时渲染 assistant 回复。
 
 Request:
 ```json
@@ -187,7 +191,8 @@ Request:
   "override_logical_model": "gpt-4.1",
   "model_preset": {"temperature": 0.2},
   "bridge_agent_id": "aws-dev-server",
-  "bridge_agent_ids": ["aws-dev-server", "home-nas"]
+  "bridge_agent_ids": ["aws-dev-server", "home-nas"],
+  "streaming": false
 }
 ```
 
@@ -197,6 +202,8 @@ Request:
   - 不传则保持原有“纯聊天 baseline”行为。
   - 当传入多个 Agent 时，后端会合并所有工具并注入模型；为了避免重名，会对工具名做别名映射（模型看到的是别名），实际执行时仍会路由到对应 Agent 的原始工具名。
   - 当前实现为 MVP：工具调用发生时，tool 输出日志通过 `/v1/bridge/events` 或 `/v1/bridge/tool-events` 另行查看。
+- `streaming`（可选，默认 `false`）：是否使用 SSE 流式返回。
+  - **当使用 `bridge_agent_id(s)` 时会回退到 non-stream**（当前 tool loop 仅在 non-stream 路径执行）。
 
 Response:
 ```json
@@ -218,6 +225,15 @@ Response:
   }
 }
 ```
+
+#### Streaming (SSE) Response
+
+当 `streaming=true`（或请求头包含 `Accept: text/event-stream`）且未使用 `bridge_agent_id(s)` 时，返回 `text/event-stream`：
+
+- `event: message.created`：包含 `user_message_id` / `assistant_message_id` / `baseline_run`
+- `event: message.delta`：增量 token（字段 `delta`）
+- `event: message.completed` / `message.failed`：结束事件，包含最终 `baseline_run`
+- `event: done` + `data: [DONE]`
 
 ### GET `/v1/conversations/{conversation_id}/messages`
 

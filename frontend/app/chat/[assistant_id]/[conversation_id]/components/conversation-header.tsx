@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { Maximize2, Minimize2, PlugZap } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -49,6 +50,10 @@ export function ConversationHeader({
     conversationModelOverrides,
     setConversationModelOverride,
     selectedProjectId,
+    evalStreamingEnabled,
+    setEvalStreamingEnabled,
+    chatStreamingEnabled,
+    setChatStreamingEnabled,
   } = useChatStore();
 
   const { settings: projectSettings } = useProjectChatSettings(selectedProjectId);
@@ -91,6 +96,42 @@ export function ConversationHeader({
       </div>
 
       <div className="flex items-center gap-1 md:gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted/50">
+              <span className="text-xs text-muted-foreground hidden md:inline">
+                {t("chat.message.streaming_label")}
+              </span>
+              <Switch
+                checked={chatStreamingEnabled}
+                onCheckedChange={setChatStreamingEnabled}
+                aria-label={t("chat.message.streaming_label")}
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t("chat.message.streaming_tooltip")}
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-muted/50">
+              <span className="text-xs text-muted-foreground hidden md:inline">
+                {t("chat.eval.streaming_label")}
+              </span>
+              <Switch
+                checked={evalStreamingEnabled}
+                onCheckedChange={setEvalStreamingEnabled}
+                aria-label={t("chat.eval.streaming_label")}
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            {t("chat.eval.streaming_tooltip")}
+          </TooltipContent>
+        </Tooltip>
+
         {/* 移动端隐藏 Bridge 按钮 */}
         <Tooltip>
           <TooltipTrigger asChild>

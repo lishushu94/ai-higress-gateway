@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"os/exec"
 	"regexp"
@@ -125,13 +126,17 @@ func (a *Aggregator) Start(ctx context.Context, servers []config.MCPServerConfig
 			errs = append(errs, fmt.Errorf("mcp server %q: missing command or url", s.Name))
 			continue
 		}
-		if s.Command == "" {
-			// Remote transports are an extension; keep stubbed for now.
-			errs = append(errs, fmt.Errorf("mcp server %q: remote url transport not implemented yet", s.Name))
-			continue
-		}
 
-		session, closeFn, err := a.connectCommandServer(ctx, s)
+		var (
+			session *sdk.ClientSession
+			closeFn func() error
+			err     error
+		)
+		if strings.TrimSpace(s.Command) != "" {
+			session, closeFn, err = a.connectCommandServer(ctx, s)
+		} else {
+			session, closeFn, err = a.connectRemoteServer(ctx, s)
+		}
 		if err != nil {
 			errs = append(errs, fmt.Errorf("connect mcp server %q: %w", s.Name, err))
 			continue
@@ -246,13 +251,127 @@ func sanitizeName(raw string) string {
 	return s
 }
 
+type headerRoundTripper struct {
+	base    http.RoundTripper
+	headers map[string]string
+}
+
+func (t *headerRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	base := t.base
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	if len(t.headers) == 0 {
+		return base.RoundTrip(req)
+	}
+	clone := req.Clone(req.Context())
+	for k, v := range t.headers {
+		if strings.TrimSpace(k) == "" {
+			continue
+		}
+		clone.Header.Set(k, v)
+	}
+	return base.RoundTrip(clone)
+}
+
+func newHTTPClientWithHeaders(headers map[string]string) *http.Client {
+	if len(headers) == 0 {
+		return http.DefaultClient
+	}
+	return &http.Client{
+		Transport: &headerRoundTripper{
+			base:    http.DefaultTransport,
+			headers: headers,
+		},
+	}
+}
+
 func (a *Aggregator) connectCommandServer(ctx context.Context, cfg config.MCPServerConfig) (*sdk.ClientSession, func() error, error) {
 	impl := &sdk.Implementation{
 		Name:    "ai-bridge-agent",
 		Version: "v0",
 	}
 
-	client := sdk.NewClient(impl, &sdk.ClientOptions{
+	client := sdk.NewClient(impl, a.newClientOptions(cfg))
+
+	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
+	cmd.Env = mergeEnv(os.Environ(), cfg.Env)
+
+	transport := &sdk.CommandTransport{Command: cmd}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, session.Close, nil
+}
+
+func (a *Aggregator) connectRemoteServer(ctx context.Context, cfg config.MCPServerConfig) (*sdk.ClientSession, func() error, error) {
+	impl := &sdk.Implementation{
+		Name:    "ai-bridge-agent",
+		Version: "v0",
+	}
+
+	client := sdk.NewClient(impl, a.newClientOptions(cfg))
+	httpClient := newHTTPClientWithHeaders(cfg.Headers)
+
+	normalizedType := strings.ToLower(strings.TrimSpace(cfg.Type))
+	switch normalizedType {
+	case "", "auto":
+		// Prefer streamable (newer spec), fallback to legacy SSE.
+		session, closeFn, err := a.connectStreamable(ctx, client, httpClient, cfg.URL)
+		if err == nil {
+			return session, closeFn, nil
+		}
+		session2, closeFn2, err2 := a.connectLegacySSE(ctx, client, httpClient, cfg.URL)
+		if err2 == nil {
+			return session2, closeFn2, nil
+		}
+		return nil, nil, fmt.Errorf("streamable failed: %v; legacy sse failed: %w", err, err2)
+	case "streamable", "streamable_http", "http":
+		return a.connectStreamable(ctx, client, httpClient, cfg.URL)
+	case "sse", "legacy_sse":
+		return a.connectLegacySSE(ctx, client, httpClient, cfg.URL)
+	default:
+		return nil, nil, fmt.Errorf("unsupported mcp server type: %q (supported: streamable, sse, auto)", cfg.Type)
+	}
+}
+
+func (a *Aggregator) connectStreamable(
+	ctx context.Context,
+	client *sdk.Client,
+	httpClient *http.Client,
+	endpoint string,
+) (*sdk.ClientSession, func() error, error) {
+	transport := &sdk.StreamableClientTransport{
+		Endpoint:   endpoint,
+		HTTPClient: httpClient,
+	}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, session.Close, nil
+}
+
+func (a *Aggregator) connectLegacySSE(
+	ctx context.Context,
+	client *sdk.Client,
+	httpClient *http.Client,
+	endpoint string,
+) (*sdk.ClientSession, func() error, error) {
+	transport := &sdk.SSEClientTransport{
+		Endpoint:   endpoint,
+		HTTPClient: httpClient,
+	}
+	session, err := client.Connect(ctx, transport, nil)
+	if err != nil {
+		return nil, nil, err
+	}
+	return session, session.Close, nil
+}
+
+func (a *Aggregator) newClientOptions(cfg config.MCPServerConfig) *sdk.ClientOptions {
+	return &sdk.ClientOptions{
 		ProgressNotificationHandler: func(_ context.Context, req *sdk.ProgressNotificationClientRequest) {
 			if req == nil || req.Params == nil {
 				return
@@ -289,17 +408,7 @@ func (a *Aggregator) connectCommandServer(ctx context.Context, cfg config.MCPSer
 			a.logger.Debug("mcp log", "server", cfg.Name, "level", level, "data", req.Params.Data)
 		},
 		KeepAlive: 30 * time.Second,
-	})
-
-	cmd := exec.CommandContext(ctx, cfg.Command, cfg.Args...)
-	cmd.Env = mergeEnv(os.Environ(), cfg.Env)
-
-	transport := &sdk.CommandTransport{Command: cmd}
-	session, err := client.Connect(ctx, transport, nil)
-	if err != nil {
-		return nil, nil, err
 	}
-	return session, session.Close, nil
 }
 
 func mergeEnv(base []string, extra map[string]string) []string {

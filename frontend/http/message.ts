@@ -15,6 +15,8 @@ import {
   type RunDetailBackend,
 } from '@/lib/normalizers/chat-normalizers';
 
+const SEND_MESSAGE_TIMEOUT_MS = 120_000;
+
 /**
  * 消息和 Run 管理服务
  */
@@ -41,7 +43,8 @@ export const messageService = {
   ): Promise<SendMessageResponse> => {
     const { data } = await httpClient.post<SendMessageResponseBackend>(
       `/v1/conversations/${conversationId}/messages`,
-      request
+      request,
+      { timeout: SEND_MESSAGE_TIMEOUT_MS }
     );
     return normalizeSendMessageResponse(data);
   },
