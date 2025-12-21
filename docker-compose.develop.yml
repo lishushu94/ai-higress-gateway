@@ -1,6 +1,9 @@
 services:
   bridge_gateway:
-    image: marshalleriksen/mcpproxy-gateway:${IMAGE_TAG:-latest}
+    build:
+      context: ./bridge
+      dockerfile: Dockerfile.gateway
+    image: apiproxy-bridge-gateway:dev
     container_name: apiproxy-bridge-gateway
     restart: unless-stopped
     env_file:
@@ -38,7 +41,7 @@ services:
       - postgres-data:/var/lib/postgresql/data
     networks:
       apiproxy-net:
-        ipv4_address: 172.20.0.12
+        ipv4_address: 172.20.0.9
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -71,17 +74,20 @@ services:
       retries: 5
 
   api:
-    # 开发环境后端默认直接拉取预构建镜像（与 deploy 一致），避免新手本地构建
-    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
     container_name: apiproxy-api
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
+      - AVATAR_LOCAL_DIR=/app/media/avatars
     volumes:
       - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./backend/media:/app/media
       # 开发模式: 挂载源代码实现热重载（可选）
       - ./backend/app:/app/app:ro
       - ./backend/main.py:/app/main.py:ro
@@ -107,16 +113,20 @@ services:
     command: uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
   celery_worker:
-    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
     container_name: apiproxy-celery-worker
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
+      - AVATAR_LOCAL_DIR=/app/media/avatars
     volumes:
       - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./backend/media:/app/media
       - ./backend/app:/app/app:ro
       - ./backend/main.py:/app/main.py:ro
     depends_on:
@@ -132,16 +142,20 @@ services:
     command: celery -A app.celery_app.celery_app worker -l info
 
   celery_beat:
-    image: marshalleriksen/apiproxy-api:${IMAGE_TAG:-latest}
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: apiproxy-api:dev
     container_name: apiproxy-celery-beat
     restart: unless-stopped
     env_file:
       - .env
     environment:
       - BRIDGE_GATEWAY_URL=http://bridge_gateway:8088
+      - AVATAR_LOCAL_DIR=/app/media/avatars
     volumes:
       - ./backend/logs:/app/logs
-      - ./backend/media:/app/backend/media
+      - ./backend/media:/app/media
       - ./backend/app:/app/app:ro
       - ./backend/main.py:/app/main.py:ro
     depends_on:
