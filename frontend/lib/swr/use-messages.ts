@@ -454,6 +454,18 @@ export function useSendMessageToConversation(
     } catch (error) {
       const standardError = ErrorHandler.normalize(error);
       const errorText = standardError.message || 'Send failed';
+      
+      const optimisticMessage = {
+        message: {
+          message_id: `temp-${nonce}`,
+          conversation_id: conversationId,
+          role: 'user' as const,
+          content: request.content,
+          created_at: createdAt,
+        },
+        run: undefined,
+      };
+      
       const errorMessage = {
         message: {
           message_id: `error-${nonce}`,

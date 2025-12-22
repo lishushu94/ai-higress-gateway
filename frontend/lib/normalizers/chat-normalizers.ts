@@ -157,14 +157,14 @@ export function normalizeMessageContent(content: MessageContent | unknown): stri
     return record.text;
   }
 
-  if ((record as MessageContent).type === 'text') {
+  if ((record as unknown as MessageContent).type === 'text') {
     return typeof record.text === 'string' ? record.text : '';
   }
-  if ((record as MessageContent).type === 'image') {
-    return `[图片: ${(record as MessageContent).image_url}]`;
+  if ((record as unknown as MessageContent).type === 'image') {
+    return `[图片: ${(record as unknown as MessageContent).image_url}]`;
   }
-  if ((record as MessageContent).type === 'file') {
-    return `[文件: ${(record as MessageContent).file_url}]`;
+  if ((record as unknown as MessageContent).type === 'file') {
+    return `[文件: ${(record as unknown as MessageContent).file_url}]`;
   }
 
   return '';

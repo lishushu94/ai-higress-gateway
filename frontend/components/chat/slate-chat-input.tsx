@@ -314,7 +314,7 @@ export function SlateChatInput({
   // 键盘快捷键
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent) => {
-      if (event.isComposing) return;
+      if (event.nativeEvent.isComposing) return;
 
       if (preferences.sendShortcut === "enter") {
         if (

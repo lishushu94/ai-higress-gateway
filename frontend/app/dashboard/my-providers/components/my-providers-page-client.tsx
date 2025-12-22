@@ -10,7 +10,7 @@ import type { Provider } from "@/http/provider";
 import { useI18n } from "@/lib/i18n-context";
 import { useErrorDisplay } from "@/lib/errors";
 import { useAuthStore } from "@/lib/stores/auth-store";
-import { usePrivateProviders, usePrivateProviderQuota, useUserAvailableProviders } from "@/lib/swr/use-private-providers";
+import { usePrivateProviderQuota, useUserAvailableProviders } from "@/lib/swr/use-private-providers";
 import { useUserDashboardProvidersMetrics } from "@/lib/swr/use-dashboard-v2";
 import { DeleteProviderDialog } from "./delete-provider-dialog";
 import { PrivateProvidersCards } from "./private-providers-cards";

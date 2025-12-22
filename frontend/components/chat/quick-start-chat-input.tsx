@@ -6,7 +6,6 @@ import { Loader2, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { ErrorHandler } from "@/lib/errors";
 import { useI18n } from "@/lib/i18n-context";
 import { useChatLayoutStore } from "@/lib/stores/chat-layout-store";
 import { useChatStore } from "@/lib/stores/chat-store";

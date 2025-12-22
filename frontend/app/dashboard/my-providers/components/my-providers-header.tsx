@@ -7,9 +7,9 @@ export function MyProvidersHeader() {
 
   return (
     <div className="space-y-1">
-      <h1 className="text-3xl font-bold">Provider 管理</h1>
+      <h1 className="text-3xl font-bold">{t("providers.management_title")}</h1>
       <p className="text-muted-foreground text-sm">
-        管理您的私有提供商、查看共享和公共提供商
+        {t("providers.management_subtitle")}
       </p>
     </div>
   );

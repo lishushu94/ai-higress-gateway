@@ -48,7 +48,7 @@ export const ProviderModelsTab = ({
     return Object.keys(groups)
       .sort()
       .reduce((acc, key) => {
-        acc[key] = groups[key];
+        acc[key] = groups[key]!;
         return acc;
       }, {} as Record<string, Model[]>);
   }, [models?.models]);

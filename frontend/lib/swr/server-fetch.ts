@@ -49,7 +49,7 @@ export async function serverFetch<T>(
       method: (options?.method as AxiosRequestConfig['method']) ?? 'GET',
       headers: normalizedHeaders,
       data: options?.body,
-      signal: options?.signal,
+      signal: options?.signal ?? undefined,
       // 交由 axios 返回响应对象，由下方统一处理状态码
       validateStatus: () => true,
     };

@@ -5,6 +5,7 @@ import { useVirtualizer } from "@tanstack/react-virtual";
 import { Bot, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
   AlertDialog,
@@ -23,7 +24,7 @@ import { AdaptiveCard } from "@/components/cards/adaptive-card";
 import { CardContent } from "@/components/ui/card";
 import { useI18n } from "@/lib/i18n-context";
 import { useErrorDisplay } from "@/lib/errors/error-display";
-import { useMessages, useSendMessage } from "@/lib/swr/use-messages";
+import { useMessages } from "@/lib/swr/use-messages";
 import { useDeleteConversation } from "@/lib/swr/use-conversations";
 import { useCachePreloader } from "@/lib/swr/cache";
 import { messageService } from "@/http/message";
@@ -54,7 +55,7 @@ export const MessageList = memo(function MessageList({
   onViewDetails,
   onTriggerEval,
   showEvalButton = true,
-  overrideLogicalModel = null,
+  overrideLogicalModel: _overrideLogicalModel = null,
   disabledActions = false,
 }: MessageListProps) {
   const { t, language } = useI18n();
@@ -66,7 +67,6 @@ export const MessageList = memo(function MessageList({
   const { models } = useLogicalModels(projectId);
   const { showError } = useErrorDisplay();
   const { preloadData } = useCachePreloader();
-  const chatStreamingEnabled = useChatStore((s) => s.chatStreamingEnabled);
   const setSelectedConversation = useChatStore((s) => s.setSelectedConversation);
   const isPendingResponse =
     useChatStore((s) => s.conversationPending[conversationId]) ?? false;
@@ -75,7 +75,6 @@ export const MessageList = memo(function MessageList({
     []
   );
 
-  const sendMessage = useSendMessage(conversationId, assistantId, overrideLogicalModel);
   const deleteConversation = useDeleteConversation();
 
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
@@ -253,21 +252,8 @@ export const MessageList = memo(function MessageList({
     return null;
   }, [renderRows]);
 
-  const findUserMessageContent = useCallback(
-    (sourceUserMessageId?: string) => {
-      if (!sourceUserMessageId) return null;
-      const target = displayMessages.find(
-        (item) =>
-          item.message.message_id === sourceUserMessageId && item.message.role === "user"
-      );
-      const content = (target?.message.content || "").trim();
-      return content.length > 0 ? content : null;
-    },
-    [displayMessages]
-  );
-
   const handleRegenerate = useCallback(
-    async (assistantMessageId: string, sourceUserMessageId?: string) => {
+    async (assistantMessageId: string, _sourceUserMessageId?: string) => {
       setRegeneratingId(assistantMessageId);
       setRegenErrorById((prev) => {
         const next = { ...prev };
@@ -307,10 +293,6 @@ export const MessageList = memo(function MessageList({
     },
     [mutateMessages]
   );
-
-  const handleDeleteConversation = useCallback(() => {
-    setDeleteDialogOpen(true);
-  }, []);
 
   const confirmDeleteConversation = useCallback(async () => {
     setIsDeletingConversation(true);
