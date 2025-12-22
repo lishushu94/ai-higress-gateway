@@ -41,31 +41,35 @@ type Segment =
   | { type: "think"; content: string };
 
 function splitByThinkTags(input: string): Segment[] {
+  // 支持流式未闭合 <think> 的情况：一旦出现 <think>，后续内容都视为“思维链”
   const segments: Segment[] = [];
-  const pattern = /<think>([\s\S]*?)<\/think>/gi;
+  let cursor = 0;
 
-  let lastIndex = 0;
-  let match: RegExpExecArray | null = pattern.exec(input);
+  while (cursor < input.length) {
+    const start = input.indexOf("<think>", cursor);
+    if (start === -1) {
+      const tail = input.slice(cursor);
+      if (tail) segments.push({ type: "text", content: tail });
+      break;
+    }
 
-  while (match) {
-    const matchStart = match.index;
-    const matchEnd = pattern.lastIndex;
-
-    if (matchStart > lastIndex) {
-      const before = input.slice(lastIndex, matchStart);
+    // 先收集 <think> 之前的文本
+    if (start > cursor) {
+      const before = input.slice(cursor, start);
       if (before) segments.push({ type: "text", content: before });
     }
 
-    const thinkContent = match[1] ?? "";
+    const end = input.indexOf("</think>", start + 7);
+    if (end === -1) {
+      // 未闭合：把剩余内容都当作思维链
+      const thinkContent = input.slice(start + 7);
+      if (thinkContent) segments.push({ type: "think", content: thinkContent.trim() });
+      break;
+    }
+
+    const thinkContent = input.slice(start + 7, end);
     if (thinkContent) segments.push({ type: "think", content: thinkContent.trim() });
-
-    lastIndex = matchEnd;
-    match = pattern.exec(input);
-  }
-
-  if (lastIndex < input.length) {
-    const rest = input.slice(lastIndex);
-    if (rest) segments.push({ type: "text", content: rest });
+    cursor = end + "</think>".length;
   }
 
   return segments.length > 0 ? segments : [{ type: "text", content: input }];

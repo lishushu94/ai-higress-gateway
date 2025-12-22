@@ -954,6 +954,11 @@ export interface SendMessageResponse {
   baseline_run: RunSummary;
 }
 
+export interface RegenerateMessageResponse {
+  assistant_message_id: string;
+  baseline_run: RunSummary;
+}
+
 export interface GetMessagesParams {
   cursor?: string;
   limit?: number;

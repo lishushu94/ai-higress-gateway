@@ -209,6 +209,27 @@ export function SlateChatInput({
     [images, t, getTextContent]
   );
 
+  const handlePaste = useCallback(
+    async (event: React.ClipboardEvent) => {
+      const { clipboardData } = event;
+      if (!clipboardData) return;
+
+      const imageFiles = Array.from(clipboardData.items || [])
+        .filter((item) => item.kind === "file" && item.type.startsWith("image/"))
+        .map((item) => item.getAsFile())
+        .filter((file): file is File => Boolean(file));
+
+      if (imageFiles.length === 0) return;
+
+      // 使用浏览器原生 DataTransfer 构造 FileList，复用现有文件处理逻辑。
+      const dt = new DataTransfer();
+      imageFiles.forEach((file) => dt.items.add(file));
+      event.preventDefault();
+      await handleFilesSelected(dt.files);
+    },
+    [handleFilesSelected]
+  );
+
   // 移除图片
   const removeImage = useCallback((index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
@@ -260,7 +281,6 @@ export function SlateChatInput({
       setImages([]);
     } catch (error) {
       console.error("Failed to send message:", error);
-      toast.error(t("chat.message.failed"));
     } finally {
       setIsSending(false);
     }
@@ -344,6 +364,7 @@ export function SlateChatInput({
               readOnly={disabled || isSending}
               aria-disabled={disabled || isSending}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               className={cn(
                 "w-full h-full resize-none text-sm outline-none",
                 "placeholder:text-muted-foreground",

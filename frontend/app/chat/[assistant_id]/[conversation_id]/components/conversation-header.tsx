@@ -81,8 +81,9 @@ export function ConversationHeader({
 
   const conversationPending =
     useChatStore((s) => s.conversationPending[conversationId]) ?? false;
-  const isTitlePending = (!title || !title.trim()) || conversationPending;
-  const displayTitle = (title || "").trim() || t("chat.conversation.untitled");
+  const hasTitle = !!(title && title.trim());
+  const isTitlePending = !hasTitle && conversationPending;
+  const displayTitle = hasTitle ? title!.trim() : t("chat.conversation.untitled");
 
   return (
     <div className="flex items-center justify-between gap-2 md:gap-3 border-b bg-background px-3 md:px-4 py-2">

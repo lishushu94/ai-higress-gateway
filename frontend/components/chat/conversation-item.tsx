@@ -46,8 +46,8 @@ export function ConversationItem({
   const [draftTitle, setDraftTitle] = useState(conversation.title || "");
   const conversationPending =
     useChatStore((s) => s.conversationPending[conversation.conversation_id]) ?? false;
-  const showTitleSkeleton =
-    conversationPending || !(conversation.title || "").trim();
+  const hasTitle = !!(conversation.title && conversation.title.trim());
+  const showTitleSkeleton = !hasTitle && conversationPending;
 
   const handleCardClick = () => {
     if (onSelect) {

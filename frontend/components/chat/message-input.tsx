@@ -8,7 +8,6 @@ import { Send, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useI18n } from "@/lib/i18n-context";
 import { useSendMessage } from "@/lib/swr/use-messages";
-import { toast } from "sonner";
 import type { Message } from "@/lib/api-types";
 import { cn } from "@/lib/utils";
 import { useChatStore } from "@/lib/stores/chat-store";
@@ -82,7 +81,6 @@ export function MessageInput({
   const onSubmit = async (data: MessageFormData) => {
     // 阻止在归档会话中发送消息
     if (disabled) {
-      toast.error(t("chat.conversation.archived_notice"));
       return;
     }
 
@@ -104,10 +102,8 @@ export function MessageInput({
         textareaRef.current.style.height = "auto";
       }
 
-      // 触发回调
       if (onMessageSent && response.message_id) {
         // 注意：这里我们只有 message_id，实际的 message 对象会通过 SWR 自动更新
-        toast.success(t("chat.message.sent"));
       }
     } catch (error: any) {
       console.error("Failed to send message:", error);

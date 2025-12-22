@@ -122,7 +122,9 @@ export function useTypewriter(
         Math.max(1, baseChunkSize + boost)
       );
 
-      const sliceSize = Math.min(chunkSize, pending);
+      // 收尾阶段适当减速，提升“打完收尾”质感
+      const nearFinish = pending < 24;
+      const sliceSize = Math.min(nearFinish ? Math.max(1, chunkSize - 1) : chunkSize, pending);
       const nextChunk = backlogRef.current.slice(0, sliceSize);
       backlogRef.current = backlogRef.current.slice(sliceSize);
 

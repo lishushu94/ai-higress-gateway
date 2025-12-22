@@ -114,6 +114,11 @@ class MessageCreateResponse(BaseModel):
     baseline_run: RunSummary
 
 
+class MessageRegenerateResponse(BaseModel):
+    assistant_message_id: UUID
+    baseline_run: RunSummary
+
+
 class RunSummary(BaseModel):
     run_id: UUID
     requested_logical_model: str
@@ -159,6 +164,7 @@ __all__ = [
     "ConversationUpdateRequest",
     "MessageCreateRequest",
     "MessageCreateResponse",
+    "MessageRegenerateResponse",
     "MessageItem",
     "MessageListResponse",
     "RunDetailResponse",

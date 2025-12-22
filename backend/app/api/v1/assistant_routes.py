@@ -25,6 +25,7 @@ from app.schemas import (
     ConversationUpdateRequest,
     MessageCreateRequest,
     MessageCreateResponse,
+    MessageRegenerateResponse,
     MessageListResponse,
     RunDetailResponse,
     RunSummary,
@@ -37,6 +38,7 @@ from app.services.chat_history_service import (
     delete_assistant,
     delete_conversation,
     get_assistant,
+    delete_message,
     get_run_detail,
     list_assistants,
     list_conversations,
@@ -381,6 +383,37 @@ def get_run_endpoint(
         created_at=run.created_at,
         updated_at=run.updated_at,
     )
+
+
+@router.post("/v1/messages/{assistant_message_id}/regenerate", response_model=MessageRegenerateResponse)
+async def regenerate_message_endpoint(
+    assistant_message_id: UUID,
+    db: Session = Depends(get_db),
+    redis: Redis = Depends(get_redis),
+    client: Any = Depends(get_http_client),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> MessageRegenerateResponse:
+    assistant_message_id, run_id = await chat_app_service.regenerate_assistant_message(
+        db,
+        redis=redis,
+        client=client,
+        current_user=current_user,
+        assistant_message_id=assistant_message_id,
+    )
+    run = get_run_detail(db, run_id=run_id, user_id=UUID(str(current_user.id)))
+    return MessageRegenerateResponse(
+        assistant_message_id=assistant_message_id,
+        baseline_run=_run_to_summary(run),
+    )
+
+
+@router.delete("/v1/messages/{message_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_message_endpoint(
+    message_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: AuthenticatedUser = Depends(require_jwt_token),
+) -> None:
+    delete_message(db, message_id=message_id, user_id=UUID(str(current_user.id)))
 
 
 __all__ = ["router"]

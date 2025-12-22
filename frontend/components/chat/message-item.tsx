@@ -42,10 +42,11 @@ export interface MessageItemProps {
   enableTypewriter?: boolean;
   typewriterKey?: string;
   onRegenerate?: (assistantMessageId: string, sourceUserMessageId?: string) => void;
-  onDeleteConversation?: () => void;
+  onDeleteMessage?: () => void;
   disableActions?: boolean;
   isRegenerating?: boolean;
-  isDeletingConversation?: boolean;
+  isDeletingMessage?: boolean;
+  errorMessage?: string | null;
 }
 
 export function MessageItem({
@@ -63,10 +64,11 @@ export function MessageItem({
   enableTypewriter = false,
   typewriterKey,
   onRegenerate,
-  onDeleteConversation,
+  onDeleteMessage,
   disableActions = false,
   isRegenerating = false,
-  isDeletingConversation = false,
+  isDeletingMessage = false,
+  errorMessage = null,
 }: MessageItemProps) {
   const { t, language } = useI18n();
   const isUser = message.role === "user";
@@ -215,6 +217,9 @@ export function MessageItem({
                 typewriterKey={effectiveTypewriterKey}
               />
             )}
+            {isAssistant && errorMessage ? (
+              <div className="mt-2 text-xs text-destructive">{errorMessage}</div>
+            ) : null}
           </CardContent>
         </AdaptiveCard>
 
@@ -250,17 +255,17 @@ export function MessageItem({
                   )}
                 </Button>
               )}
-              {/* 删除对话 */}
-              {onDeleteConversation && (
+              {/* 删除消息 */}
+              {onDeleteMessage && (
                 <Button
                   variant="ghost"
                   size="icon-sm"
-                  disabled={disableActions || isDeletingConversation}
-                  onClick={onDeleteConversation}
-                  title={t("chat.conversation.delete")}
-                  aria-label={t("chat.conversation.delete")}
+                  disabled={disableActions || isDeletingMessage}
+                  onClick={onDeleteMessage}
+                  title={t("chat.message.delete")}
+                  aria-label={t("chat.message.delete")}
                 >
-                  {isDeletingConversation ? (
+                  {isDeletingMessage ? (
                     <Loader2 className="size-3.5 animate-spin" />
                   ) : (
                     <Trash2 className="size-3.5" />

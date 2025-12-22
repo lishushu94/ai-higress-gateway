@@ -85,7 +85,7 @@ frontend/yarn-error.log*
 frontend/.pnpm-debug.log*
 
 # bridge
-bridge/bridge
+bin/
 
 nginx/
 

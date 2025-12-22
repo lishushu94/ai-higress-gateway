@@ -5,6 +5,7 @@ import type {
   GetMessagesParams,
   MessagesResponse,
   RunDetail,
+  RegenerateMessageResponse,
 } from '@/lib/api-types';
 import {
   normalizeMessagesResponse,
@@ -54,6 +55,23 @@ export const messageService = {
    */
   clearConversationMessages: async (conversationId: string): Promise<void> => {
     await httpClient.delete(`/v1/conversations/${conversationId}/messages`);
+  },
+
+  /**
+   * 重新生成助手消息
+   */
+  regenerateMessage: async (assistantMessageId: string): Promise<RegenerateMessageResponse> => {
+    const { data } = await httpClient.post<RegenerateMessageResponse>(
+      `/v1/messages/${assistantMessageId}/regenerate`
+    );
+    return data;
+  },
+
+  /**
+   * 删除单条消息
+   */
+  deleteMessage: async (messageId: string): Promise<void> => {
+    await httpClient.delete(`/v1/messages/${messageId}`);
   },
 
   /**

@@ -7,7 +7,16 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from app.settings import settings
 
-engine = create_engine(settings.database_url, future=True)
+# 调优连接池：适度放大 pool，开启 pre_ping，并定期 recycle，降低连接泄漏/失活导致的阻塞
+engine = create_engine(
+    settings.database_url,
+    pool_size=10,
+    max_overflow=20,
+    pool_timeout=30,
+    pool_recycle=1800,
+    pool_pre_ping=True,
+    future=True,
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 

@@ -559,7 +559,46 @@ def get_run_detail(db: Session, *, run_id: UUID, user_id: UUID) -> Run:
     return run
 
 
+def delete_message(
+    db: Session,
+    *,
+    message_id: UUID,
+    user_id: UUID,
+) -> None:
+    msg = db.get(Message, message_id)
+    if msg is None:
+        raise not_found("消息不存在", details={"message_id": str(message_id)})
+
+    # 权限校验：确保消息所属会话属于当前用户
+    get_conversation(db, conversation_id=UUID(str(msg.conversation_id)), user_id=user_id)
+
+    conv = db.get(Conversation, msg.conversation_id)
+    db.delete(msg)
+    db.commit()
+
+    # 重新计算会话预览
+    if conv:
+        latest = (
+            db.execute(
+                select(Message)
+                .where(Message.conversation_id == conv.id)
+                .order_by(Message.sequence.desc())
+                .limit(1)
+            )
+            .scalars()
+            .first()
+        )
+        if latest and isinstance(latest.content, dict):
+            conv.last_message_content = str(latest.content.get("text") or "").strip()
+        else:
+            conv.last_message_content = ""
+        conv.last_activity_at = datetime.now(UTC)
+        db.add(conv)
+        db.commit()
+
+
 __all__ = [
+    "delete_message",
     "clear_conversation_messages",
     "create_assistant",
     "create_assistant_message_after_user",

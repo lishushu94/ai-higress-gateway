@@ -173,9 +173,13 @@ export function useSendMessageToConversation(
         };
 
         const computeFlushDelay = () => {
-          if (assistantBuffer.length > 120) return 30;
-          if (assistantBuffer.length > 60) return 45;
-          return 60;
+          const backlog = assistantBuffer.length;
+          const total = assistantText.length + backlog;
+          // 短回复/短 backlog 更快刷新，长回复略慢以减轻抖动
+          if (backlog > 200 || total > 800) return 75;
+          if (backlog > 120 || total > 400) return 60;
+          if (backlog > 60 || total > 200) return 45;
+          return 35;
         };
 
         const flushBuffer = (force?: boolean) => {

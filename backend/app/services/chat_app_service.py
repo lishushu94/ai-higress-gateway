@@ -791,4 +791,207 @@ async def stream_message_and_run_baseline(
     yield _encode_sse_event(event_type="done", data="[DONE]")
 
 
-__all__ = ["send_message_and_run_baseline", "stream_message_and_run_baseline"]
+__all__ = ["send_message_and_run_baseline", "stream_message_and_run_baseline", "regenerate_assistant_message"]
+
+
+async def regenerate_assistant_message(
+    db: Session,
+    *,
+    redis: Redis,
+    client: Any,
+    current_user: AuthenticatedUser,
+    assistant_message_id: UUID,
+) -> tuple[UUID, UUID]:
+    """
+    基于已有的 user 消息重新生成 assistant 回复：
+    - 删除原有 assistant 消息（避免重复显示）
+    - 重新执行 baseline run，生成新的 assistant 消息
+    """
+    assistant_msg = db.get(Message, assistant_message_id)
+    if assistant_msg is None or str(assistant_msg.role or "") != "assistant":
+        raise bad_request("只支持对助手消息重试", details={"message_id": str(assistant_message_id)})
+
+    conv = get_conversation(db, conversation_id=UUID(str(assistant_msg.conversation_id)), user_id=UUID(str(current_user.id)))
+
+    user_msg = (
+        db.execute(
+            select(Message)
+            .where(
+                Message.conversation_id == assistant_msg.conversation_id,
+                Message.sequence == int(assistant_msg.sequence) - 1,
+                Message.role == "user",
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if user_msg is None:
+        raise bad_request("未找到对应的用户消息，无法重试", details={"assistant_message_id": str(assistant_message_id)})
+
+    user_text = ""
+    if isinstance(user_msg.content, dict):
+        user_text = str(user_msg.content.get("text") or "")
+    if not user_text.strip():
+        raise bad_request("用户消息内容为空，无法重试", details={"assistant_message_id": str(assistant_message_id)})
+
+    # 删除原 assistant 消息，避免历史残留
+    db.delete(assistant_msg)
+    db.commit()
+
+    ctx = resolve_project_context(db, project_id=UUID(str(conv.api_key_id)), current_user=current_user)
+
+    try:
+        ensure_account_usable(db, user_id=UUID(str(current_user.id)))
+    except InsufficientCreditsError as exc:
+        raise bad_request(
+            "积分不足",
+            details={"code": "CREDIT_NOT_ENOUGH", "balance": exc.balance},
+        )
+
+    assistant = get_assistant(db, assistant_id=UUID(str(conv.assistant_id)), user_id=UUID(str(current_user.id)))
+
+    # 复用上一条 run 的模型，否则按默认/项目回退
+    last_run = (
+        db.execute(
+            select(Run)
+            .where(Run.message_id == user_msg.id)
+            .order_by(Run.created_at.desc())
+            .limit(1)
+        )
+        .scalars()
+        .first()
+    )
+    requested_model = last_run.requested_logical_model if last_run else assistant.default_logical_model
+    if requested_model == PROJECT_INHERIT_SENTINEL:
+        requested_model = (getattr(ctx.api_key, "chat_default_logical_model", None) or "").strip() or DEFAULT_PROJECT_CHAT_MODEL
+    if requested_model == "auto":
+        cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
+        candidates = list(cfg.candidate_logical_models or [])
+        if not candidates:
+            raise bad_request(
+                "当前助手默认模型为 auto，但项目未配置 candidate_logical_models",
+                details={"project_id": str(ctx.project_id)},
+            )
+        preset_payload: dict[str, Any] = {}
+        if isinstance(assistant.model_preset, dict):
+            preset_payload.update(assistant.model_preset)
+
+        selector = ProviderSelector(client=client, redis=redis, db=db)
+        candidates = await selector.check_candidate_availability(
+            candidate_logical_models=candidates,
+            effective_provider_ids=get_effective_provider_ids_for_user(
+                db,
+                user_id=UUID(str(current_user.id)),
+                api_key=ctx.api_key,
+                provider_scopes=list(
+                    getattr(get_or_default_project_eval_config(db, project_id=ctx.project_id), "provider_scopes", None)
+                    or DEFAULT_PROVIDER_SCOPES
+                ),
+            ),
+            api_style="openai",
+            user_id=UUID(str(current_user.id)),
+            is_superuser=current_user.is_superuser,
+            request_payload=preset_payload or None,
+            budget_credits=None,
+        )
+        if not candidates:
+            raise bad_request(
+                "auto 模式下无可用的候选模型",
+                details={"project_id": str(ctx.project_id)},
+            )
+        rec = recommend_challengers(
+            db,
+            project_id=ctx.project_id,
+            assistant_id=UUID(str(assistant.id)),
+            baseline_logical_model="auto",
+            user_text=user_text,
+            context_features=build_rule_context_features(user_text=user_text, request_payload=None),
+            candidate_logical_models=candidates,
+            k=1,
+            policy_version="ts-v1",
+        )
+        if not rec.candidates:
+            raise bad_request(
+                "auto 模式下无法选择候选模型",
+                details={"project_id": str(ctx.project_id)},
+            )
+        requested_model = rec.candidates[0].logical_model
+
+    if not requested_model:
+        raise bad_request("未指定模型")
+
+    payload = build_openai_request_payload(
+        db,
+        conversation=conv,
+        assistant=assistant,
+        user_message=user_msg,
+        requested_logical_model=requested_model,
+        model_preset_override=None,
+    )
+
+    effective_provider_ids = get_effective_provider_ids_for_user(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key=ctx.api_key,
+        provider_scopes=list(
+            getattr(get_or_default_project_eval_config(db, project_id=ctx.project_id), "provider_scopes", None)
+            or DEFAULT_PROVIDER_SCOPES
+        ),
+    )
+
+    run = create_run_record(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key_id=ctx.project_id,
+        message_id=UUID(str(user_msg.id)),
+        requested_logical_model=requested_model,
+        request_payload=payload,
+    )
+
+    auth_key = _to_authenticated_api_key(api_key=ctx.api_key, current_user=current_user)
+    run = await execute_run_non_stream(
+        db,
+        redis=redis,
+        client=client,
+        api_key=auth_key,
+        effective_provider_ids=effective_provider_ids,
+        conversation=conv,
+        assistant=assistant,
+        user_message=user_msg,
+        run=run,
+        requested_logical_model=requested_model,
+        model_preset_override=None,
+        payload_override=payload,
+    )
+
+    assistant_msg_new: Message | None = None
+    if run.status == "succeeded" and run.output_text:
+        assistant_msg_new = create_assistant_message_after_user(
+            db,
+            conversation_id=UUID(str(conv.id)),
+            user_sequence=int(user_msg.sequence or 0),
+            content_text=run.output_text,
+        )
+
+    # 首问自动标题（保持行为一致）
+    try:
+        if int(user_msg.sequence or 0) == 1 and not (conv.title or "").strip():
+            await _maybe_auto_title_conversation(
+                db,
+                redis=redis,
+                client=client,
+                current_user=current_user,
+                conv=conv,
+                assistant=assistant,
+                effective_provider_ids=effective_provider_ids,
+                user_text=user_text,
+                user_sequence=int(user_msg.sequence or 0),
+                requested_model_for_title_fallback=requested_model,
+            )
+    except Exception:  # pragma: no cover
+        pass
+
+    if assistant_msg_new is None:
+        raise bad_request("生成失败", details={"run_status": run.status, "error_code": run.error_code})
+
+    return UUID(str(assistant_msg_new.id)), UUID(str(run.id))

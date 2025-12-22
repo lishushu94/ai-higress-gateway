@@ -2,8 +2,7 @@
 
 import { memo, useEffect, useRef, useState, useMemo, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Loader2 } from "lucide-react";
-import { toast } from "sonner";
+import { Bot, Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useSWRConfig } from "swr";
 import { Button } from "@/components/ui/button";
@@ -20,6 +19,8 @@ import {
 import { MessageItem } from "./message-item";
 import { ErrorAlert } from "./error-alert";
 import { AddComparisonDialog } from "./add-comparison-dialog";
+import { AdaptiveCard } from "@/components/cards/adaptive-card";
+import { CardContent } from "@/components/ui/card";
 import { useI18n } from "@/lib/i18n-context";
 import { useErrorDisplay } from "@/lib/errors/error-display";
 import { useMessages, useSendMessage } from "@/lib/swr/use-messages";
@@ -80,6 +81,10 @@ export const MessageList = memo(function MessageList({
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
+  const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
+  const [deleteMessageDialogOpen, setDeleteMessageDialogOpen] = useState(false);
+  const [deleteMessageTarget, setDeleteMessageTarget] = useState<string | null>(null);
+  const [regenErrorById, setRegenErrorById] = useState<Record<string, string>>({});
   const [cursor, setCursor] = useState<string | undefined>();
   const [allMessages, setAllMessages] = useState<
     Array<{ message: Message; run?: RunSummary }>
@@ -107,7 +112,7 @@ export const MessageList = memo(function MessageList({
   }, [conversationId]);
 
   // 获取消息列表
-  const { messages, nextCursor, isLoading, isError, error } = useMessages(
+  const { messages, nextCursor, isLoading, isError, error, mutate: mutateMessages } = useMessages(
     conversationId,
     { cursor, limit: 50 }
   );
@@ -263,23 +268,44 @@ export const MessageList = memo(function MessageList({
 
   const handleRegenerate = useCallback(
     async (assistantMessageId: string, sourceUserMessageId?: string) => {
-      const content = findUserMessageContent(sourceUserMessageId);
-      if (!content) {
-        toast.error(t("chat.message.empty_description"));
-        return;
-      }
-
       setRegeneratingId(assistantMessageId);
+      setRegenErrorById((prev) => {
+        const next = { ...prev };
+        delete next[assistantMessageId];
+        return next;
+      });
       try {
-        await sendMessage({ content }, { streaming: chatStreamingEnabled });
-        toast.success(t("chat.message.sent"));
+        await messageService.regenerateMessage(assistantMessageId);
+        await mutateMessages();
       } catch (error) {
-        showError(error, { context: t("chat.action.retry") });
+        console.error("Failed to regenerate message", error);
+        const message =
+          (error as any)?.message && typeof (error as any).message === "string"
+            ? (error as any).message
+            : t("chat.message.retry_failed");
+        setRegenErrorById((prev) => ({ ...prev, [assistantMessageId]: message }));
       } finally {
         setRegeneratingId(null);
       }
     },
-    [chatStreamingEnabled, findUserMessageContent, sendMessage, showError, t]
+    [mutateMessages, t]
+  );
+
+  const handleDeleteMessage = useCallback(
+    async (messageId: string) => {
+      setDeletingMessageId(messageId);
+      try {
+        await messageService.deleteMessage(messageId);
+        await mutateMessages();
+      } catch (error) {
+        console.error("Failed to delete message", error);
+      } finally {
+        setDeletingMessageId(null);
+        setDeleteMessageDialogOpen(false);
+        setDeleteMessageTarget(null);
+      }
+    },
+    [mutateMessages]
   );
 
   const handleDeleteConversation = useCallback(() => {
@@ -628,13 +654,17 @@ export const MessageList = memo(function MessageList({
                     isLatestAssistant={item.message.message_id === latestAssistantMessageId}
                     onRegenerate={handleRegenerate}
                     isRegenerating={regeneratingId === item.message.message_id}
-                    onDeleteConversation={
+                    onDeleteMessage={
                       item.message.message_id === latestAssistantMessageId
-                        ? handleDeleteConversation
+                        ? () => {
+                            setDeleteMessageTarget(item.message.message_id);
+                            setDeleteMessageDialogOpen(true);
+                          }
                         : undefined
                     }
-                    isDeletingConversation={isDeletingConversation}
+                    isDeletingMessage={deletingMessageId === item.message.message_id}
                     disableActions={disabledActions || isLoading}
+                    errorMessage={regenErrorById[item.message.message_id] ?? null}
                     enableTypewriter
                     typewriterKey={`${item.message.conversation_id}:${item.message.created_at}`}
                   />
@@ -662,50 +692,66 @@ export const MessageList = memo(function MessageList({
       {/* 非流式等待回复时的趣味 loading */}
       {isPendingResponse && (
         <div className="px-4 pb-6">
-          <div className="flex items-center justify-center">
-            <div className="flex items-center gap-3 rounded-full border bg-muted/60 px-4 py-2 shadow-sm">
-              <div className="flex items-center gap-2">
-                {loaderColors.map((color, idx) => (
-                  <span
-                    key={color}
-                    className="block h-3 w-3 rounded-full shadow-sm"
-                    style={{
-                      background: color,
-                      animation: "chat-dot-swap 1.4s ease-in-out infinite",
-                      animationDelay: `${idx * 0.12}s`,
-                      boxShadow: `0 4px 10px ${color}33`,
-                    }}
-                  />
-                ))}
+          <div className="flex items-start gap-3">
+            <div className="flex-shrink-0 mt-1">
+              <div className="flex size-8 items-center justify-center rounded-full bg-primary/10 text-primary">
+                <Bot className="size-4" aria-hidden="true" />
               </div>
-              <span className="text-sm font-medium text-muted-foreground">
-                {t("chat.message.loading_fun")}
-              </span>
-              <style jsx global>{`
-                @keyframes chat-dot-swap {
-                  0% {
-                    transform: translateY(0) scale(1);
-                    opacity: 0.8;
-                  }
-                  25% {
-                    transform: translateY(-6px) scale(1.08);
-                    opacity: 1;
-                  }
-                  50% {
-                    transform: translateY(0) scale(1);
-                    opacity: 0.85;
-                  }
-                  75% {
-                    transform: translateY(6px) scale(0.96);
-                    opacity: 0.8;
-                  }
-                  100% {
-                    transform: translateY(0) scale(1);
-                    opacity: 0.8;
-                  }
-                }
-              `}</style>
             </div>
+            <div className="max-w-[80%]">
+              <AdaptiveCard
+                showDecor={false}
+                variant="plain"
+                hoverScale={false}
+                className="py-0 gap-0 shadow-sm bg-card"
+              >
+                <CardContent className="py-3 px-4">
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-2">
+                      {loaderColors.map((color, idx) => (
+                        <span
+                          key={color}
+                          className="block h-3 w-3 rounded-full shadow-sm"
+                          style={{
+                            background: color,
+                            animation: "chat-dot-swap 1.4s ease-in-out infinite",
+                            animationDelay: `${idx * 0.12}s`,
+                            boxShadow: `0 4px 10px ${color}33`,
+                          }}
+                        />
+                      ))}
+                    </div>
+                    <span className="text-sm font-medium text-muted-foreground">
+                      {t("chat.message.loading_fun")}
+                    </span>
+                  </div>
+                </CardContent>
+              </AdaptiveCard>
+            </div>
+            <style jsx global>{`
+              @keyframes chat-dot-swap {
+                0% {
+                  transform: translateY(0) scale(1);
+                  opacity: 0.8;
+                }
+                25% {
+                  transform: translateY(-6px) scale(1.08);
+                  opacity: 1;
+                }
+                50% {
+                  transform: translateY(0) scale(1);
+                  opacity: 0.85;
+                }
+                75% {
+                  transform: translateY(6px) scale(0.96);
+                  opacity: 0.8;
+                }
+                100% {
+                  transform: translateY(0) scale(1);
+                  opacity: 0.8;
+                }
+              }
+            `}</style>
           </div>
         </div>
       )}
@@ -744,6 +790,35 @@ export const MessageList = memo(function MessageList({
               ) : (
                 t("chat.action.confirm")
               )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={deleteMessageDialogOpen} onOpenChange={setDeleteMessageDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("chat.message.delete")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("chat.message.delete_confirm")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel
+              disabled={deletingMessageId !== null}
+              onClick={() => setDeleteMessageDialogOpen(false)}
+            >
+              {t("chat.action.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={deletingMessageId !== null || !deleteMessageTarget}
+              onClick={() => {
+                if (deleteMessageTarget) {
+                  void handleDeleteMessage(deleteMessageTarget);
+                }
+              }}
+            >
+              {deletingMessageId ? <Loader2 className="size-4 animate-spin" /> : t("chat.action.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

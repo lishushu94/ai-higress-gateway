@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Loader2, Send } from "lucide-react";
-import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -55,12 +54,10 @@ export function QuickStartChatInput({
     if (isSubmitting) return;
 
     if (!selectedProjectId) {
-      toast.error(t("chat.project.not_selected"));
       return;
     }
 
     if (!targetAssistantId) {
-      toast.error(t("chat.assistant.empty"));
       return;
     }
 
@@ -85,9 +82,6 @@ export function QuickStartChatInput({
       router.push(`/chat/${targetAssistantId}/${conversation.conversation_id}`);
     } catch (error) {
       console.error("Quick start chat failed:", error);
-      const standardError = ErrorHandler.normalize(error);
-      const errorMessage = ErrorHandler.getUserMessage(standardError, t);
-      toast.error(errorMessage);
     } finally {
       setIsSubmitting(false);
     }
