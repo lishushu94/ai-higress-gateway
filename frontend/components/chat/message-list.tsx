@@ -75,6 +75,12 @@ export const MessageList = memo(function MessageList({
   const deleteConversation = useDeleteConversation();
 
   const [regeneratingId, setRegeneratingId] = useState<string | null>(null);
+  const [regenerateMessageDialogOpen, setRegenerateMessageDialogOpen] =
+    useState(false);
+  const [regenerateTarget, setRegenerateTarget] = useState<{
+    assistantMessageId: string;
+    sourceUserMessageId?: string;
+  } | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [isDeletingConversation, setIsDeletingConversation] = useState(false);
   const [deletingMessageId, setDeletingMessageId] = useState<string | null>(null);
@@ -83,7 +89,7 @@ export const MessageList = memo(function MessageList({
   const [regenErrorById, setRegenErrorById] = useState<Record<string, string>>({});
   const [cursor, setCursor] = useState<string | undefined>();
   const [allMessages, setAllMessages] = useState<
-    Array<{ message: Message; run?: RunSummary }>
+    Array<{ message: Message; run?: RunSummary; runs?: RunSummary[] }>
   >([]);
   const parentRef = useRef<HTMLDivElement>(null);
   const variantsByKey = useChatComparisonStore((s) => s.variantsByKey);
@@ -215,7 +221,7 @@ export const MessageList = memo(function MessageList({
     for (const item of displayMessages) {
       if (item.message.role === "user") {
         lastUserMessageId = item.message.message_id;
-        lastUserRuns = item.run ? [item.run] : [];
+        lastUserRuns = (item.runs && item.runs.length ? item.runs : item.run ? [item.run] : []);
         rows.push({ message: item.message, runs: [] });
         continue;
       }
@@ -291,6 +297,14 @@ export const MessageList = memo(function MessageList({
       }
     },
     [conversationId, mutateMessages, runWithPending, t]
+  );
+
+  const openRegenerateDialog = useCallback(
+    (assistantMessageId: string, sourceUserMessageId?: string) => {
+      setRegenerateTarget({ assistantMessageId, sourceUserMessageId });
+      setRegenerateMessageDialogOpen(true);
+    },
+    []
   );
 
   const handleDeleteMessage = useCallback(
@@ -596,7 +610,7 @@ export const MessageList = memo(function MessageList({
       {/* 虚拟列表容器 */}
       <div
         ref={parentRef}
-        className="flex-1 overflow-y-auto px-4 py-6"
+        className="flex-1 overflow-y-auto py-6"
         role="log"
         aria-live="polite"
         aria-atomic="false"
@@ -605,71 +619,73 @@ export const MessageList = memo(function MessageList({
           contain: "strict",
         }}
       >
-        <div
-          style={{
-            height: `${rowVirtualizer.getTotalSize()}px`,
-            width: "100%",
-            position: "relative",
-          }}
-        >
-          {rowVirtualizer.getVirtualItems().map((virtualItem) => {
-            const item = renderRows[virtualItem.index];
-            if (!item) return null;
+        <div className="mx-auto w-full max-w-3xl px-4">
+          <div
+            style={{
+              height: `${rowVirtualizer.getTotalSize()}px`,
+              width: "100%",
+              position: "relative",
+            }}
+          >
+            {rowVirtualizer.getVirtualItems().map((virtualItem) => {
+              const item = renderRows[virtualItem.index];
+              if (!item) return null;
 
-            return (
-              <div
-                key={virtualItem.key}
-                data-index={virtualItem.index}
-                ref={rowVirtualizer.measureElement}
-                style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
-                  transform: `translateY(${virtualItem.start}px)`,
-                }}
-              >
-                <div className="pb-6">
-                  <MessageItem
-                    message={item.message}
-                    runs={item.runs}
-                    runSourceMessageId={item.runSourceMessageId}
-                    userAvatarUrl={user?.avatar ?? null}
-                    userDisplayName={user?.display_name ?? user?.username ?? null}
-                    onViewDetails={onViewDetails}
-                    onTriggerEval={onTriggerEval}
-                    showEvalButton={showEvalButton}
-                    comparisonVariants={
-                      variantsByKey[`${conversationId}:${item.message.message_id}`] ?? []
-                    }
-                    onAddComparison={(_, sourceUserMessageId) =>
-                      openCompareDialog(
-                        item.message.message_id,
-                        sourceUserMessageId,
-                        item.runs?.[0]?.requested_logical_model
-                      )
-                    }
-                    isLatestAssistant={item.message.message_id === latestAssistantMessageId}
-                    onRegenerate={handleRegenerate}
-                    isRegenerating={regeneratingId === item.message.message_id}
-                    onDeleteMessage={
-                      item.message.message_id === latestAssistantMessageId
-                        ? () => {
-                            setDeleteMessageTarget(item.message.message_id);
-                            setDeleteMessageDialogOpen(true);
-                          }
-                        : undefined
-                    }
-                    isDeletingMessage={deletingMessageId === item.message.message_id}
-                    disableActions={disabledActions || isLoading}
-                    errorMessage={regenErrorById[item.message.message_id] ?? null}
-                    enableTypewriter
-                    typewriterKey={`${item.message.conversation_id}:${item.message.created_at}`}
-                  />
+              return (
+                <div
+                  key={virtualItem.key}
+                  data-index={virtualItem.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualItem.start}px)`,
+                  }}
+                >
+                  <div className="pb-6">
+                    <MessageItem
+                      message={item.message}
+                      runs={item.runs}
+                      runSourceMessageId={item.runSourceMessageId}
+                      userAvatarUrl={user?.avatar ?? null}
+                      userDisplayName={user?.display_name ?? user?.username ?? null}
+                      onViewDetails={onViewDetails}
+                      onTriggerEval={onTriggerEval}
+                      showEvalButton={showEvalButton}
+                      comparisonVariants={
+                        variantsByKey[`${conversationId}:${item.message.message_id}`] ?? []
+                      }
+                      onAddComparison={(_, sourceUserMessageId) =>
+                        openCompareDialog(
+                          item.message.message_id,
+                          sourceUserMessageId,
+                          item.runs?.[0]?.requested_logical_model
+                        )
+                      }
+                      isLatestAssistant={item.message.message_id === latestAssistantMessageId}
+                      onRegenerate={openRegenerateDialog}
+                      isRegenerating={regeneratingId === item.message.message_id}
+                      onDeleteMessage={
+                        item.message.message_id === latestAssistantMessageId
+                          ? () => {
+                              setDeleteMessageTarget(item.message.message_id);
+                              setDeleteMessageDialogOpen(true);
+                            }
+                          : undefined
+                      }
+                      isDeletingMessage={deletingMessageId === item.message.message_id}
+                      disableActions={disabledActions || isLoading}
+                      errorMessage={regenErrorById[item.message.message_id] ?? null}
+                      enableTypewriter
+                      typewriterKey={`${item.message.conversation_id}:${item.message.created_at}`}
+                    />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
       </div>
 
@@ -724,6 +740,41 @@ export const MessageList = memo(function MessageList({
               ) : (
                 t("chat.action.confirm")
               )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={regenerateMessageDialogOpen}
+        onOpenChange={(open) => {
+          setRegenerateMessageDialogOpen(open);
+          if (!open) setRegenerateTarget(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("chat.message.regenerate")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("chat.message.regenerate_confirm")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={regeneratingId !== null}>
+              {t("chat.action.cancel")}
+            </AlertDialogCancel>
+            <AlertDialogAction
+              disabled={regeneratingId !== null || !regenerateTarget}
+              onClick={() => {
+                if (regenerateTarget) {
+                  void handleRegenerate(
+                    regenerateTarget.assistantMessageId,
+                    regenerateTarget.sourceUserMessageId
+                  );
+                }
+              }}
+            >
+              {t("chat.action.confirm")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

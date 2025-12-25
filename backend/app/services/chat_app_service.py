@@ -19,29 +19,14 @@ from app.repositories.chat_repository import (
     refresh_run,
     save_conversation_title,
 )
+from app.repositories.run_event_repository import append_run_event
 from app.services.bridge_gateway_client import BridgeGatewayClient
-
-
-def _log_timing(stage: str, start: float, request_id: str, extra: str = "") -> float:
-    """记录阶段耗时并返回当前时间戳，用于性能分析"""
-    elapsed_ms = (time.perf_counter() - start) * 1000
-    extra_str = f" | {extra}" if extra else ""
-    logger.info(
-        "[CHAT_TIMING] %s | %s | %.2fms%s",
-        request_id,
-        stage,
-        elapsed_ms,
-        extra_str,
-        extra={"biz": "chat_timing"},
-    )
-    return time.perf_counter()
 from app.services.bridge_tool_runner import (
-    BridgeToolInvocation,
     bridge_tools_by_agent_to_openai_tools,
-    extract_openai_tool_calls,
     invoke_bridge_tool_and_wait,
-    tool_call_to_args,
 )
+from app.services.run_event_bus import build_run_event_envelope, publish_run_event_best_effort
+from app.services.tool_loop_runner import ToolLoopRunner
 
 try:
     from redis.asyncio import Redis
@@ -78,6 +63,21 @@ from app.services.project_eval_config_service import (
 PROJECT_INHERIT_SENTINEL = "__project__"
 
 
+def _log_timing(stage: str, start: float, request_id: str, extra: str = "") -> float:
+    """记录阶段耗时并返回当前时间戳，用于性能分析"""
+    elapsed_ms = (time.perf_counter() - start) * 1000
+    extra_str = f" | {extra}" if extra else ""
+    logger.info(
+        "[CHAT_TIMING] %s | %s | %.2fms%s",
+        request_id,
+        stage,
+        elapsed_ms,
+        extra_str,
+        extra={"biz": "chat_timing"},
+    )
+    return time.perf_counter()
+
+
 def _encode_sse_event(*, event_type: str, data: Any) -> bytes:
     lines: list[str] = []
     event = str(event_type or "").strip()
@@ -93,6 +93,36 @@ def _encode_sse_event(*, event_type: str, data: Any) -> bytes:
         lines.append(f"data: {json.dumps(data, ensure_ascii=False)}")
 
     return ("\n".join(lines) + "\n\n").encode("utf-8")
+
+
+def _append_run_event_best_effort(
+    db: Session,
+    *,
+    redis: Redis | None = None,
+    run_id: UUID,
+    event_type: str,
+    payload: dict[str, Any],
+) -> None:
+    try:
+        row = append_run_event(db, run_id=run_id, event_type=event_type, payload=payload)
+        created_at_iso = None
+        try:
+            created_at_iso = row.created_at.isoformat() if getattr(row, "created_at", None) is not None else None
+        except Exception:
+            created_at_iso = None
+        publish_run_event_best_effort(
+            redis,
+            run_id=run_id,
+            envelope=build_run_event_envelope(
+                run_id=run_id,
+                seq=int(getattr(row, "seq", 0) or 0),
+                event_type=str(getattr(row, "event_type", event_type) or event_type),
+                created_at_iso=created_at_iso,
+                payload=payload,
+            ),
+        )
+    except Exception:  # pragma: no cover - best-effort only
+        logger.debug("chat: append_run_event failed (run_id=%s type=%s)", run_id, event_type, exc_info=True)
 
 
 def _run_to_summary(run) -> dict[str, Any]:
@@ -257,6 +287,279 @@ def _enqueue_auto_title_task(
         )
     except Exception as exc:  # pragma: no cover - 入队失败不影响主流程
         logger.warning("enqueue auto_title task failed: %s", exc, exc_info=exc)
+
+
+def _enqueue_chat_run_task(
+    *,
+    run_id: UUID,
+    assistant_message_id: UUID | None,
+    effective_bridge_agent_ids: list[str],
+    streaming: bool,
+) -> None:
+    """
+    将 chat run 执行任务异步入队（Celery）。
+    """
+    try:
+        from app.celery_app import celery_app
+
+        celery_app.send_task(
+            "tasks.execute_chat_run",
+            args=[
+                str(run_id),
+                str(assistant_message_id) if assistant_message_id is not None else None,
+                list(effective_bridge_agent_ids or []),
+                bool(streaming),
+            ],
+        )
+    except Exception as exc:  # pragma: no cover - 入队失败不影响主流程（由上层决定是否降级/报错）
+        logger.warning("enqueue chat_run task failed: %s", exc, exc_info=exc)
+
+
+def _append_run_event_and_publish(
+    db: Session,
+    *,
+    redis: Redis | None,
+    run_id: UUID,
+    event_type: str,
+    payload: dict[str, Any],
+) -> int | None:
+    """
+    写入 RunEvent 真相并发布到 Redis 热通道。
+    返回写入后的 seq（失败则返回 None）。
+    """
+    try:
+        row = append_run_event(db, run_id=run_id, event_type=event_type, payload=payload)
+        created_at_iso = None
+        try:
+            created_at_iso = row.created_at.isoformat() if getattr(row, "created_at", None) is not None else None
+        except Exception:
+            created_at_iso = None
+        publish_run_event_best_effort(
+            redis,
+            run_id=run_id,
+            envelope=build_run_event_envelope(
+                run_id=run_id,
+                seq=int(getattr(row, "seq", 0) or 0),
+                event_type=str(getattr(row, "event_type", event_type) or event_type),
+                created_at_iso=created_at_iso,
+                payload=payload,
+            ),
+        )
+        return int(getattr(row, "seq", 0) or 0)
+    except Exception:  # pragma: no cover - best-effort only
+        logger.debug("chat: append_run_event failed (run_id=%s type=%s)", run_id, event_type, exc_info=True)
+        return None
+
+
+async def create_message_and_queue_baseline_run(
+    db: Session,
+    *,
+    redis: Redis,
+    client: Any,
+    current_user: AuthenticatedUser,
+    conversation_id: UUID,
+    content: str,
+    streaming: bool,
+    override_logical_model: str | None = None,
+    model_preset: dict | None = None,
+    bridge_agent_id: str | None = None,
+    bridge_agent_ids: list[str] | None = None,
+    bridge_tool_selections: list[dict] | None = None,
+) -> tuple[UUID, UUID, UUID | None, dict[str, Any], int, list[str]]:
+    """
+    只做“创建 message + 创建 queued run + 写入 message.created 事件 + 入队 Celery 执行”。
+
+    返回：
+      (user_message_id, run_id, assistant_message_id_or_none, message_created_payload, created_seq, effective_bridge_agent_ids)
+    """
+    conv = get_conversation(db, conversation_id=conversation_id, user_id=UUID(str(current_user.id)))
+    ctx = resolve_project_context(db, project_id=UUID(str(conv.api_key_id)), current_user=current_user)
+
+    try:
+        ensure_account_usable(db, user_id=UUID(str(current_user.id)))
+    except InsufficientCreditsError as exc:
+        raise bad_request(
+            "积分不足",
+            details={"code": "CREDIT_NOT_ENOUGH", "balance": exc.balance},
+        )
+
+    assistant = get_assistant(db, assistant_id=UUID(str(conv.assistant_id)), user_id=UUID(str(current_user.id)))
+    requested_model = override_logical_model or assistant.default_logical_model
+    if requested_model == PROJECT_INHERIT_SENTINEL:
+        requested_model = (getattr(ctx.api_key, "chat_default_logical_model", None) or "").strip() or DEFAULT_PROJECT_CHAT_MODEL
+    if not requested_model:
+        raise bad_request("未指定模型")
+
+    cfg = get_or_default_project_eval_config(db, project_id=ctx.project_id)
+    effective_provider_ids = get_effective_provider_ids_for_user(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key=ctx.api_key,
+        provider_scopes=list(getattr(cfg, "provider_scopes", None) or DEFAULT_PROVIDER_SCOPES),
+    )
+
+    if requested_model == "auto":
+        candidates = list(cfg.candidate_logical_models or [])
+        if not candidates:
+            raise bad_request(
+                "当前助手默认模型为 auto，但项目未配置 candidate_logical_models",
+                details={"project_id": str(ctx.project_id)},
+            )
+
+        preset_payload: dict[str, Any] = {}
+        if isinstance(assistant.model_preset, dict):
+            preset_payload.update(assistant.model_preset)
+        if isinstance(model_preset, dict):
+            preset_payload.update(model_preset)
+
+        selector = ProviderSelector(client=client, redis=redis, db=db)
+        candidates = await selector.check_candidate_availability(
+            candidate_logical_models=candidates,
+            effective_provider_ids=effective_provider_ids,
+            api_style="openai",
+            user_id=UUID(str(current_user.id)),
+            is_superuser=current_user.is_superuser,
+            request_payload=preset_payload or None,
+            budget_credits=cfg.budget_per_eval_credits,
+        )
+
+        if not candidates:
+            raise bad_request(
+                "auto 模式下无可用的候选模型（均被禁用或无健康上游）",
+                details={"project_id": str(ctx.project_id)},
+            )
+
+        rec = recommend_challengers(
+            db,
+            project_id=ctx.project_id,
+            assistant_id=UUID(str(assistant.id)),
+            baseline_logical_model="auto",
+            user_text=content,
+            context_features=build_rule_context_features(user_text=content, request_payload=None),
+            candidate_logical_models=candidates,
+            k=1,
+            policy_version="ts-v1",
+        )
+        if not rec.candidates:
+            raise bad_request(
+                "auto 模式下无法选择候选模型",
+                details={"project_id": str(ctx.project_id)},
+            )
+        requested_model = rec.candidates[0].logical_model
+
+    user_message = create_user_message(db, conversation=conv, content_text=content)
+    assistant_message: Message | None = None
+    if streaming:
+        assistant_message = create_assistant_message_placeholder_after_user(
+            db,
+            conversation_id=UUID(str(conv.id)),
+            user_sequence=int(user_message.sequence or 0),
+        )
+
+    payload = build_openai_request_payload(
+        db,
+        conversation=conv,
+        assistant=assistant,
+        user_message=user_message,
+        requested_logical_model=requested_model,
+        model_preset_override=model_preset,
+    )
+
+    bridge_tools_by_agent: dict[str, list[dict[str, Any]]] = {}
+    openai_tools: list[dict[str, Any]] = []
+
+    effective_bridge_agent_ids, tool_filters = _normalize_bridge_inputs(
+        bridge_agent_id=bridge_agent_id,
+        bridge_agent_ids=bridge_agent_ids,
+        bridge_tool_selections=bridge_tool_selections,
+    )
+
+    if effective_bridge_agent_ids:
+        try:
+            bridge = BridgeGatewayClient()
+            for aid in effective_bridge_agent_ids:
+                try:
+                    tools_resp = await bridge.list_tools(aid)
+                except Exception:
+                    continue
+                if isinstance(tools_resp, dict) and isinstance(tools_resp.get("tools"), list):
+                    tools = [t for t in tools_resp["tools"] if isinstance(t, dict)]
+                    allowlist = tool_filters.get(aid)
+                    if allowlist:
+                        tools = [t for t in tools if str(t.get("name") or "").strip() in allowlist]
+                    if tools:
+                        bridge_tools_by_agent[aid] = tools
+
+            openai_tools, _ = bridge_tools_by_agent_to_openai_tools(bridge_tools_by_agent=bridge_tools_by_agent)
+            if openai_tools:
+                payload = dict(payload)
+                payload["tools"] = openai_tools
+                payload["tool_choice"] = "auto"
+        except Exception:
+            openai_tools = []
+
+    run = create_run_record(
+        db,
+        user_id=UUID(str(current_user.id)),
+        api_key_id=ctx.project_id,
+        message_id=UUID(str(user_message.id)),
+        requested_logical_model=requested_model,
+        request_payload=payload,
+        status="queued",
+    )
+
+    # 首问自动标题（入队即可，不依赖 run 执行完成）
+    try:
+        if int(user_message.sequence or 0) == 1 and not (conv.title or "").strip():
+            _enqueue_auto_title_task(
+                conversation_id=UUID(str(conv.id)),
+                message_id=UUID(str(user_message.id)),
+                user_id=UUID(str(current_user.id)),
+                assistant_id=UUID(str(assistant.id)),
+                requested_model_for_title_fallback=requested_model,
+            )
+    except Exception:  # pragma: no cover
+        pass
+
+    if streaming:
+        created_payload: dict[str, Any] = {
+            "type": "message.created",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "assistant_message_id": str(assistant_message.id) if assistant_message is not None else None,
+            "baseline_run": _run_to_summary(run),
+        }
+    else:
+        created_payload = {
+            "type": "message.created",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "run_id": str(run.id),
+        }
+
+    created_seq = _append_run_event_and_publish(
+        db,
+        redis=redis,
+        run_id=UUID(str(run.id)),
+        event_type="message.created",
+        payload=created_payload,
+    ) or 0
+
+    _enqueue_chat_run_task(
+        run_id=UUID(str(run.id)),
+        assistant_message_id=UUID(str(assistant_message.id)) if assistant_message is not None else None,
+        effective_bridge_agent_ids=effective_bridge_agent_ids,
+        streaming=streaming,
+    )
+
+    return (
+        UUID(str(user_message.id)),
+        UUID(str(run.id)),
+        UUID(str(assistant_message.id)) if assistant_message is not None else None,
+        created_payload,
+        int(created_seq),
+        effective_bridge_agent_ids,
+    )
 
 
 async def _maybe_auto_title_conversation(
@@ -547,6 +850,18 @@ async def send_message_and_run_baseline(
         request_payload=payload,
     )
     t_stage = _log_timing("9_create_run_record", t_stage, request_id)
+    _append_run_event_best_effort(
+        db,
+        redis=redis,
+        run_id=UUID(str(run.id)),
+        event_type="message.created",
+        payload={
+            "type": "message.created",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "run_id": str(run.id),
+        },
+    )
 
     auth_key = _to_authenticated_api_key(api_key=ctx.api_key, current_user=current_user)
     t_upstream_start = time.perf_counter()
@@ -566,128 +881,125 @@ async def send_message_and_run_baseline(
     )
     t_stage = _log_timing("10_execute_run_upstream", t_upstream_start, request_id, f"status={run.status} provider={run.selected_provider_id}")
 
-    # Tool-calling loop (best-effort; only when选择了 Agent).
+    # Tool-calling loop（兼容模式：仍是请求内执行，但过程写入 RunEvent 作为真相）。
     if run.status == "succeeded" and effective_bridge_agent_ids and openai_tools:
-        tool_calls = extract_openai_tool_calls(run.response_payload)
-        if tool_calls:
-            invocations: list[BridgeToolInvocation] = []
-            tool_messages: list[dict[str, Any]] = []
-            for tc in tool_calls:
-                tool_name, args, tool_call_id = tool_call_to_args(tc)
-                if not tool_name:
-                    continue
-                mapped = tool_name_map.get(tool_name)
-                if mapped:
-                    target_agent_id, target_tool_name = mapped
-                else:
-                    # Backward compatibility: when only one agent is selected, allow direct tool name.
-                    target_agent_id = effective_bridge_agent_ids[0]
-                    target_tool_name = tool_name
-                req_id = "req_" + uuid.uuid4().hex
-                invocations.append(
-                    BridgeToolInvocation(
-                        req_id=req_id,
-                        agent_id=target_agent_id,
-                        tool_name=target_tool_name,
-                        tool_call_id=tool_call_id,
-                    )
-                )
-                tool_result = await invoke_bridge_tool_and_wait(
-                    req_id=req_id,
-                    agent_id=target_agent_id,
-                    tool_name=target_tool_name,
-                    arguments=args,
-                    timeout_ms=60000,
-                    result_timeout_seconds=120.0,
-                )
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call_id or req_id,
-                        "content": json.dumps(
-                            {
-                                "req_id": req_id,
-                                "agent_id": target_agent_id,
-                                "tool_name": target_tool_name,
-                                "model_tool_name": tool_name,
-                                "ok": tool_result.ok,
-                                "exit_code": tool_result.exit_code,
-                                "canceled": tool_result.canceled,
-                                "result_json": tool_result.result_json,
-                                "error": tool_result.error,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                )
+        t_tool_loop_start = time.perf_counter()
 
-            if invocations and tool_messages:
-                # Follow-up call: append assistant tool_calls message and tool outputs.
-                follow_payload = dict(payload)
-                follow_messages = list(payload.get("messages") or [])
-                follow_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
-                follow_messages.extend(tool_messages)
-                follow_payload["messages"] = follow_messages
-                follow_payload["tool_choice"] = "none"
+        async def _invoke_tool(req_id: str, agent_id: str, tool_name: str, arguments: dict[str, Any]):
+            return await invoke_bridge_tool_and_wait(
+                req_id=req_id,
+                agent_id=agent_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                timeout_ms=60_000,
+                result_timeout_seconds=120.0,
+            )
 
-                handler = RequestHandler(api_key=auth_key, db=db, redis=redis, client=client)
-                resp = await handler.handle(
-                    payload=follow_payload,
-                    requested_model=requested_model,
-                    lookup_model_id=requested_model,
-                    api_style="openai",
-                    effective_provider_ids=effective_provider_ids,
-                    session_id=str(conv.id),
-                    assistant_id=UUID(str(getattr(assistant, "id", None))) if getattr(assistant, "id", None) else None,
-                    billing_reason="chat_tool_loop",
-                    idempotency_key=f"chat:{run.id}:tool_loop",
-                )
+        async def _cancel_tool(req_id: str, agent_id: str, reason: str) -> None:
+            bridge = BridgeGatewayClient()
+            await bridge.cancel(req_id=req_id, agent_id=agent_id, reason=reason)
 
-                follow_response_payload: dict[str, Any] | None = None
-                try:
-                    raw = resp.body.decode("utf-8", errors="ignore")
-                    parsed = json.loads(raw)
-                    if isinstance(parsed, dict):
-                        follow_response_payload = parsed
-                except Exception:
-                    follow_response_payload = None
+        async def _call_model(follow_payload: dict[str, Any], idempotency_key: str) -> dict[str, Any] | None:
+            handler = RequestHandler(api_key=auth_key, db=db, redis=redis, client=client)
+            resp = await handler.handle(
+                payload=follow_payload,
+                requested_model=requested_model,
+                lookup_model_id=requested_model,
+                api_style="openai",
+                effective_provider_ids=effective_provider_ids,
+                session_id=str(conv.id),
+                assistant_id=UUID(str(getattr(assistant, "id", None))) if getattr(assistant, "id", None) else None,
+                billing_reason="chat_tool_loop",
+                idempotency_key=idempotency_key or None,
+            )
+            try:
+                raw = resp.body.decode("utf-8", errors="ignore")
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return None
+            return None
 
-                output_text = _extract_first_choice_text(follow_response_payload)
-                if output_text and output_text.strip():
-                    run.output_text = output_text
-                    run.output_preview = output_text.strip()[:380].rstrip()
-                else:
-                    run.status = "failed"
-                    run.error_code = "TOOL_LOOP_FAILED"
-                    run.error_message = "tool loop finished without assistant content"
+        runner = ToolLoopRunner(
+            invoke_tool=_invoke_tool,
+            call_model=_call_model,
+            cancel_tool=_cancel_tool,
+            event_sink=lambda et, p: _append_run_event_best_effort(
+                db,
+                redis=redis,
+                run_id=UUID(str(run.id)),
+                event_type=et,
+                payload=p,
+            ),
+        )
 
-                run.response_payload = {
-                    "bridge": {
-                        "agent_ids": effective_bridge_agent_ids,
-                        "tool_invocations": [
-                            {
-                                "req_id": it.req_id,
-                                "agent_id": it.agent_id,
-                                "tool_name": it.tool_name,
-                                "tool_call_id": it.tool_call_id,
-                            }
-                            for it in invocations
-                        ],
-                    },
-                    "first_response": run.response_payload,
-                    "final_response": follow_response_payload,
-                }
-                run = persist_run(db, run)
+        result = await runner.run(
+            conversation_id=str(conv.id),
+            run_id=str(run.id),
+            base_payload=payload,
+            first_response_payload=getattr(run, "response_payload", None),
+            effective_bridge_agent_ids=effective_bridge_agent_ids,
+            tool_name_map=tool_name_map,
+            user_message_id=str(user_message.id),
+            idempotency_prefix=f"chat:{run.id}:tool_loop",
+        )
 
+        t_stage = _log_timing(
+            "11_tool_loop",
+            t_tool_loop_start,
+            request_id,
+            f"did_run={result.did_run} invocations={len(result.tool_invocations)} error={result.error_code or ''}",
+        )
+
+        if result.did_run:
+            output_text = result.output_text
+            if result.error_code:
+                run.status = "failed"
+                run.error_code = result.error_code
+                run.error_message = result.error_message
+            elif output_text and output_text.strip():
+                run.output_text = output_text
+                run.output_preview = output_text.strip()[:380].rstrip()
+            else:
+                run.status = "failed"
+                run.error_code = "TOOL_LOOP_FAILED"
+                run.error_message = "tool loop finished without assistant content"
+
+            run.response_payload = {
+                "bridge": {
+                    "agent_ids": effective_bridge_agent_ids,
+                    "tool_invocations": result.tool_invocations,
+                },
+                "first_response": result.first_response_payload,
+                "final_response": result.final_response_payload,
+            }
+            run = persist_run(db, run)
+
+    assistant_msg: Message | None = None
     # baseline 成功时写入 assistant message，作为后续上下文
     if run.status == "succeeded" and run.output_text:
-        create_assistant_message_after_user(
+        assistant_msg = create_assistant_message_after_user(
             db,
             conversation_id=UUID(str(conv.id)),
             user_sequence=int(user_message.sequence or 0),
             content_text=run.output_text,
         )
     t_stage = _log_timing("11_save_assistant_message", t_stage, request_id)
+    _append_run_event_best_effort(
+        db,
+        redis=redis,
+        run_id=UUID(str(run.id)),
+        event_type="message.completed" if run.status == "succeeded" else "message.failed",
+        payload={
+            "type": "message.completed" if run.status == "succeeded" else "message.failed",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "assistant_message_id": str(assistant_msg.id) if assistant_msg is not None else None,
+            "baseline_run": _run_to_summary(run),
+            "output_text": run.output_text if run.status == "succeeded" else None,
+        },
+    )
 
     # Auto-title conversation based on the first user question（异步入队，避免阻塞主流程）
     t_title_start = time.perf_counter()
@@ -892,6 +1204,19 @@ async def stream_message_and_run_baseline(
     prep_ms = (time.perf_counter() - t_total_start) * 1000
     logger.info("[CHAT_TIMING] %s | PREP_COMPLETE | %.2fms | ready_to_stream", request_id, prep_ms)
 
+    _append_run_event_best_effort(
+        db,
+        redis=redis,
+        run_id=UUID(str(run.id)),
+        event_type="message.created",
+        payload={
+            "type": "message.created",
+            "conversation_id": str(conv.id),
+            "user_message_id": str(user_message.id),
+            "assistant_message_id": str(assistant_message.id),
+            "baseline_run": _run_to_summary(run),
+        },
+    )
     yield _encode_sse_event(
         event_type="message.created",
         data={
@@ -963,129 +1288,114 @@ async def stream_message_and_run_baseline(
 
     # Tool-calling loop（流式结束后补充执行）
     if run.status == "succeeded" and effective_bridge_agent_ids and openai_tools:
-        tool_calls = extract_openai_tool_calls(run.response_payload)
-        if tool_calls:
-            invocations: list[BridgeToolInvocation] = []
-            tool_messages: list[dict[str, Any]] = []
-            for tc in tool_calls:
-                tool_name, args, tool_call_id = tool_call_to_args(tc)
-                if not tool_name:
-                    continue
-                mapped = tool_name_map.get(tool_name)
-                if mapped:
-                    target_agent_id, target_tool_name = mapped
-                else:
-                    target_agent_id = effective_bridge_agent_ids[0]
-                    target_tool_name = tool_name
-                req_id = "req_" + uuid.uuid4().hex
-                invocations.append(
-                    BridgeToolInvocation(
-                        req_id=req_id,
-                        agent_id=target_agent_id,
-                        tool_name=target_tool_name,
-                        tool_call_id=tool_call_id,
-                    )
-                )
-                tool_result = await invoke_bridge_tool_and_wait(
-                    req_id=req_id,
-                    agent_id=target_agent_id,
-                    tool_name=target_tool_name,
-                    arguments=args,
-                    timeout_ms=60000,
-                    result_timeout_seconds=120.0,
-                )
-                tool_messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call_id or req_id,
-                        "content": json.dumps(
-                            {
-                                "req_id": req_id,
-                                "agent_id": target_agent_id,
-                                "tool_name": target_tool_name,
-                                "model_tool_name": tool_name,
-                                "ok": tool_result.ok,
-                                "exit_code": tool_result.exit_code,
-                                "canceled": tool_result.canceled,
-                                "result_json": tool_result.result_json,
-                                "error": tool_result.error,
-                            },
-                            ensure_ascii=False,
-                        ),
-                    }
-                )
+        t_tool_loop_start = time.perf_counter()
 
-            if invocations and tool_messages:
-                follow_payload = dict(payload)
-                follow_messages = list(payload.get("messages") or [])
-                follow_messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
-                follow_messages.extend(tool_messages)
-                follow_payload["messages"] = follow_messages
-                follow_payload["tool_choice"] = "none"
+        async def _invoke_tool(req_id: str, agent_id: str, tool_name: str, arguments: dict[str, Any]):
+            return await invoke_bridge_tool_and_wait(
+                req_id=req_id,
+                agent_id=agent_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                timeout_ms=60_000,
+                result_timeout_seconds=120.0,
+            )
 
-                handler = RequestHandler(api_key=auth_key, db=db, redis=redis, client=client)
-                resp = await handler.handle(
-                    payload=follow_payload,
-                    requested_model=requested_model,
-                    lookup_model_id=requested_model,
-                    api_style="openai",
-                    effective_provider_ids=effective_provider_ids,
-                    session_id=str(conv.id),
-                    assistant_id=UUID(str(getattr(assistant, "id", None))) if getattr(assistant, "id", None) else None,
-                    billing_reason="chat_tool_loop",
-                    idempotency_key=f"chat:{run.id}:tool_loop",
-                )
+        async def _cancel_tool(req_id: str, agent_id: str, reason: str) -> None:
+            bridge = BridgeGatewayClient()
+            await bridge.cancel(req_id=req_id, agent_id=agent_id, reason=reason)
 
-                follow_response_payload: dict[str, Any] | None = None
-                try:
-                    raw = resp.body.decode("utf-8", errors="ignore")
-                    parsed = json.loads(raw)
-                    if isinstance(parsed, dict):
-                        follow_response_payload = parsed
-                except Exception:
-                    follow_response_payload = None
+        async def _call_model(follow_payload: dict[str, Any], idempotency_key: str) -> dict[str, Any] | None:
+            handler = RequestHandler(api_key=auth_key, db=db, redis=redis, client=client)
+            resp = await handler.handle(
+                payload=follow_payload,
+                requested_model=requested_model,
+                lookup_model_id=requested_model,
+                api_style="openai",
+                effective_provider_ids=effective_provider_ids,
+                session_id=str(conv.id),
+                assistant_id=UUID(str(getattr(assistant, "id", None))) if getattr(assistant, "id", None) else None,
+                billing_reason="chat_tool_loop",
+                idempotency_key=idempotency_key or None,
+            )
+            try:
+                raw = resp.body.decode("utf-8", errors="ignore")
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                return None
+            return None
 
-                delta_text = _extract_first_choice_text(follow_response_payload)
-                if delta_text and delta_text.strip():
-                    run.output_text = delta_text
-                    run.output_preview = delta_text.strip()[:380].rstrip()
-                else:
-                    run.status = "failed"
-                    run.error_code = "TOOL_LOOP_FAILED"
-                    run.error_message = "tool loop finished without assistant content"
-                    delta_text = None
+        runner = ToolLoopRunner(
+            invoke_tool=_invoke_tool,
+            call_model=_call_model,
+            cancel_tool=_cancel_tool,
+            event_sink=lambda et, p: _append_run_event_best_effort(
+                db,
+                redis=redis,
+                run_id=UUID(str(run.id)),
+                event_type=et,
+                payload=p,
+            ),
+        )
 
-                run.response_payload = {
-                    "bridge": {
-                        "agent_ids": effective_bridge_agent_ids,
-                        "tool_invocations": [
-                            {
-                                "req_id": it.req_id,
-                                "agent_id": it.agent_id,
-                                "tool_name": it.tool_name,
-                                "tool_call_id": it.tool_call_id,
-                            }
-                            for it in invocations
-                        ],
+        result = await runner.run(
+            conversation_id=str(conv.id),
+            run_id=str(run.id),
+            base_payload=payload,
+            first_response_payload=getattr(run, "response_payload", None),
+            effective_bridge_agent_ids=effective_bridge_agent_ids,
+            tool_name_map=tool_name_map,
+            assistant_message_id=str(assistant_message.id),
+            user_message_id=str(user_message.id),
+            idempotency_prefix=f"chat:{run.id}:tool_loop",
+        )
+
+        _log_timing(
+            "11_tool_loop",
+            t_tool_loop_start,
+            request_id,
+            f"did_run={result.did_run} invocations={len(result.tool_invocations)} error={result.error_code or ''}",
+        )
+
+        if result.did_run:
+            delta_text = result.output_text
+            if result.error_code:
+                run.status = "failed"
+                run.error_code = result.error_code
+                run.error_message = result.error_message
+                delta_text = None
+            elif delta_text and delta_text.strip():
+                run.output_text = delta_text
+                run.output_preview = delta_text.strip()[:380].rstrip()
+            else:
+                run.status = "failed"
+                run.error_code = "TOOL_LOOP_FAILED"
+                run.error_message = "tool loop finished without assistant content"
+                delta_text = None
+
+            run.response_payload = {
+                "bridge": {
+                    "agent_ids": effective_bridge_agent_ids,
+                    "tool_invocations": result.tool_invocations,
+                },
+                "first_response": result.first_response_payload,
+                "final_response": result.final_response_payload,
+            }
+            run = persist_run(db, run)
+
+            if delta_text:
+                parts = [delta_text]
+                yield _encode_sse_event(
+                    event_type="message.delta",
+                    data={
+                        "type": "message.delta",
+                        "conversation_id": str(conv.id),
+                        "assistant_message_id": str(assistant_message.id),
+                        "run_id": str(run.id),
+                        "delta": delta_text,
                     },
-                    "first_response": run.response_payload,
-                    "final_response": follow_response_payload,
-                }
-                run = persist_run(db, run)
-
-                # 补充一次 delta，前端能够看到工具调用后的最终回复
-                if delta_text:
-                    parts = [delta_text]
-                    yield _encode_sse_event(
-                        event_type="message.delta",
-                        data={
-                            "type": "message.delta",
-                            "conversation_id": str(conv.id),
-                            "assistant_message_id": str(assistant_message.id),
-                            "run_id": str(run.id),
-                            "delta": delta_text,
-                        },
-                    )
+                )
 
     if not errored and run.status == "succeeded" and run.output_text:
         finalize_assistant_message_after_user_sequence(
@@ -1115,6 +1425,19 @@ async def stream_message_and_run_baseline(
     logger.info("[CHAT_TIMING] %s | TOTAL | %.2fms | model=%s provider=%s status=%s chunks=%d",
                 request_id, total_ms, requested_model, run.selected_provider_id, run.status, len(parts))
 
+    _append_run_event_best_effort(
+        db,
+        redis=redis,
+        run_id=UUID(str(run.id)),
+        event_type="message.completed" if run.status == "succeeded" else "message.failed",
+        payload={
+            "type": "message.completed" if run.status == "succeeded" else "message.failed",
+            "conversation_id": str(conv.id),
+            "assistant_message_id": str(assistant_message.id),
+            "baseline_run": _run_to_summary(run),
+            "output_text": "".join(parts) if parts else None,
+        },
+    )
     yield _encode_sse_event(
         event_type="message.completed" if run.status == "succeeded" else "message.failed",
         data={

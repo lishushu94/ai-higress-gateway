@@ -113,6 +113,15 @@ async def generate_conversation_title(
 
         redis = _get_title_redis()
         async with _title_http_client() as client:
+            def _safe_user_text(value: Any) -> str:
+                if isinstance(value, str):
+                    return value
+                if isinstance(value, dict):
+                    text = value.get("text")
+                    if isinstance(text, str):
+                        return text
+                return ""
+
             await _maybe_auto_title_conversation(
                 db,
                 redis=redis,
@@ -121,7 +130,7 @@ async def generate_conversation_title(
                 conv=conv,
                 assistant=assistant,
                 effective_provider_ids=effective_provider_ids,
-                user_text=str(message.content or ""),
+                user_text=_safe_user_text(message.content),
                 user_sequence=int(message.sequence or 0),
                 requested_model_for_title_fallback=requested_model_for_title_fallback or "",
             )

@@ -294,6 +294,7 @@ export function normalizeMessagesResponse(
       return {
         message: normalizedMessage,
         run,
+        runs: normalizedRuns,
       };
     }),
     next_cursor: backend.next_cursor,

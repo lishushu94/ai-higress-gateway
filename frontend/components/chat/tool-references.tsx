@@ -37,6 +37,9 @@ export function ToolReferences({ references, className }: ToolReferencesProps) {
     .filter((ref) => ref.agent && ref.tools.length);
   if (!normalized.length) return null;
 
+  const first = normalized[0];
+  if (!first) return null;
+
   return (
     <div className={cn("flex flex-wrap items-center gap-2 mt-3", className)}>
       {normalized.length === 1 ? (
@@ -52,11 +55,11 @@ export function ToolReferences({ references, className }: ToolReferencesProps) {
             "cursor-default"
           )}
           title={
-            normalized[0].tools.slice(0, maxTitleItems).join(", ") +
-            (normalized[0].tools.length > maxTitleItems ? `, +${normalized[0].tools.length - maxTitleItems}` : "")
+            first.tools.slice(0, maxTitleItems).join(", ") +
+            (first.tools.length > maxTitleItems ? `, +${first.tools.length - maxTitleItems}` : "")
           }
         >
-          <span>{t("chat.tool_invocations.badge_single", { count: normalized[0].tools.length })}</span>
+          <span>{t("chat.tool_invocations.badge_single", { count: first.tools.length })}</span>
         </Badge>
       ) : (
         normalized.map(({ agent, tools }) => (

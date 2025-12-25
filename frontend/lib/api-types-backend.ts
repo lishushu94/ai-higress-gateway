@@ -89,7 +89,7 @@ export interface MessageBackend {
 export interface RunSummaryBackend {
   run_id: string;
   requested_logical_model: string;
-  status: 'queued' | 'running' | 'succeeded' | 'failed';
+  status: 'queued' | 'running' | 'succeeded' | 'failed' | 'canceled';
   output_preview?: string;
   latency_ms?: number; // 后端使用 latency_ms
   cost_credits?: number; // 后端使用 cost_credits
@@ -99,6 +99,13 @@ export interface RunSummaryBackend {
     agent_id: string;
     tool_name: string;
     tool_call_id?: string | null;
+    state?: 'running' | 'done' | 'failed' | 'timeout' | 'canceled';
+    duration_ms?: number;
+    ok?: boolean;
+    canceled?: boolean;
+    exit_code?: number;
+    error?: Record<string, any> | null;
+    result_preview?: string | null;
   }>;
 }
 

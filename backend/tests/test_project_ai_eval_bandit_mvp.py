@@ -177,12 +177,16 @@ def app_with_mock_chat(monkeypatch):
     SessionLocal = install_inmemory_db(app)
 
     # Seed a public provider so provider access filtering can succeed.
+    # install_inmemory_db 里已提供默认 mock provider，这里做幂等处理避免重复插入。
     from app.models import Provider
+    from sqlalchemy import select
 
     with SessionLocal() as db:
-        provider = Provider(provider_id="mock", name="Mock Provider", base_url="https://mock.local")
-        db.add(provider)
-        db.commit()
+        exists = db.execute(select(Provider.id).where(Provider.provider_id == "mock")).scalars().first()
+        if exists is None:
+            provider = Provider(provider_id="mock", name="Mock Provider", base_url="https://mock.local")
+            db.add(provider)
+            db.commit()
 
     redis = InMemoryRedis()
 

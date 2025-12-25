@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import { messageService } from '@/http/message';
 import { streamSSERequest } from '@/lib/bridge/sse';
 import { useBridgeAgents } from '@/lib/swr/use-bridge';
+import { useRunToolEventsStore } from '@/lib/stores/run-tool-events-store';
 import { SWRCacheManager, cacheStrategies } from './cache';
 import { ErrorHandler } from '@/lib/errors';
 import { useConversationPending } from '@/lib/hooks/use-conversation-pending';
@@ -287,6 +288,7 @@ export function useSendMessageToConversation(
                 created_at: createdAt,
               },
               run: undefined,
+              runs: undefined,
             };
             const userPlaceholder = {
               message: {
@@ -297,6 +299,7 @@ export function useSendMessageToConversation(
                 created_at: createdAt,
               },
               run: undefined,
+              runs: undefined,
             };
             if (!currentData) {
               return { items: [assistantPlaceholder, userPlaceholder] } satisfies MessagesResponse;
@@ -329,7 +332,8 @@ export function useSendMessageToConversation(
             value === 'queued' ||
             value === 'running' ||
             value === 'succeeded' ||
-            value === 'failed';
+            value === 'failed' ||
+            value === 'canceled';
           if (!isRunStatus(status)) return null;
 
           const outputPreview =
@@ -401,6 +405,7 @@ export function useSendMessageToConversation(
                         ...it,
                         message: { ...it.message, message_id: userMessageId },
                         run: baselineRun ?? it.run,
+                        runs: baselineRun ? [baselineRun] : it.runs,
                       };
                     }
                     if (it.message.message_id === tempAssistantMessageId) {
@@ -415,6 +420,14 @@ export function useSendMessageToConversation(
                 },
                 { revalidate: false }
               );
+              return;
+            }
+
+            // 兼容：若后端未来在 chat SSE 里直接透传 tool.* 事件，这里同步写入工具事件 store
+            if (type === 'tool.status' || type === 'tool.result') {
+              const runId = getString(rec, 'run_id');
+              if (!runId) return;
+              useRunToolEventsStore.getState().apply_tool_event(runId, 0, rec as any);
               return;
             }
 
@@ -450,7 +463,7 @@ export function useSendMessageToConversation(
                       };
                     }
                     if (it.message.message_id === userMessageId) {
-                      return { ...it, run: baselineRun ?? it.run };
+                      return { ...it, run: baselineRun ?? it.run, runs: baselineRun ? [baselineRun] : it.runs };
                     }
                     return it;
                   });
@@ -487,6 +500,7 @@ export function useSendMessageToConversation(
           created_at: createdAt,
         },
         run: undefined,
+        runs: undefined,
       };
 
       await globalMutate(
@@ -526,6 +540,7 @@ export function useSendMessageToConversation(
           created_at: createdAt,
         },
         run: undefined,
+        runs: undefined,
       };
       
       const errorMessage = {
@@ -537,6 +552,7 @@ export function useSendMessageToConversation(
           created_at: new Date().toISOString(),
         },
         run: undefined,
+        runs: undefined,
       };
 
       await globalMutate(

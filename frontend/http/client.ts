@@ -1,3 +1,5 @@
+"use client";
+
 import axios, { AxiosInstance, AxiosRequestConfig, AxiosResponse, AxiosError, InternalAxiosRequestConfig } from 'axios';
 import { tokenManager } from '@/lib/auth/token-manager';
 import { ErrorHandler } from '@/lib/errors';
